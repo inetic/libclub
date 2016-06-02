@@ -44,7 +44,7 @@ private:
   using Address = boost::asio::ip::address;
 
   typedef boost::asio::io_service::work    Work;
-  typedef std::map<uuid, std::unique_ptr<Node>> Nodes;
+  typedef boost::container::flat_map<uuid, std::unique_ptr<Node>> Nodes;
 
   typedef std::function<void(const boost::system::error_code&, uuid)> OnFused;
 
@@ -138,9 +138,9 @@ private:
   Log                        _log;
   TimeStamp                  _time_stamp;
   std::shared_ptr<bool>      _was_destroyed;
-  std::set<MessageId>        _configs;
   // TODO: This must be refactored, otherwise the memory will
   //       grow indefinitely.
+  std::set<MessageId> _configs;
   std::set<MessageId> _seen;
 
   std::list<std::unique_ptr<GetExternalPort>> _stun_requests;
