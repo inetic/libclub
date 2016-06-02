@@ -575,64 +575,6 @@ club::Graph<size_t> clique_graph(size_t node_count) {
 }
 
 // -------------------------------------------------------------------
-template<class Handler>
-void construct_manual_clique(io_service& ios, size_t node_count, Handler h) {
-  construct_network(ios, clique_graph(node_count), h);
-  //auto hubs = make_shared<vector<HubPtr>>(make_hubs(ios, node_count));
-
-  ////Debugger d;
-  ////d.map(*hubs);
-
-  //auto fuse_countdown = make_shared<size_t>(node_count * (node_count - 1));
-  //auto insert_countdown = make_shared<size_t>(*fuse_countdown);
-
-  //auto on_event = [=]() {
-  //  if (*fuse_countdown == 0 && *insert_countdown == 0) {
-  //    h(move(*hubs));
-  //  }
-  //};
-
-  //for (auto& hub : *hubs) {
-  //  hub->on_insert.connect([=] (set<club::hub::node> nodes) {
-  //      *insert_countdown -= nodes.size();
-  //      on_event();
-  //    });
-  //}
-
-  //async_while([=, &ios](unsigned int i, Cont cont_i) {
-  //    if (i == hubs->size()) return on_event();
-  //    
-  //    async_while([=, &ios](unsigned int j, Cont cont_j) {
-  //        if (j <= i) return cont_j();
-  //        if (j == hubs->size()) return cont_i();
-
-  //        make_connected_sockets(ios, [=](SocketPtr s1, SocketPtr s2) {
-  //            WhenAll when_all;
-
-  //            auto on_fuse_hubs_i = when_all.make_continuation();
-  //            auto on_fuse_hubs_j = when_all.make_continuation();
-
-  //            (*hubs)[i]->fuse(move(*s1), [=](error_code e, uuid id) {
-  //                BOOST_CHECK_MESSAGE(!e, e.message());
-  //                --*fuse_countdown;
-  //                on_fuse_hubs_i();
-  //              });
-
-  //            (*hubs)[j]->fuse(move(*s2), [=](error_code e, uuid id) {
-  //                BOOST_CHECK_MESSAGE(!e, e.message());
-  //                --*fuse_countdown;
-  //                on_fuse_hubs_j();
-  //              });
-
-  //            when_all.on_complete([cont_j]() {
-  //                cont_j();
-  //              });
-  //          });
-  //      });
-  //  });
-}
-
-// -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(club_manual_clique) {
   std::srand(std::time(0));
 
