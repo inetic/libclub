@@ -47,10 +47,15 @@ struct Node {
     // on callbacks.
     std::shared_ptr<Socket>           socket;
     Bytes                             rx_buffer;
+    Bytes                             rx_unreliable_buffer;
     std::list<std::shared_ptr<Bytes>> tx_buffers;
+
+    // TODO: This shouldn't be a fixed value.
+    static size_t max_unreliable_buffer() { return 65536; }
 
     SharedState()
       : was_destroyed(false)
+      , rx_unreliable_buffer(max_unreliable_buffer())
     { }
   };
 
@@ -88,7 +93,7 @@ struct Node {
     , _shared_state(std::make_shared<SharedState>())
   {
     _shared_state->socket = move(socket);
-    start_recv_loop();
+    start_recv_loops();
   }
 
   void assign_socket(SocketPtr socket) {
@@ -96,7 +101,7 @@ struct Node {
     ASSERT(!_shared_state->socket);
     set_state(ConnectState::connected);
     _shared_state->socket = move(socket);
-    start_recv_loop();
+    start_recv_loops();
   }
 
   void set_remote_port( uint16_t internal_port
@@ -118,6 +123,24 @@ struct Node {
     if (is(ConnectState::disconnected)) return;
     _shared_state->tx_buffers.push_back(std::move(data));
     send_front();
+  }
+
+  template<class Handler>
+  void send_unreliable(boost::asio::const_buffer b, Handler handler) {
+    if (!is(ConnectState::connected)) {
+      // TODO: Should post the handler to io_service.
+      ASSERT(0);
+      return;
+    }
+    auto state = _shared_state;
+    state->socket->async_send
+        ( net::PL::CHANNEL_UNR()
+        , b
+        , 0
+        , [state, handler](const Error&) { 
+            if (state->was_destroyed) return;
+            handler();
+          });
   }
 
   Address address() const {
@@ -205,7 +228,7 @@ private:
             set_state(ConnectState::connected);
           }
 
-          start_recv_loop();
+          start_recv_loops();
           send_front();
 
           _hub->on_peer_connected(*this);
@@ -242,7 +265,12 @@ private:
       });
   }
 
-  void start_recv_loop() {
+  void start_recv_loops() {
+    start_reliable_recv_loop();
+    start_unreliable_recv_loop();
+  }
+
+  void start_reliable_recv_loop() {
     auto state = _shared_state;
     net::recv_any_size(*state->socket, state->rx_buffer, -1,
         [this, state](Error error) {
@@ -258,8 +286,33 @@ private:
           _hub->on_recv_raw(*this, state->rx_buffer);
 
           if (state->was_destroyed) return;
-          start_recv_loop();
+          start_reliable_recv_loop();
         });
+  }
+
+  void start_unreliable_recv_loop() {
+    auto state = _shared_state;
+    state->rx_unreliable_buffer.resize(SharedState::max_unreliable_buffer());
+
+    state->socket->async_receive
+        ( net::PL::CHANNEL_UNR()
+        , boost::asio::buffer(state->rx_unreliable_buffer)
+        , -1
+        , [this, state](const Error& error, size_t size) {
+            if (state->was_destroyed) return;
+            if (is(ConnectState::disconnected)) return;
+
+            if (error) {
+              return on_socket_error("unreliable recv", error);
+            }
+
+            state->rx_unreliable_buffer.resize(size);
+            _hub->node_received_unreliable_broadcast(state->rx_unreliable_buffer);
+
+            if (!state->was_destroyed) {
+              start_unreliable_recv_loop();
+            }
+          });
   }
 
   void on_socket_error(std::string debug_str, Error) {

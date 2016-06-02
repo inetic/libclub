@@ -97,6 +97,13 @@ inline void encode(encoder& e, int8_t value) {
   *(e._current.begin++) = value;
 }
 
+inline void encode(encoder& e, char value) {
+  if (e._current.begin >= e._current.end) e._was_error = true;
+  if (e._was_error) return;
+
+  *(e._current.begin++) = value;
+}
+
 inline void encode(encoder& e, uint16_t value) {
   if (e._current.begin + sizeof(value) > e._current.end) e._was_error = true;
   if (e._was_error) return;

@@ -31,13 +31,12 @@ namespace club {
 
 struct Node;
 class GetExternalPort;
-class network;
+class BroadcastRoutingTable;
 
 class hub {
 private:
   template<class T> using Signal = boost::signals2::signal<T>;
   template<class T> using shared_ptr = std::shared_ptr<T>;
-
 
   using ID = club::uuid;
   using Bytes = std::vector<char>;
@@ -56,16 +55,16 @@ public:
 
   hub(boost::asio::io_service&);
 
-  Signal<void(std::set<node>)>     on_insert;
-  Signal<void(std::set<node>)>     on_remove;
-  Signal<void(node, const Bytes&)> on_receive;
-
-  // Non essential signals.
-  Signal<void(node)>               on_direct_connect;
+  Signal<void(std::set<node>)>                  on_insert;
+  Signal<void(std::set<node>)>                  on_remove;
+  Signal<void(node, const Bytes&)>              on_receive;
+  Signal<void(node, boost::asio::const_buffer)> on_receive_unreliable;
+  Signal<void(node)>                            on_direct_connect;
 
   void fuse(Socket&&, const OnFused&);
 
   void total_order_broadcast(Bytes);
+  void unreliable_broadcast(Bytes, std::function<void()>);
 
   boost::asio::io_service& get_io_service() { return _io_service; }
   uuid                     id()    const    { return _id; }
@@ -74,6 +73,7 @@ public:
 
   size_t size() const { return _nodes.size(); }
 
+  // TODO: Check why this is public.
   void add_connection(Node& from, uuid to, boost::asio::ip::address);
 
 private:
@@ -82,6 +82,8 @@ private:
   template<class Message> void broadcast(const Message&);
 
   void on_recv_raw(Node&, const Bytes&);
+  void node_received_unreliable_broadcast(const Bytes& bytes);
+
   template<class Message> void on_recv(Node&, Message&);
   template<class Message> void parse_message(Node&, binary::decoder&);
 
@@ -90,8 +92,6 @@ private:
   void process(Node&, const PortOffer&);
   void process(Node&, const UserData&);
   void process(Node&, const Ack&);
-
-  const VClock& increment_clock();
 
   void commit_what_was_seen_by_everyone();
 
@@ -108,7 +108,6 @@ private:
   template<class Message> Ack construct_ack(const Message&);
 
   void broadcast_port_offer_to(Node&, Address addr);
-  void broadcast_sync_to(uuid target);
 
   template<class F> bool destroys_this(F);
 
@@ -124,20 +123,19 @@ private:
 
   std::set<uuid> remove_connection(uuid from, uuid to);
 
-  Graph<uuid> committed_graph() const;
-
   boost::container::flat_set<uuid> local_quorum() const;
-  void recalculate_routers(Graph<uuid>&& acks);
 
 private:
-  boost::asio::io_service&   _io_service;
-  std::set<uuid>             _last_quorum;
-  std::unique_ptr<Work>      _work;
-  uuid                       _id;
-  Nodes                      _nodes;
-  Log                        _log;
-  TimeStamp                  _time_stamp;
-  std::shared_ptr<bool>      _was_destroyed;
+  boost::asio::io_service&               _io_service;
+  std::set<uuid>                         _last_quorum;
+  std::unique_ptr<Work>                  _work;
+  uuid                                   _id;
+  Nodes                                  _nodes;
+  Log                                    _log;
+  TimeStamp                              _time_stamp;
+  std::unique_ptr<BroadcastRoutingTable> _broadcast_routing_table;
+  std::shared_ptr<bool>                  _was_destroyed;
+
   // TODO: This must be refactored, otherwise the memory will
   //       grow indefinitely.
   std::set<MessageId> _configs;

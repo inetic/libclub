@@ -499,6 +499,9 @@ void construct_network( io_service& ios
 
   auto state = make_shared<State>(ios, move(graph), graph.nodes.size());
 
+  //Debugger d;
+  //d.map(state->hubs);
+
   auto on_event = [=]() {
     if (state->insert_countdown == 0 && state->fuse_countdown == 0) {
       state->connections.clear();
@@ -1322,6 +1325,69 @@ BOOST_AUTO_TEST_CASE(club_stress_fuse) {
             });
         });
      });
+
+  ios.run();
+}
+
+// -------------------------------------------------------------------
+// This test assumes that no UDP packets are dropped on this PC. If
+// packet dropping is enabled (e.g. through netem), this test will
+// probably fail.
+BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
+  using boost::asio::const_buffer;
+
+  std::srand(std::time(0));
+
+  io_service ios;
+
+  club::Graph<size_t> graph;
+
+  //
+  //         5 - 6
+  //         |   |
+  // 0 - 1 - 2 - 3 - 4
+  //     |
+  //     7 - 8
+  //
+  graph.add_edge(0, 1);
+  graph.add_edge(1, 2);
+  graph.add_edge(2, 3);
+  graph.add_edge(3, 4);
+  graph.add_edge(2, 5);
+  graph.add_edge(5, 6);
+  graph.add_edge(6, 3);
+  graph.add_edge(1, 7);
+  graph.add_edge(7, 8);
+
+  vector<HubPtr> hubs;
+
+  std::set<uuid> receivers;
+
+  construct_network(ios, move(graph), [&](vector<HubPtr> hs) {
+      hubs = move(hs);
+
+      // Prepare receivers
+      for (auto& hub : hubs) {
+        auto id = hub->id();
+        hub->on_receive_unreliable.connect(
+          [&, id](club::hub::node, const_buffer b) {
+            receivers.insert(id);
+
+            // The one that broadcasts it doesn't receive it.
+            if (receivers.size() == hubs.size() - 1) {
+              hubs.clear();
+            }
+          });
+      }
+
+      // One of them shall broadcast.
+      size_t sender = rand() % hubs.size();
+
+      binary::dynamic_encoder<char> e;
+      e.put<uint32_t>(sender);
+
+      hubs[sender]->unreliable_broadcast(e.move_data(), [](){});
+    });
 
   ios.run();
 }

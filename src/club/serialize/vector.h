@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_SERIALIZE_VECTOR_H__
-#define __CLUB_SERIALIZE_VECTOR_H__
+#pragma once
 
 #include <vector>
 #include <debug/ASSERT.h>
@@ -33,6 +32,23 @@ template<typename Encoder, class T>
     e.template put<uint32_t>(vector.size());
 
     for (const auto& item : vector) {
+      e.template put<typename std::decay<T>::type>(item);
+    }
+  }
+
+//------------------------------------------------------------------------------
+// TODO: Why doesn't the above use cover this special case?
+template<typename Encoder>
+  inline void encode( Encoder& e
+                    , const std::vector<char>& vector
+                    , size_t max_size = std::numeric_limits<uint32_t>::max()) {
+    using namespace boost;
+
+    ASSERT(vector.size() < max_size);
+
+    e.template put<uint32_t>(vector.size());
+
+    for (auto item : vector) {
       e.template put(item);
     }
   }
@@ -64,5 +80,3 @@ inline void decode( binary::decoder& d
 //------------------------------------------------------------------------------
 
 } // binary namespace
-
-#endif // ifndef __CLUB_SERIALIZE_VECTOR_H__

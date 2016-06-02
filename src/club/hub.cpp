@@ -31,7 +31,7 @@
 #include <iostream>
 #include "get_external_port.h"
 #include "connection_graph.h"
-#include "dijkstra.h"
+#include "broadcast_routing_table.h"
 
 using namespace net;
 using namespace club;
@@ -84,12 +84,20 @@ shared_ptr<vector<char>> encode_message(const LogMessage& msg) {
 }
 
 // -----------------------------------------------------------------------------
+static Graph<uuid> single_node_graph(const uuid& id) {
+  Graph<uuid> g;
+  g.nodes.insert(id);
+  return g;
+}
+
+// -----------------------------------------------------------------------------
 hub::hub(boost::asio::io_service& ios)
   : _io_service(ios)
   , _work(new Work(_io_service))
   , _id(boost::uuids::random_generator()())
   , _log(_id)
   , _time_stamp(0)
+  , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
 {
   LOG("Created");
@@ -97,6 +105,7 @@ hub::hub(boost::asio::io_service& ios)
   _last_quorum.insert(_id);
   _log.last_commit_op = _id;
   _configs.insert(MessageId(_time_stamp, _id));
+  _broadcast_routing_table->recalculate(single_node_graph(_id));
 }
 
 // -----------------------------------------------------------------------------
@@ -268,7 +277,7 @@ void hub::process(Node&, const UserData& msg) {
 }
 
 // -----------------------------------------------------------------------------
-Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
+static Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
   Graph<uuid> g;
 
   for (const auto& pair : acks) {
@@ -283,26 +292,15 @@ Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
 }
 
 // -----------------------------------------------------------------------------
-void hub::recalculate_routers(Graph<uuid>&& graph) {
-  Dijkstra dijkstra(_id, move(graph));
-  dijkstra.run();
-
-  for (auto node_id : dijkstra.graph.nodes) {
-    if (auto node = find_node(node_id)) {
-      node->router = dijkstra.first_node_to(node_id);
-    }
-  }
-}
-
-// -----------------------------------------------------------------------------
 void hub::on_commit_fuse(const Fuse& msg, const LogEntry& entry) {
   if (!entry.acked_by_quorum()) return;
 
   set<hub::node> new_ones;
 
   auto new_graph = acks_to_graph(entry.acks);
+  _broadcast_routing_table->recalculate(new_graph);
+
   LOG("Commit config: ", entry.message_id(), ": ", new_graph);
-  recalculate_routers(move(new_graph));
 
   _configs.insert(entry.message_id());
 
@@ -635,6 +633,61 @@ template<class Message> void hub::broadcast(const Message& msg) {
 
     node.send(data);
   }
+}
+
+// -----------------------------------------------------------------------------
+void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
+  using std::make_pair;
+  using boost::asio::const_buffer;
+
+  // Encoding std::vector adds 4 bytes for size.
+  auto bytes   = make_shared<Bytes>(uuid::static_size() + payload.size() + 4);
+  auto counter = make_shared<size_t>(0);
+
+  // TODO: Unfortunately, ConnectedSocket doesn't support sending multiple
+  // buffers at once (yet?), so we need to *copy* the payload into one buffer.
+  binary::encoder e(reinterpret_cast<uint8_t*>(bytes->data()), bytes->size());
+  e.put(_id);
+  e.put(payload);
+  ASSERT(!e.error());
+
+  for (auto& node : _nodes | map_values | indirected) {
+    if (node.id == _id || !node.is_connected()) continue;
+    ++(*counter);
+
+    const_buffer b(bytes->data(), bytes->size());
+
+    node.send_unreliable(move(b), [counter, bytes, handler]() {
+        if (--(*counter) == 0) handler();
+        });
+  }
+}
+
+// -----------------------------------------------------------------------------
+void hub::node_received_unreliable_broadcast(const Bytes& bytes) {
+  using boost::asio::const_buffer;
+
+  binary::decoder d(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+  auto source = d.get<uuid>();
+
+  if (d.error() || _nodes.count(source) == 0) {
+    return;
+  }
+
+  auto shared_bytes = make_shared<Bytes>(bytes);
+
+  // Rebroadcast
+  for (const auto& id : _broadcast_routing_table->get_targets(source)) {
+    auto node = find_node(id);
+
+    if (!node || !node->is_connected()) continue;
+
+    node->send_unreliable( const_buffer( shared_bytes->data()
+                                       , shared_bytes->size() )
+                         , [shared_bytes]() {});
+  }
+
+  on_receive_unreliable(source, const_buffer(d.current(), d.size()));
 }
 
 // -----------------------------------------------------------------------------
