@@ -63,4 +63,4 @@ inline void decode( binary::decoder& d
 
 //------------------------------------------------------------------------------
 
-}} // club namespace
+}} // boost::container namespace
