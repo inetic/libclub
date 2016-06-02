@@ -1252,7 +1252,7 @@ BOOST_AUTO_TEST_CASE(club_fuse_again) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(club_stress_fuse) {
-  std::srand(0);//std::time(0));
+  std::srand(std::time(0));
 
   io_service ios;
 
