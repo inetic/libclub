@@ -676,6 +676,8 @@ void hub::node_received_unreliable_broadcast(const Bytes& bytes) {
 
   auto shared_bytes = make_shared<Bytes>(bytes);
 
+  //LOG_("sending to ", str_from_range(_broadcast_routing_table->get_targets(source)));
+
   // Rebroadcast
   for (const auto& id : _broadcast_routing_table->get_targets(source)) {
     auto node = find_node(id);
