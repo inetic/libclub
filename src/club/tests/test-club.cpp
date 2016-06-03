@@ -580,8 +580,7 @@ BOOST_AUTO_TEST_CASE(club_manual_clique) {
 
   io_service ios;
 
-  //size_t node_count = 3 + std::rand() % 5;
-  size_t node_count = 6;
+  size_t node_count = 3 + std::rand() % 5;
 
   auto on_finish = [&](vector<HubPtr> hubs) {
     BOOST_REQUIRE(hubs.size() == node_count);
