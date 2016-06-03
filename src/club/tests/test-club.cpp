@@ -482,7 +482,7 @@ void construct_network( io_service& ios
 
     State(io_service& ios, G&& graph, size_t node_count)
       : hubs(make_hubs(ios, node_count))
-      , insert_countdown(graph.edge_count() * 2)
+      , insert_countdown(graph.nodes.size() * (graph.nodes.size() - 1))
       , fuse_countdown(graph.edge_count() * 2)
       , graph(move(graph))
       , edge_i(this->graph.edges)
