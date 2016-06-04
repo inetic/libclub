@@ -17,7 +17,6 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/variant.hpp>
 #include <club/uuid.h>
-#include "vector_clock.h"
 #include "message.h"
 
 namespace club {

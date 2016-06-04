@@ -17,6 +17,7 @@
 
 #include <map>
 #include <boost/signals2.hpp>
+#include <boost/container/flat_map.hpp>
 #include <binary/decoder.h>
 
 #include "club/graph.h"
@@ -24,7 +25,6 @@
 #include "club/node_impl.h"
 
 #include "socket.h"
-#include "vector_clock.h"
 #include "log.h"
 
 namespace club {

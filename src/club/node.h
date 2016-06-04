@@ -20,7 +20,6 @@
 #include "socket.h"
 #include "club/hub.h"
 #include "message.h"
-#include "vector_clock.h"
 #include "net/any_size.h"
 #include "debug/string_tools.h"
 
