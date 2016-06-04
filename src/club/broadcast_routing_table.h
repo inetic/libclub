@@ -77,16 +77,22 @@ BroadcastRoutingTable::recalculate( const Graph<uuid>& graph
   set<uuid> visited;
   set<uuid> to_visit{source};
 
-  while (visited.count(_my_id) == 0) {
+  while (!to_visit.empty()) {
     set<uuid> new_to_visit;
 
     for (auto id : to_visit) {
       visited.insert(id);
 
+      if (id == _my_id) {
+        visited.insert(new_to_visit.begin(), new_to_visit.end());
+        goto finish;
+      }
+
       auto peers_i = graph.edges.find(id);
 
       if (peers_i == graph.edges.end()) continue;
       for (const auto& peer_id : peers_i->second) {
+        if (visited.count(peer_id)) continue;
         new_to_visit.insert(peer_id);
       }
     }
@@ -94,6 +100,7 @@ BroadcastRoutingTable::recalculate( const Graph<uuid>& graph
     to_visit = std::move(new_to_visit);
   }
 
+finish:
   auto my_peers_i = graph.edges.find(_my_id);
 
   Set<uuid> retval;
@@ -106,6 +113,10 @@ BroadcastRoutingTable::recalculate( const Graph<uuid>& graph
       retval.insert(peer);
     }
   }
+
+  //std::cout << "source " << source
+  //          << ": " << _my_id << " -> {" << str_from_range(retval) << "}"
+  //          << std::endl;
 
   return retval;
 }

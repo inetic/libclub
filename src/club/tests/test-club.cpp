@@ -1342,6 +1342,21 @@ BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
 
   club::Graph<size_t> graph;
 
+  //TODO: Make random connected graph to test on.
+
+  //----------------------------------------------
+  // Test case #1
+  //cout << " 3 - 2 " << endl;
+  //cout << " |   | " << endl;
+  //cout << " 0 - 1 " << endl;
+
+  //graph.add_edge(0, 1);
+  //graph.add_edge(1, 2);
+  //graph.add_edge(2, 3);
+  //graph.add_edge(3, 0);
+
+  //----------------------------------------------
+  // Test case #2
   //cout << "         5 - 6     " << endl;
   //cout << "         |   |     " << endl;
   //cout << " 0 - 1 - 2 - 3 - 4 " << endl;
@@ -1370,7 +1385,6 @@ BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
         auto id = hub->id();
         hub->on_receive_unreliable.connect(
           [&, id](club::hub::node, const_buffer b) {
-            //cout << id << " received " << endl;
             auto pair = receivers.insert(std::make_pair(id, 0));
 
             ++pair.first->second;
@@ -1385,7 +1399,6 @@ BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
       // One of them shall broadcast.
       size_t sender = rand() % hubs.size();
 
-      //cout << "sending from " << hubs[sender]->id() << endl;
       binary::dynamic_encoder<char> e;
       e.put<uint32_t>(sender);
 
@@ -1394,16 +1407,10 @@ BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
 
   ios.run();
 
-  // TODO: The following test doesn't currently pass.
-  //
-  ////Test that we're not sending more than we need.
-  //size_t receive_count = 0;
-
-  //for (const auto& pair : receivers) {
-  //  receive_count += pair.second;
-  //}
-
-  //BOOST_REQUIRE_EQUAL(receive_count, receivers.size());
+  // Test that we're not sending more than we need.
+  for (const auto& pair : receivers) {
+    BOOST_REQUIRE_EQUAL(pair.second, 1);
+  }
 }
 
 // -------------------------------------------------------------------
