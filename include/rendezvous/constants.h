@@ -30,6 +30,9 @@ static const uint32_t       COOKIE           = 0x3223B553;
 static const uint8_t METHOD_PING  = 0x00;
 static const uint8_t METHOD_MATCH = 0x01;
 
+static const uint8_t CLIENT_METHOD_FETCH = 0x00;
+static const uint8_t CLIENT_METHOD_CLOSE = 0x01;
+
 // Same as in the STUN RFC.
 static const uint8_t IPV4_TAG = 0x01;
 static const uint8_t IPV6_TAG = 0x02;

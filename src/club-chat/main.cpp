@@ -17,6 +17,7 @@
 #include <thread>
 #include <boost/program_options.hpp>
 #include <boost/asio/ip/udp.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <net/PL/ConnectedSocket.h>
 #include <rendezvous/client.h>
 #include <club/hub.h>
@@ -38,8 +39,11 @@ namespace ip = boost::asio::ip;
 namespace asio = boost::asio;
 
 //------------------------------------------------------------------------------
-// TODO: This should be in a nice object instead of it being a global variable.
-std::set<club::uuid> members;
+struct Chat {
+  std::set<club::uuid> members;
+  std::unique_ptr<rendezvous::client> rendezvous_client;
+  std::unique_ptr<ConnectedSocket> socket_ptr;
+} chat;
 
 //------------------------------------------------------------------------------
 static const uint32_t CHAT_SERVICE_NUMBER = 9124016;
@@ -103,53 +107,54 @@ udp::socket create_socket(asio::io_service& ios, uint16_t preferred_port) {
 }
 
 //------------------------------------------------------------------------------
-std::unique_ptr<rendezvous::client> rendezvous_client;
 
 void start_fetching_peers( unique_ptr<club::hub>& hub
                          , uint16_t local_port
                          , udp::endpoint server_ep) {
-  if (rendezvous_client) return;
-  if (!is_max_id(hub->id(), members)) return;
+  if (chat.rendezvous_client) return;
+  if (!is_max_id(hub->id(), chat.members)) return;
 
   cout << "start fetching peers" << endl;
 
   udp::socket socket = create_socket(hub->get_io_service(), local_port);
 
-  rendezvous_client = make_unique<rendezvous::client>
+  chat.rendezvous_client = make_unique<rendezvous::client>
     ( CHAT_SERVICE_NUMBER // Service number
     , move(socket)
     , server_ep
     , [&, server_ep, local_port]( Error error
                                 , udp::socket socket
                                 , udp::endpoint remote_ep) {
-      rendezvous_client.reset();
+      chat.rendezvous_client.reset();
 
       if (error) {
-        cout << "Rendezvous error: " << error.message() << endl;
+        if (error != boost::asio::error::operation_aborted) {
+          cout << "Rendezvous error: " << error.message() << endl;
+        }
         return hub.reset();
       }
 
-      auto socket_ptr = make_shared<ConnectedSocket>(move(socket));
+      chat.socket_ptr.reset(new ConnectedSocket(move(socket)));
 
-      socket_ptr->async_p2p_connect
+      chat.socket_ptr->async_p2p_connect
         ( 5000
         , udp::endpoint()
         , remote_ep
-        , [&, socket_ptr, server_ep, local_port]( Error error
-                                                , udp::endpoint
-                                                , udp::endpoint) {
+        , [&, server_ep, local_port]( Error error
+                                    , udp::endpoint
+                                    , udp::endpoint) {
           if (error) {
             cout << "Connect error: " << error.message() << endl;
             return hub.reset();
           }
 
-          hub->fuse( move(*socket_ptr)
+          hub->fuse( move(*chat.socket_ptr)
                    , [&hub, server_ep, local_port](Error error, club::uuid id) {
               if (error) {
                 cout << "Fuse error: " << error.message() << endl;
                 return hub.reset();
               }
-              members.insert(id);
+              chat.members.insert(id);
               start_fetching_peers(hub, local_port, server_ep);
               });
           });
@@ -197,7 +202,7 @@ int main(int argc, const char* argv[]) {
 
   hub->on_insert.connect([](std::set<club::hub::node> nodes) {
       for (auto node : nodes) {
-        members.insert(node.id());
+        chat.members.insert(node.id());
         cout << node.id() << " joined the club" << endl;
       }
     });
@@ -205,12 +210,12 @@ int main(int argc, const char* argv[]) {
   hub->on_remove.connect([=, &hub](std::set<club::hub::node> nodes) {
       bool lost_max_id = false;
       for (auto node : nodes) {
-        members.erase(node.id());
-        if (is_max_id(node.id(), members)) {
+        chat.members.erase(node.id());
+        if (is_max_id(node.id(), chat.members)) {
           lost_max_id = true;
         }
       }
-      if (lost_max_id && is_max_id(hub->id(), members)) {
+      if (lost_max_id && is_max_id(hub->id(), chat.members)) {
         start_fetching_peers(hub, local_port, rendezvous_server_ep);
       }
     });
@@ -219,9 +224,15 @@ int main(int argc, const char* argv[]) {
 
   start_fetching_peers(hub, local_port, rendezvous_server_ep);
 
-  ios.run();
+  boost::asio::signal_set signals(ios, SIGINT, SIGTERM);
 
-  cout << "Bye" << endl;
+  signals.async_wait([&hub](Error error, int signal_number) {
+      hub.reset();
+      chat.rendezvous_client.reset();
+      chat.socket_ptr.reset();
+    });
+
+  ios.run();
 }
 
 //------------------------------------------------------------------------------

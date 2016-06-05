@@ -69,6 +69,8 @@ private:
 public:
   using Service = uint32_t;
 
+  static uint16_t version() { return 1; }
+
   client( Service service_number
         , udp::socket
         , udp::endpoint server_ep
@@ -87,7 +89,8 @@ private:
   void on_recv(StatePtr, Error, size_t);
   void on_send(StatePtr);
 
-  std::vector<uint8_t> construct_message() const;
+  std::vector<uint8_t> construct_fetch_message() const;
+  std::vector<uint8_t> construct_close_message() const;
 
 private:
   Service _service_number;
@@ -112,7 +115,7 @@ client::client( Service service_number
   , _server_ep(server_ep)
   , _state(std::make_shared<State>(std::move(socket), std::move(handler)))
 {
-  _state->tx_buffer = construct_message();
+  _state->tx_buffer = construct_fetch_message();
 
   start_sending(_state);
   start_receiving(_state);
@@ -164,6 +167,7 @@ void client::on_recv(StatePtr state, Error error, size_t size) {
   plex[0] = (plex_and_version & (1 << 14)) != 0;
   plex[1] = (plex_and_version & (1 << 15)) != 0;
 
+  // TODO: Check version.
   if (plex != PLEX)           return start_receiving(move(state));
   if (cookie != COOKIE)       return start_receiving(move(state));
   if (method != METHOD_MATCH) return start_receiving(move(state));
@@ -227,11 +231,18 @@ client::~client() {
   std::lock_guard<std::mutex> guard(_state->mutex);
 
   _state->was_destroyed = true;
-  _state->socket.close();
+
+  if (_state->socket.is_open()) {
+    // Attempt to close gracefuly.
+    _state->socket.send_to( boost::asio::buffer(construct_close_message())
+                          , _server_ep);
+
+    _state->socket.close();
+  }
 }
 
 inline
-std::vector<uint8_t> client::construct_message() const {
+std::vector<uint8_t> client::construct_fetch_message() const {
   namespace ip = boost::asio::ip;
   ip::address internal_addr;
 
@@ -243,7 +254,8 @@ std::vector<uint8_t> client::construct_message() const {
 
   auto internal_port = _state->socket.local_endpoint().port();
 
-  uint16_t payload_size = sizeof(Service)
+  uint16_t payload_size = 1 /* method */
+                        + sizeof(Service)
                         + 2 /* port */
                         + 1 /* ipv */
                         + (internal_addr.is_v4() ? 4 : 16);
@@ -253,15 +265,15 @@ std::vector<uint8_t> client::construct_message() const {
 
   // Header
   uint16_t plex = 1 << 15;
-  uint16_t version = 1;
 
-  e.put((uint16_t) (plex | version));
+  e.put((uint16_t) (plex | version()));
   e.put((uint16_t) payload_size);
   e.put((uint32_t) COOKIE);
 
   assert(e.written() == HEADER_SIZE);
 
   // Payload
+  e.put((uint8_t) CLIENT_METHOD_FETCH);
   e.put((Service) _service_number); // Service
   e.put((uint16_t) internal_port);
 
@@ -273,6 +285,33 @@ std::vector<uint8_t> client::construct_message() const {
     e.put((uint8_t) IPV6_TAG);
     e.put(internal_addr.to_v6());
   }
+
+  assert(!e.error());
+  assert(e.written() == bytes.size());
+
+  return bytes;
+}
+
+inline
+std::vector<uint8_t> client::construct_close_message() const {
+  namespace ip = boost::asio::ip;
+
+  uint16_t payload_size = 1 /* method */;
+
+  Bytes bytes(HEADER_SIZE + payload_size);
+  binary::encoder e(bytes.data(), bytes.size());
+
+  // Header
+  uint16_t plex = 1 << 15;
+
+  e.put((uint16_t) (plex | version()));
+  e.put((uint16_t) payload_size);
+  e.put((uint32_t) COOKIE);
+
+  assert(e.written() == HEADER_SIZE);
+
+  // Payload
+  e.put((uint8_t) CLIENT_METHOD_CLOSE);
 
   assert(!e.error());
   assert(e.written() == bytes.size());

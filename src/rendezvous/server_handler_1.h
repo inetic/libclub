@@ -74,6 +74,8 @@ private:
             , udp::endpoint ep1_ext, udp::endpoint ep1_int
             , udp::endpoint ep2_ext, udp::endpoint ep2_int);
 
+  void forget(udp::endpoint from);
+
 private:
   StatePtr  _state;
   options   _options;
@@ -99,6 +101,16 @@ server_handler_1::server_handler_1( boost::asio::io_service& ios
 
 //------------------------------------------------------------------------------
 inline
+void server_handler_1::forget(udp::endpoint from) {
+  auto i = ep_to_service.find(from);
+  if (i != ep_to_service.end()) {
+    service_to_dms.erase(i->second);
+  }
+  ep_to_service.erase(i);
+}
+
+//------------------------------------------------------------------------------
+inline
 void server_handler_1::handle( udp::endpoint from
                              , binary::decoder d
                              , server& server) {
@@ -111,6 +123,26 @@ void server_handler_1::handle( udp::endpoint from
 
   if (_options.verbosity() > 2) {
     cout << "handler_1::handle(" << from << ")" << endl;
+  }
+
+  auto client_method = d.get<uint8_t>();
+
+  if (d.error()) {
+    if (_options.verbosity() > 0) {
+      cout << "Error parsing message from " << from << endl;
+    }
+    return;
+  }
+
+  switch (client_method) {
+    case CLIENT_METHOD_CLOSE: return forget(from);
+    case CLIENT_METHOD_FETCH: break; // Handled in the rest of this function.
+    default: {
+               if (_options.verbosity() > 0) {
+                 cout << "Invalid client method from " << from << endl;
+               }
+               return forget(from);
+             }
   }
 
   auto service = d.get<service_type>();
@@ -133,14 +165,14 @@ void server_handler_1::handle( udp::endpoint from
                      his_internal_ep = udp::endpoint(addr, his_internal_port);
                      break;
                    }
-    default: return;
+    default: return forget(from);
   }
 
   if (d.error()) {
     if (_options.verbosity() > 0) {
       cout << "Error parsing message from " << from << endl;
     }
-    return;
+    return forget(from);
   }
 
   auto ep_i = ep_to_service.find(from);
