@@ -39,14 +39,19 @@ namespace ip = boost::asio::ip;
 namespace asio = boost::asio;
 
 //------------------------------------------------------------------------------
-struct Chat {
-  std::set<club::uuid> members;
-  std::unique_ptr<rendezvous::client> rendezvous_client;
-  std::unique_ptr<ConnectedSocket> socket_ptr;
-} chat;
+// A made up magic number, every service (chat, VoIP, particular game,...)
+// should choose a unique number.
+static const uint32_t CHAT_SERVICE_NUMBER = 9124016;
 
 //------------------------------------------------------------------------------
-static const uint32_t CHAT_SERVICE_NUMBER = 9124016;
+udp::socket create_socket(asio::io_service& ios, uint16_t preferred_port) {
+  try {
+    return udp::socket(ios, udp::endpoint(udp::v4(), preferred_port));
+  }
+  catch(...) {
+    return udp::socket(ios, udp::endpoint(udp::v4(), 0));
+  }
+}
 
 //------------------------------------------------------------------------------
 static udp::endpoint resolve(asio::io_service& ios, const string& str) {
@@ -75,94 +80,135 @@ static udp::endpoint resolve(asio::io_service& ios, const string& str) {
 }
 
 //------------------------------------------------------------------------------
-
-void start_reading_input(club::hub& hub) {
-  std::thread([&hub]() {
-      for (string line; std::getline(std::cin, line);) {
-        hub.get_io_service().post([&hub, line]() {
-            hub.total_order_broadcast(vector<char>(line.begin(), line.end()));
-            });
-      }
-      }).detach();
-}
+struct Options {
+  uint16_t      local_port;
+  udp::endpoint server_endpoint;
+};
 
 //------------------------------------------------------------------------------
-bool is_max_id(club::uuid id, const std::set<club::uuid>& members) {
-  for (auto& n_id : members) {
-    if (id < n_id) {
-      return false;
-    }
+struct Chat {
+  asio::io_service&                   io_service;
+  Options                             options;
+  unique_ptr<club::hub>               hub;
+  std::set<club::uuid>                members;
+  std::unique_ptr<rendezvous::client> rendezvous_client;
+  std::unique_ptr<ConnectedSocket>    socket_ptr;
+
+  Chat(asio::io_service& ios, const Options& options)
+    : io_service(ios)
+    , options(options)
+    , hub(make_unique<club::hub>(ios))
+  {
+    init_callbacks();
+    start_fetching_peers();
   }
-  return true;
-}
 
-//------------------------------------------------------------------------------
-udp::socket create_socket(asio::io_service& ios, uint16_t preferred_port) {
-  try {
-    return udp::socket(ios, udp::endpoint(udp::v4(), preferred_port));
-  }
-  catch(...) {
-    return udp::socket(ios, udp::endpoint(udp::v4(), 0));
-  }
-}
-
-//------------------------------------------------------------------------------
-
-void start_fetching_peers( unique_ptr<club::hub>& hub
-                         , uint16_t local_port
-                         , udp::endpoint server_ep) {
-  if (chat.rendezvous_client) return;
-  if (!is_max_id(hub->id(), chat.members)) return;
-
-  cout << "start fetching peers" << endl;
-
-  udp::socket socket = create_socket(hub->get_io_service(), local_port);
-
-  chat.rendezvous_client = make_unique<rendezvous::client>
-    ( CHAT_SERVICE_NUMBER // Service number
-    , move(socket)
-    , server_ep
-    , [&, server_ep, local_port]( Error error
-                                , udp::socket socket
-                                , udp::endpoint remote_ep) {
-      chat.rendezvous_client.reset();
-
-      if (error) {
-        if (error != boost::asio::error::operation_aborted) {
-          cout << "Rendezvous error: " << error.message() << endl;
-        }
-        return hub.reset();
-      }
-
-      chat.socket_ptr.reset(new ConnectedSocket(move(socket)));
-
-      chat.socket_ptr->async_p2p_connect
-        ( 5000
-        , udp::endpoint()
-        , remote_ep
-        , [&, server_ep, local_port]( Error error
-                                    , udp::endpoint
-                                    , udp::endpoint) {
-          if (error) {
-            cout << "Connect error: " << error.message() << endl;
-            return hub.reset();
-          }
-
-          hub->fuse( move(*chat.socket_ptr)
-                   , [&hub, server_ep, local_port](Error error, club::uuid id) {
-              if (error) {
-                cout << "Fuse error: " << error.message() << endl;
-                return hub.reset();
-              }
-              chat.members.insert(id);
-              start_fetching_peers(hub, local_port, server_ep);
-              });
-          });
+  void init_callbacks() {
+    hub->on_receive.connect([](club::hub::node node, const vector<char>& data) {
+        cout << node.id() << ": " << string(data.begin(), data.end()) << endl;
       });
+
+    hub->on_insert.connect([this](std::set<club::hub::node> nodes) {
+        for (auto node : nodes) {
+          members.insert(node.id());
+          cout << node.id() << " joined the club" << endl;
+        }
+      });
+
+    hub->on_remove.connect([=](std::set<club::hub::node> nodes) {
+        bool lost_leader = false;
+        for (auto node : nodes) {
+          cout << node.id() << " left" << endl;
+
+          members.erase(node.id());
+
+          if (is_leader(node.id())) lost_leader = true;
+        }
+        if (lost_leader && is_leader(hub->id())) {
+          start_fetching_peers();
+        }
+      });
+  }
+
+  void start_fetching_peers() {
+    if (rendezvous_client) return;
+    if (!is_leader(hub->id())) return;
+
+    cout << "start fetching peers" << endl;
+
+    udp::socket socket = create_socket( hub->get_io_service()
+                                      , options.local_port);
+
+    rendezvous_client = make_unique<rendezvous::client>
+      ( CHAT_SERVICE_NUMBER
+      , move(socket)
+      , options.server_endpoint
+      , [=](Error error, udp::socket socket, udp::endpoint remote_ep) {
+        rendezvous_client.reset();
+
+        if (error) {
+          if (error != boost::asio::error::operation_aborted) {
+            cout << "Rendezvous error: " << error.message() << endl;
+          }
+          return stop();
+        }
+
+        socket_ptr.reset(new ConnectedSocket(move(socket)));
+
+        socket_ptr->async_p2p_connect
+          ( 5000 // Timeout in milliseconds
+          , udp::endpoint()
+          , remote_ep
+          , [&](Error error, udp::endpoint, udp::endpoint) {
+            if (error) {
+              if (error != asio::error::operation_aborted) {
+                cout << "Connect error: " << error.message() << endl;
+                return start_fetching_peers();
+              }
+              return stop();
+            }
+
+            hub->fuse( move(*socket_ptr)
+                     , [&](Error error, club::uuid id) {
+                         if (error) {
+                           cout << "Fuse error: " << error.message() << endl;
+                           return stop();
+                         }
+                         members.insert(id);
+                         start_fetching_peers();
+                       });
+            });
+        });
+  }
+
+  void stop() {
+    hub.reset();
+    rendezvous_client.reset();
+    socket_ptr.reset();
+  }
+
+  bool is_leader(club::uuid id) {
+    if (members.empty()) return true;
+    return *members.rbegin() <= id;
+  }
+};
+
+//------------------------------------------------------------------------------
+void start_reading_input(Chat& chat) {
+  std::thread([&chat]() {
+      for (string line; std::getline(std::cin, line);) {
+        chat.io_service.post([&chat, line]() {
+            if (auto& hub = chat.hub) {
+              hub->total_order_broadcast(vector<char>(line.begin(), line.end()));
+            }
+          });
+      }
+    }).detach();
 }
 
 //------------------------------------------------------------------------------
 int main(int argc, const char* argv[]) {
+  // Parse options
   po::options_description desc("Options");
 
   desc.add_options()
@@ -190,46 +236,30 @@ int main(int argc, const char* argv[]) {
     local_port = vm["port"].as<uint16_t>();
   }
 
+  udp::endpoint rendezvous_server;
+
   asio::io_service ios;
 
-  auto rendezvous_server_ep = resolve(ios, vm["rendezvous"].as<string>());
+  try {
+    rendezvous_server = resolve(ios, vm["rendezvous"].as<string>());
+  }
+  catch(const std::exception& e) {
+    cout << "Error: " << e.what() << endl;
+    return 2;
+  }
 
-  auto hub = make_unique<club::hub>(ios);
+  // Start the chat service.
+  Options options{local_port, rendezvous_server};
 
-  hub->on_receive.connect([](club::hub::node node, const std::vector<char>& data) {
-      cout << node.id() << ": " << string(data.begin(), data.end()) << endl;
-    });
+  Chat chat(ios, options);
 
-  hub->on_insert.connect([](std::set<club::hub::node> nodes) {
-      for (auto node : nodes) {
-        chat.members.insert(node.id());
-        cout << node.id() << " joined the club" << endl;
-      }
-    });
+  start_reading_input(chat);
 
-  hub->on_remove.connect([=, &hub](std::set<club::hub::node> nodes) {
-      bool lost_max_id = false;
-      for (auto node : nodes) {
-        chat.members.erase(node.id());
-        if (is_max_id(node.id(), chat.members)) {
-          lost_max_id = true;
-        }
-      }
-      if (lost_max_id && is_max_id(hub->id(), chat.members)) {
-        start_fetching_peers(hub, local_port, rendezvous_server_ep);
-      }
-    });
-
-  start_reading_input(*hub);
-
-  start_fetching_peers(hub, local_port, rendezvous_server_ep);
-
+  // Capture these signals so that we can disconnect gracefuly.
   boost::asio::signal_set signals(ios, SIGINT, SIGTERM);
 
-  signals.async_wait([&hub](Error error, int signal_number) {
-      hub.reset();
-      chat.rendezvous_client.reset();
-      chat.socket_ptr.reset();
+  signals.async_wait([&](Error error, int signal_number) {
+      chat.stop();
     });
 
   ios.run();
