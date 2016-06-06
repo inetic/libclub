@@ -91,7 +91,7 @@ include_directories(
   "${Boost_INCLUDE_DIR}"
   "${CMAKE_SOURCE_DIR}/include")
 
-file(GLOB sources "${CMAKE_SOURCE_DIR}/src/club-chat/main.cpp")
+file(GLOB sources "${CMAKE_SOURCE_DIR}/demo/club-chat.cpp")
 
 add_executable(club-chat ${sources})
 target_link_libraries(club-chat ${Boost_LIBRARIES} club)
