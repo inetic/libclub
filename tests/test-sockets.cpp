@@ -18,7 +18,7 @@
 #include <iostream>
 #include "club/hub.h"
 #include "when_all.h"
-#include "async_while.h"
+#include "async_loop.h"
 #include "make_connected_sockets.h"
 
 using namespace net;
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
       WhenAll when_all;
 
       auto on_send = when_all.make_continuation();
-      async_while([&tx_bytes, s1, on_send] (unsigned int i, Cont cont) {
+      async_loop([&tx_bytes, s1, on_send] (unsigned int i, Cont cont) {
           if (i == N) { return on_send(); }
 
           tx_bytes = generate_buffer(i, buf_size);
@@ -186,8 +186,8 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
           });
 
       auto on_receive = when_all.make_continuation();
-      async_while([&rx_bytes, &tx_bytes, s2, on_receive]
-                  (unsigned int i, Cont cont) {
+      async_loop([&rx_bytes, &tx_bytes, s2, on_receive]
+                 (unsigned int i, Cont cont) {
           if (i == N) { return on_receive(); }
 
           s2->async_receive( asio::buffer(rx_bytes)
@@ -283,7 +283,7 @@ BOOST_AUTO_TEST_CASE(sockets_exchange_N_times) {
         auto rx_bytes = make_shared<Bytes>(buf_size);
 
         auto on_send = when_all.make_continuation();
-        async_while([s, on_send, tx_bytes](unsigned int i, Cont cont) {
+        async_loop([s, on_send, tx_bytes](unsigned int i, Cont cont) {
             if (i == N) return on_send();
 
             *tx_bytes = generate_buffer(i, buf_size);
@@ -297,8 +297,8 @@ BOOST_AUTO_TEST_CASE(sockets_exchange_N_times) {
           });
 
         auto on_receive = when_all.make_continuation();
-        async_while([s, on_receive, rx_bytes]
-                    (unsigned int i, Cont cont) {
+        async_loop([s, on_receive, rx_bytes]
+                   (unsigned int i, Cont cont) {
             if (i == N) return on_receive();
 
             s->async_receive( asio::buffer(*rx_bytes)
@@ -363,7 +363,7 @@ BOOST_AUTO_TEST_CASE(sockets_make_networks) {
   size_t min = 2;
   size_t max = 20;
 
-  async_while([&](unsigned int i, Cont cont) {
+  async_loop([&](unsigned int i, Cont cont) {
       if (i+min == max) {
         finished = true;
         return;

@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __ASYNC_WHILE_H__
-#define __ASYNC_WHILE_H__
+#ifndef __ASYNC_LOOP_H__
+#define __ASYNC_LOOP_H__
 
 using Cont = std::function<void()>;
 
-template<class Handler> void async_while_(unsigned int i, Handler h) {
+template<class Handler> void async_loop_(unsigned int i, Handler h) {
   auto j = i + 1;
-  h(i, [h, j]() { async_while_(j, std::move(h)); });
+  h(i, [h, j]() { async_loop_(j, std::move(h)); });
 }
 
-template<class Handler> void async_while(Handler h) {
-  async_while_(0, std::move(h));
+template<class Handler> void async_loop(Handler h) {
+  async_loop_(0, std::move(h));
 }
 
-#endif // ifndef __ASYNC_WHILE_H__
+#endif // ifndef __ASYNC_LOOP_H__

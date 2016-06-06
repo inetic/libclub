@@ -20,7 +20,6 @@
 #include <iostream>
 #include <boost/asio.hpp>
 #include "../club/stun-client.h"
-#include "async_while.h"
 
 using std::cout;
 using std::endl;

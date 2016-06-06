@@ -83,7 +83,7 @@ template<class H> void make_n_connected_socket_pairs
 
   auto pairs = make_shared<vector<pair<SocketPtr, SocketPtr>>>();
 
-  async_while([=, &ios](unsigned int i, Cont cont) {
+  async_loop([=, &ios](unsigned int i, Cont cont) {
       if (i == n) return handler(move(*pairs));
 
       make_connected_sockets(ios, [=](SocketPtr s1, SocketPtr s2) {

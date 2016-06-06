@@ -23,7 +23,7 @@
 #include <club/hub.h>
 #include <club/graph.h>
 #include "when_all.h"
-#include "async_while.h"
+#include "async_loop.h"
 #include "make_connected_sockets.h"
 #include "binary/dynamic_encoder.h"
 #include "binary/decoder.h"
@@ -281,7 +281,7 @@ void consecutive_fusions(const size_t N) {
   //Debugger d;
   //d.map(hubs);
 
-  async_while([&](unsigned int i, Cont cont) {
+  async_loop([&](unsigned int i, Cont cont) {
     if (i == 0) return cont();
 
     if (i == N) {
@@ -381,7 +381,7 @@ void fuse_n_hubs( boost::asio::io_service& ios
     cs->push_back(c2);
   }
 
-  async_while([&ios, &hubs, N](unsigned int i, Cont cont) {
+  async_loop([&ios, &hubs, N](unsigned int i, Cont cont) {
     if (i == 0) return cont();
     if (i == N) return;
 
@@ -521,7 +521,7 @@ void construct_network( io_service& ios
     state->connections.push_back(move(c));
   }
 
-  async_while([=, &ios](unsigned int i, Cont cont) {
+  async_loop([=, &ios](unsigned int i, Cont cont) {
       if (state->edge_i.is_end()) {
         return on_event();
       }
@@ -1269,7 +1269,7 @@ BOOST_AUTO_TEST_CASE(club_stress_fuse) {
   construct_network(ios, clique_graph(hub_size_1), [&](vector<HubPtr> hs) {
       hubs1 = move(hs);
 
-      async_while([&](unsigned int i, Cont cont) {
+      async_loop([&](unsigned int i, Cont cont) {
           if (i == N) {
             hubs1.clear();
             hubs2.clear();
