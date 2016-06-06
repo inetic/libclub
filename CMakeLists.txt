@@ -35,7 +35,7 @@ include_directories(
   "${CMAKE_SOURCE_DIR}/include"
   "${CMAKE_SOURCE_DIR}/src/club")
 
-file(GLOB sources "${CMAKE_SOURCE_DIR}/src/club/tests/*.cpp")
+file(GLOB sources "${CMAKE_SOURCE_DIR}/tests/*.cpp")
 
 add_executable(club-tests ${sources})
 target_link_libraries(club-tests ${Boost_LIBRARIES} club)
