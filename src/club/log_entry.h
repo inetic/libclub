@@ -23,16 +23,12 @@ namespace club {
 
 struct LogEntry {
   //----------------------------------------------------------------------------
-  typedef std::function<void(const LogEntry&)> OnCommit;
-
-  //----------------------------------------------------------------------------
   // This entry may be committed only after these conditions are met:
   //   * quorum == (acks | map_keys)
   //   * predecessors is empty or predecessors.back() is the last message
   //     we've committed.
   std::map<MessageId, uuid> predecessors;
   LogMessage                message;
-  OnCommit                  on_commit;
 
   std::set<uuid> quorum;
   std::map<uuid, AckData> acks;
@@ -40,12 +36,17 @@ struct LogEntry {
 
   //----------------------------------------------------------------------------
   template<class M>
-  LogEntry(M message, OnCommit&& on_commit)
+  LogEntry(M message)
     : message(std::move(message))
-    , on_commit(std::move(on_commit))
   {
     quorum.insert(::club::original_poster(message));
   }
+
+  LogEntry(LogEntry&&) = default;
+  LogEntry& operator=(LogEntry&&) = default;
+
+  LogEntry(const LogEntry&) = delete;
+  LogEntry& operator=(const LogEntry&) = delete;
 
   bool acked_by_quorum(const std::set<uuid>&) const;
   bool acked_by_quorum() const;

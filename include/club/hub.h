@@ -84,28 +84,28 @@ private:
   void on_recv_raw(Node&, const Bytes&);
   void node_received_unreliable_broadcast(const Bytes& bytes);
 
-  template<class Message> void on_recv(Node&, Message&);
+  template<class Message> void on_recv(Node&, Message);
   template<class Message> void parse_message(Node&, binary::decoder&);
 
-  void process(Node&, const Fuse&);
-  void process(Node&, const Sync&);
-  void process(Node&, const PortOffer&);
-  void process(Node&, const UserData&);
-  void process(Node&, const Ack&);
+  void process(Node&, Fuse);
+  void process(Node&, Sync);
+  void process(Node&, PortOffer);
+  void process(Node&, UserData);
+  void process(Node&, Ack);
 
   void commit_what_was_seen_by_everyone();
 
   void on_peer_connected(const Node&);
   void on_peer_disconnected(const Node&, std::string reason);
 
-  template<class Message, class OnCommit /* void () */>
-  void add_log_entry(const Message&, OnCommit&&);
+  template<class Message>
+  void add_log_entry(Message);
 
   void on_commit_fuse(const Fuse&, const LogEntry&);
 
   template<class Message, class... Args> Message construct(Args&&...);
   template<class Message, class... Args> Message construct_ackable(Args&&... args);
-  template<class Message> Ack construct_ack(const Message&);
+  Ack construct_ack(const MessageId&);
 
   void broadcast_port_offer_to(Node&, Address addr);
 
@@ -124,6 +124,10 @@ private:
   std::set<uuid> remove_connection(uuid from, uuid to);
 
   boost::container::flat_set<uuid> local_quorum() const;
+
+  void commit(LogEntry&& entry);
+  void commit_user_data(uuid op, std::vector<char>&&);
+  void commit_fuse(Fuse&&, LogEntry&&);
 
 private:
   boost::asio::io_service&               _io_service;

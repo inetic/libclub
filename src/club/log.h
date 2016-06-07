@@ -84,15 +84,16 @@ inline void Log::insert_entry(LogEntry&& entry_) {
   // Setup predecessors.
   entry.predecessors[last_committed] = last_commit_op;
 
+  auto op_id = entry.original_poster();
+
   if (entry_i != begin()) {
     auto& prev_entry = std::prev(entry_i)->second.message;
-    entry.predecessors[message_id(prev_entry)] = entry.original_poster();
+    entry.predecessors[message_id(prev_entry)] = op_id;
   }
 
   if (next(entry_i) != end()) {
     auto& next_entry = std::next(entry_i)->second;
-    next_entry.predecessors[message_id(entry.message)]
-      = entry.original_poster();
+    next_entry.predecessors[message_id(entry.message)] = op_id;
   }
 
   //------------------------------------------------------------------
@@ -108,6 +109,9 @@ inline void Log::insert_entry(LogEntry&& entry_) {
       apply_ack(pair.first, move(pair.second));
     }
   }
+
+  //------------------------------------------------------------------
+  apply_ack(op_id, std::move(ack_data(entry.message)));
 }
 
 //------------------------------------------------------------------------------

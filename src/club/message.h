@@ -342,13 +342,11 @@ template<class M> const MessageId& config_id(const M& msg) {
 
 //------------------------------------------------------------------------------
 using LogMessage = boost::variant< Fuse
-                                 , PortOffer
                                  , UserData >;
 
 inline
 MessageType message_type(const LogMessage& message) {
   return match(message, [](const Fuse&)           { return fuse; }
-                      , [](const PortOffer&)      { return port_offer; }
                       , [](const UserData&)       { return user_data; });
 }
 
@@ -356,7 +354,6 @@ inline
 uuid original_poster(const LogMessage& message) {
   return match( message
               , [](const Fuse& m)           { return original_poster(m); }
-              , [](const PortOffer& m)      { return original_poster(m); }
               , [](const UserData& m)       { return original_poster(m); });
 }
 
@@ -365,7 +362,6 @@ MessageId message_id(const LogMessage& message) {
   MessageId ret;
   match( message
        , [&](const Fuse& m)           { ret = message_id(m); }
-       , [&](const PortOffer& m)      { ret = message_id(m); }
        , [&](const UserData& m)       { ret = message_id(m); });
   return ret;
 }
@@ -375,9 +371,17 @@ MessageId config_id(const LogMessage& message) {
   MessageId ret;
   match( message
        , [&](const Fuse& m)           { ret = config_id(m); }
-       , [&](const PortOffer& m)      { ret = config_id(m); }
        , [&](const UserData& m)       { ret = config_id(m); });
   return ret;
+}
+
+inline
+AckData& ack_data(LogMessage& message) {
+  AckData* ret;
+  match( message
+       , [&](const Fuse& m)      { ret = &const_cast<AckData&>(m.ack_data); }
+       , [&](const UserData& m)  { ret = &const_cast<AckData&>(m.ack_data); });
+  return *ret;
 }
 
 //------------------------------------------------------------------------------

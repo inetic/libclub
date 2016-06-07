@@ -185,11 +185,10 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
 
 // -----------------------------------------------------------------------------
 void hub::total_order_broadcast(Bytes data) {
-  auto msg = make_shared<UserData>(construct_ackable<UserData>(move(data)));
+  auto msg = construct_ackable<UserData>(move(data));
 
-  add_log_entry(*msg, [=](const LogEntry&) {
-        on_receive(hub::node{_id}, msg->data);
-        });
+  broadcast(msg);
+  add_log_entry(move(msg));
 
   auto was_destroyed = _was_destroyed;
 
@@ -197,8 +196,6 @@ void hub::total_order_broadcast(Bytes data) {
       if (*was_destroyed) return;
       commit_what_was_seen_by_everyone();
       });
-
-  broadcast(*msg);
 }
 
 // -----------------------------------------------------------------------------
@@ -215,50 +212,48 @@ void hub::on_peer_connected(const Node& node) {
 // -----------------------------------------------------------------------------
 void hub::on_peer_disconnected(const Node& node, std::string reason) {
   auto fuse_msg = construct_ackable<Fuse>(node.id);
-  add_log_entry(fuse_msg, [=](const LogEntry& entry) { on_commit_fuse(fuse_msg, entry); });
   broadcast(fuse_msg);
+  add_log_entry(move(fuse_msg));
   commit_what_was_seen_by_everyone();
 }
 
 // -----------------------------------------------------------------------------
-void hub::process(Node&, Ack const& msg) {
-  _log.apply_ack(original_poster(msg), msg.data);
+void hub::process(Node&, Ack msg) {
+  _log.apply_ack(original_poster(msg), move(msg.data));
 }
 
 // -----------------------------------------------------------------------------
-void hub::process(Node& op, const Sync& msg) {
+void hub::process(Node& op, Sync msg) {
   auto fuse_msg = construct_ackable<Fuse>(original_poster(msg));
   
   broadcast(fuse_msg);
-  
-  add_log_entry(fuse_msg, [=](const LogEntry& entry) {
-      on_commit_fuse(fuse_msg, entry);
-      });
+  add_log_entry(move(fuse_msg));
 }
 
 // -----------------------------------------------------------------------------
-void hub::process(Node& op, const Fuse& msg) {
+void hub::process(Node& op, Fuse msg) {
   ASSERT(original_poster(msg) != _id);
 
-  add_log_entry(msg, [=](const LogEntry& entry) { on_commit_fuse(msg, entry); });
-  _log.apply_ack(original_poster(msg), msg.ack_data);
+  auto msg_id = message_id(msg);
+
+  add_log_entry(move(msg));
 
   auto fuse_entry = _log.find_highest_fuse_entry();
 
   if (fuse_entry) {
-    if (message_id(msg) >= message_id(fuse_entry->message)) {
-      broadcast(construct_ack(msg));
+    if (msg_id >= message_id(fuse_entry->message)) {
+      broadcast(construct_ack(msg_id));
       commit_what_was_seen_by_everyone();
     }
   }
   else {
-    broadcast(construct_ack(msg));
+    broadcast(construct_ack(msg_id));
     commit_what_was_seen_by_everyone();
   }
 }
 
 // -----------------------------------------------------------------------------
-void hub::process(Node& op, const PortOffer& msg) {
+void hub::process(Node& op, PortOffer msg) {
   if (msg.addressor != _id) { return; }
   LOG("Got port offer: ", msg);
   op.set_remote_port( msg.internal_port
@@ -266,14 +261,9 @@ void hub::process(Node& op, const PortOffer& msg) {
 }
 
 // -----------------------------------------------------------------------------
-void hub::process(Node&, const UserData& msg) {
-  add_log_entry(msg, [=](const LogEntry&) {
-        // Node might have been removed, we don't want to commit that.
-        if (!find_node(original_poster(msg))) return;
-        on_receive(hub::node{original_poster(msg)}, msg.data);
-        });
-
-  _log.apply_ack(original_poster(msg), msg.ack_data);
+void hub::process(Node&, UserData msg) {
+  broadcast(construct_ack(message_id(msg)));
+  add_log_entry(move(msg));
 }
 
 // -----------------------------------------------------------------------------
@@ -338,7 +328,7 @@ void hub::on_commit_fuse(const Fuse& msg, const LogEntry& entry) {
 }
 
 // -----------------------------------------------------------------------------
-template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message& msg) {
+template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) {
 #if USE_LOG
 # define ON_RECV_LOG(...) \
    if (true || Message::type() == port_offer) { \
@@ -389,11 +379,11 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message& msg)
     broadcast(msg);
   }
 
-  if (Message::always_ack()) {
-    broadcast(construct_ack(msg));
-  }
+  //if (Message::always_ack()) {
+  //  broadcast(construct_ack(msg));
+  //}
 
-  if (destroys_this([&]() { process(*op, msg); })) {
+  if (destroys_this([&]() { process(*op, move(msg)); })) {
     return;
   }
 
@@ -405,7 +395,9 @@ template<class Message>
 void hub::parse_message(Node& proxy, binary::decoder& decoder) {
   auto msg = decoder.get<Message>();
   if (decoder.error()) return;
-  on_recv<Message>(proxy, msg);
+  ASSERT(!msg.header.visited.empty());
+  on_recv<Message>(proxy, move(msg));
+  ASSERT(msg.header.visited.empty());
 }
 
 // -----------------------------------------------------------------------------
@@ -521,7 +513,9 @@ void hub::commit_what_was_seen_by_everyone() {
     _log.last_committed = message_id(e.message);
     _log.last_commit_op = original_poster(e.message);
 
-    e.on_commit(e);
+    //e.on_commit(e);
+    commit(move(e));
+    //ASSERT(e.quorum.empty());
 
     if (*was_destroyed) return;
   }
@@ -534,8 +528,8 @@ hub::~hub() {
 }
 
 // -----------------------------------------------------------------------------
-template<class Message, class OnCommit /* void (const LogEntry&) */>
-void hub::add_log_entry(const Message& message, OnCommit&& on_commit) {
+template<class Message>
+void hub::add_log_entry(Message message) {
   LOG("Adding entry for message: ", message);
 
   if(message_id(message) <= _log.last_committed) {
@@ -547,7 +541,7 @@ void hub::add_log_entry(const Message& message, OnCommit&& on_commit) {
     }
   }
 
-  _log.insert_entry(LogEntry(message, move(on_commit)));
+  _log.insert_entry(LogEntry(move(message)));
 }
 
 //------------------------------------------------------------------------------
@@ -578,9 +572,6 @@ Message hub::construct_ackable(Args&&... args) {
                    , move(predecessor_id)
                    , local_quorum() };
 
-  // We don't receive our own message back, so need to apply it manually.
-  _log.apply_ack(_id, ack_data);
-
   // TODO: m_id here is redundant, can be calculated from header.
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
@@ -593,12 +584,11 @@ Message hub::construct_ackable(Args&&... args) {
 }
 
 // -----------------------------------------------------------------------------
-template<class Msg>
-Ack hub::construct_ack(const Msg& msg) {
-  const auto& predecessor_id = _log.get_predecessor_time(message_id(msg));
+Ack hub::construct_ack(const MessageId& msg_id) {
+  const auto& predecessor_id = _log.get_predecessor_time(msg_id);
 
   auto ack = construct<Ack>
-             ( message_id(msg)
+             ( msg_id
              , predecessor_id
              , local_quorum());
 
@@ -850,4 +840,36 @@ const Node* hub::find_node(uuid id) const {
   return i->second.get();
 }
 
+// -----------------------------------------------------------------------------
+void hub::commit(LogEntry&& entry) {
+  struct Visitor {
+    hub& h;
+    LogEntry& entry;
+    Visitor(hub& h, LogEntry& entry) : h(h), entry(entry) {}
+    void operator () (Fuse& m)     const {
+      auto m_ = std::move(m);
+      h.commit_fuse(std::move(m_), std::move(entry));
+      //ASSERT(entry.quorum.empty());
+      //ASSERT(entry.lost.empty());
+      //ASSERT(m.header.visited.empty());
+    }
+    void operator () (PortOffer&)  const { ASSERT(0 && "TODO"); }
+    void operator () (UserData& m) const {
+      h.commit_user_data(original_poster(m), std::move(m.data));
+      //ASSERT(m.data.empty());
+    }
+  };
+  boost::apply_visitor(Visitor(*this, entry), entry.message);
+}
+
+inline
+void hub::commit_user_data(uuid op, std::vector<char>&& data) {
+  if (!find_node(op)) return;
+  on_receive(hub::node{op}, move(data));
+}
+
+inline
+void hub::commit_fuse(Fuse&& message, LogEntry&& entry) {
+  on_commit_fuse(move(message), move(entry));
+}
 // -----------------------------------------------------------------------------
