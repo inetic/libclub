@@ -282,7 +282,7 @@ static Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
 }
 
 // -----------------------------------------------------------------------------
-void hub::on_commit_fuse(const Fuse& msg, const LogEntry& entry) {
+void hub::on_commit_fuse(LogEntry entry) {
   if (!entry.acked_by_quorum()) return;
 
   set<hub::node> new_ones;
@@ -847,8 +847,7 @@ void hub::commit(LogEntry&& entry) {
     LogEntry& entry;
     Visitor(hub& h, LogEntry& entry) : h(h), entry(entry) {}
     void operator () (Fuse& m)     const {
-      auto m_ = std::move(m);
-      h.commit_fuse(std::move(m_), std::move(entry));
+      h.commit_fuse(std::move(entry));
       //ASSERT(entry.quorum.empty());
       //ASSERT(entry.lost.empty());
       //ASSERT(m.header.visited.empty());
@@ -869,7 +868,7 @@ void hub::commit_user_data(uuid op, std::vector<char>&& data) {
 }
 
 inline
-void hub::commit_fuse(Fuse&& message, LogEntry&& entry) {
-  on_commit_fuse(move(message), move(entry));
+void hub::commit_fuse(LogEntry&& entry) {
+  on_commit_fuse(move(entry));
 }
 // -----------------------------------------------------------------------------

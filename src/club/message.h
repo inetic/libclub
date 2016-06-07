@@ -164,6 +164,11 @@ struct Fuse {
   AckData ack_data;
   uuid   with; // The other node with whom the original_poster is fusing.
 
+  Fuse(const Fuse&) = delete;
+  Fuse(Fuse&&)      = default;
+  Fuse& operator=(const Fuse&) = delete;
+  Fuse& operator=(Fuse&&)      = default;
+
   Fuse() {}
   Fuse(Header header, AckData ack_data, uuid with)
     : header(std::move(header))
@@ -248,6 +253,11 @@ struct UserData {
   static MessageType type()      { return user_data; }
   static bool        always_ack() { return true; }
 
+  UserData(const UserData&) = delete;
+  UserData(UserData&&)      = default;
+  UserData& operator=(const UserData&) = delete;
+  UserData& operator=(UserData&&)      = default;
+
   UserData() {}
 
   UserData( Header header
@@ -285,6 +295,11 @@ struct Ack {
 
   static MessageType type()       { return ack; }
   static bool        always_ack() { return false; }
+
+  Ack(const Ack&) = delete;
+  Ack(Ack&&)      = default;
+  Ack& operator=(const Ack&) = delete;
+  Ack& operator=(Ack&&)      = default;
 
   Ack() {}
 
@@ -377,7 +392,7 @@ MessageId config_id(const LogMessage& message) {
 
 inline
 AckData& ack_data(LogMessage& message) {
-  AckData* ret;
+  AckData* ret = nullptr;
   match( message
        , [&](const Fuse& m)      { ret = &const_cast<AckData&>(m.ack_data); }
        , [&](const UserData& m)  { ret = &const_cast<AckData&>(m.ack_data); });

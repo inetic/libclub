@@ -101,7 +101,7 @@ private:
   template<class Message>
   void add_log_entry(Message);
 
-  void on_commit_fuse(const Fuse&, const LogEntry&);
+  void on_commit_fuse(LogEntry);
 
   template<class Message, class... Args> Message construct(Args&&...);
   template<class Message, class... Args> Message construct_ackable(Args&&... args);
@@ -127,7 +127,7 @@ private:
 
   void commit(LogEntry&& entry);
   void commit_user_data(uuid op, std::vector<char>&&);
-  void commit_fuse(Fuse&&, LogEntry&&);
+  void commit_fuse(LogEntry&&);
 
 private:
   boost::asio::io_service&               _io_service;
