@@ -32,12 +32,6 @@ using boost::system::error_code;
 using boost::asio::ip::udp;
 namespace asio = boost::asio;
 
-udp::endpoint address(std::string str, uint16_t port) {
-  return udp::endpoint
-           ( asio::ip::address::from_string(str)
-           , port);
-}
-
 struct Stun {
   std::string url;
   std::string port;

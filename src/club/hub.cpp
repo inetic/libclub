@@ -195,7 +195,7 @@ void hub::total_order_broadcast(Bytes data) {
   _io_service.post([=]() {
       if (*was_destroyed) return;
       commit_what_was_seen_by_everyone();
-      });
+    });
 }
 
 // -----------------------------------------------------------------------------
@@ -219,7 +219,7 @@ void hub::on_peer_disconnected(const Node& node, std::string reason) {
 
 // -----------------------------------------------------------------------------
 void hub::process(Node&, Ack msg) {
-  _log.apply_ack(original_poster(msg), move(msg.data));
+  _log.apply_ack(original_poster(msg), move(msg.ack_data));
 }
 
 // -----------------------------------------------------------------------------
@@ -358,7 +358,6 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) 
   }
 
   // Peers shouldn't broadcast to us back our own messages.
-  // This is achieved by the clock synchronization below.
   ASSERT(op_id != _id);
 
   if (op_id == _id) {
@@ -368,20 +367,10 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) 
 
   ON_RECV_LOG(msg);
 
-  // Clock synchronization must happen before the broadcast for us to
-  // not send it back to the sender.
-  //_clock |= time_created(msg);
-
   // Sync messages are direct between two peers.
   if (Message::type() != sync) {
-    // This re-broadcat must happen before we send the ACK so that the
-    // receiver always knows what is being acked.
     broadcast(msg);
   }
-
-  //if (Message::always_ack()) {
-  //  broadcast(construct_ack(msg));
-  //}
 
   if (destroys_this([&]() { process(*op, move(msg)); })) {
     return;
@@ -513,9 +502,7 @@ void hub::commit_what_was_seen_by_everyone() {
     _log.last_committed = message_id(e.message);
     _log.last_commit_op = original_poster(e.message);
 
-    //e.on_commit(e);
     commit(move(e));
-    //ASSERT(e.quorum.empty());
 
     if (*was_destroyed) return;
   }
@@ -568,11 +555,11 @@ Message hub::construct_ackable(Args&&... args) {
 
   const auto& predecessor_id = _log.get_predecessor_time(m_id);
 
+  // TODO: m_id here is redundant, can be calculated from header.
   AckData ack_data { move(m_id)
                    , move(predecessor_id)
                    , local_quorum() };
 
-  // TODO: m_id here is redundant, can be calculated from header.
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
                         , _time_stamp
@@ -593,7 +580,7 @@ Ack hub::construct_ack(const MessageId& msg_id) {
              , local_quorum());
 
   // We don't receive our own message back, so need to apply it manually.
-  _log.apply_ack(_id, ack.data);
+  _log.apply_ack(_id, ack.ack_data);
   return ack;
 }
 
@@ -616,8 +603,6 @@ template<class Message> void hub::broadcast(const Message& msg) {
       continue;
     }
 
-    // If we're sending a message to the OP there is probably something
-    // wrong with his clock.
     ASSERT(original_poster(msg) != node.id &&
            "Why are we sending the message back?");
 
@@ -666,8 +651,6 @@ void hub::node_received_unreliable_broadcast(const Bytes& bytes) {
 
   auto shared_bytes = make_shared<Bytes>(bytes);
 
-  //LOG_("sending to ", str_from_range(_broadcast_routing_table->get_targets(source)));
-
   // Rebroadcast
   for (const auto& id : _broadcast_routing_table->get_targets(source)) {
     auto node = find_node(id);
@@ -714,7 +697,7 @@ void hub::broadcast_port_offer_to(Node& node, Address addr) {
   auto node_id = node.id;
 
   if (addr.is_loopback()) {
-    // If the remote address in on our PC, then there is no need
+    // If the remote address is on our PC, then there is no need
     // to send him our external address.
     // TODO: Remove code duplication.
     // TODO: Similar optimization when the node is on local LAN.
@@ -846,18 +829,20 @@ void hub::commit(LogEntry&& entry) {
     hub& h;
     LogEntry& entry;
     Visitor(hub& h, LogEntry& entry) : h(h), entry(entry) {}
-    void operator () (Fuse& m)     const {
+
+    void operator () (Fuse& m) const {
       h.commit_fuse(std::move(entry));
-      //ASSERT(entry.quorum.empty());
-      //ASSERT(entry.lost.empty());
-      //ASSERT(m.header.visited.empty());
     }
-    void operator () (PortOffer&)  const { ASSERT(0 && "TODO"); }
+
+    void operator () (PortOffer&) const {
+      ASSERT(0 && "TODO");
+    }
+
     void operator () (UserData& m) const {
       h.commit_user_data(original_poster(m), std::move(m.data));
-      //ASSERT(m.data.empty());
     }
   };
+
   boost::apply_visitor(Visitor(*this, entry), entry.message);
 }
 

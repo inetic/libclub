@@ -236,12 +236,12 @@ int main(int argc, const char* argv[]) {
     local_port = vm["port"].as<uint16_t>();
   }
 
-  udp::endpoint rendezvous_server;
+  udp::endpoint rendezvous_server_ep;
 
   asio::io_service ios;
 
   try {
-    rendezvous_server = resolve(ios, vm["rendezvous"].as<string>());
+    rendezvous_server_ep = resolve(ios, vm["rendezvous"].as<string>());
   }
   catch(const std::exception& e) {
     cout << "Error: " << e.what() << endl;
@@ -249,7 +249,7 @@ int main(int argc, const char* argv[]) {
   }
 
   // Start the chat service.
-  Options options{local_port, rendezvous_server};
+  Options options{local_port, rendezvous_server_ep};
 
   Chat chat(ios, options);
 

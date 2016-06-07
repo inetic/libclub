@@ -291,7 +291,7 @@ inline std::ostream& operator<<(std::ostream& os, const UserData& msg) {
 //------------------------------------------------------------------------------
 struct Ack {
   Header         header;
-  AckData        data;
+  AckData        ack_data;
 
   static MessageType type()       { return ack; }
   static bool        always_ack() { return false; }
@@ -308,27 +308,27 @@ struct Ack {
      , MessageId                          prev_message_id
      , boost::container::flat_set<uuid>&& local_quorum)
     : header(std::move(header))
-    , data{ std::move(acked_message_id)
-          , std::move(prev_message_id)
-          , std::move(local_quorum) }
+    , ack_data{ std::move(acked_message_id)
+              , std::move(prev_message_id)
+              , std::move(local_quorum) }
   {
-    ASSERT(this->data.prev_message_id < this->data.acked_message_id);
+    ASSERT(this->ack_data.prev_message_id < this->ack_data.acked_message_id);
   }
 };
 
 template<typename Encoder>
 inline void encode(Encoder& e, const club::Ack& msg) {
-  ASSERT(msg.data.prev_message_id < msg.data.acked_message_id);
+  ASSERT(msg.ack_data.prev_message_id < msg.ack_data.acked_message_id);
 
   e.template put(msg.header);
-  e.template put(msg.data);
+  e.template put(msg.ack_data);
 }
 
 inline void decode(binary::decoder& d, club::Ack& msg) {
-  msg.header = d.get<Header>();
-  msg.data   = d.get<AckData>();
+  msg.header   = d.get<Header>();
+  msg.ack_data = d.get<AckData>();
 
-  if (!(msg.data.prev_message_id < msg.data.acked_message_id)) {
+  if (!(msg.ack_data.prev_message_id < msg.ack_data.acked_message_id)) {
     ASSERT(0);
     d.set_error();
   }
@@ -336,9 +336,9 @@ inline void decode(binary::decoder& d, club::Ack& msg) {
 
 inline std::ostream& operator<<(std::ostream& os, const Ack& msg) {
   return os << "(Ack " << msg.header
-            << " Of:" << msg.data.acked_message_id
-            << " Prev:" << msg.data.prev_message_id << ")"
-            << " LQ:{" << str_from_range(msg.data.local_quorum) << "}"
+            << " Of:" << msg.ack_data.acked_message_id
+            << " Prev:" << msg.ack_data.prev_message_id << ")"
+            << " LQ:{" << str_from_range(msg.ack_data.local_quorum) << "}"
             << ")";
 }
 
