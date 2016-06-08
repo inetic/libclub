@@ -225,9 +225,15 @@ int main(int argc, const char* argv[]) {
     return 0;
   }
 
+  string rendezvous_server_addr = "asyncwired.com";
+
   if (!vm.count("rendezvous")) {
-    cout << "The 'rendezvous' option must be set" << endl;
-    return 1;
+    cout << "The 'rendezvous' option was not set. Using "
+         << rendezvous_server_addr << " to find chat-club members."
+         << endl;
+  }
+  else {
+    rendezvous_server_addr = vm["rendezvous"].as<string>();
   }
 
   uint16_t local_port = 0;
@@ -241,7 +247,7 @@ int main(int argc, const char* argv[]) {
   asio::io_service ios;
 
   try {
-    rendezvous_server_ep = resolve(ios, vm["rendezvous"].as<string>());
+    rendezvous_server_ep = resolve(ios, rendezvous_server_addr);
   }
   catch(const std::exception& e) {
     cout << "Error: " << e.what() << endl;
@@ -249,9 +255,7 @@ int main(int argc, const char* argv[]) {
   }
 
   // Start the chat service.
-  Options options{local_port, rendezvous_server_ep};
-
-  Chat chat(ios, options);
+  Chat chat(ios, Options{local_port, rendezvous_server_ep});
 
   start_reading_input(chat);
 
