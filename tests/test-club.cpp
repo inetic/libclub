@@ -423,15 +423,6 @@ std::vector<HubPtr> make_hubs(io_service& ios, size_t count) {
 }
 
 // -------------------------------------------------------------------
-template<class T> std::set<T> set_union( const std::set<T>& s1
-                                       , const std::set<T>& s2) {
-  std::set<T> ret;
-  std::set_union( s1.begin(), s1.end()
-                , s2.begin(), s2.end()
-                , std::back_inserter(ret));
-  return ret;
-}
-
 std::set<uuid> hub_ids(const std::vector<HubPtr>& hubs) {
   std::set<uuid> ret;
   for (const auto& r: hubs) { ret.insert(r->id()); }
