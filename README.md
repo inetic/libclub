@@ -10,7 +10,17 @@ Club implements solutions to such problems and hides this complexity behind a si
 
 #### Group membership consensus
 
-In a traditional network game engine, developers provide a host server. When players want to join a game, they contact this server which then grants the user access a lobby. This way, the host decides lobby membership as well as the order in which users became members and forwards this information back to users. Club uses a different approach, instead of relying on a single node to do the decision, it uses a distributed membership consensus algorithm. That is, when a group of nodes *A* joins another group of nodes *B* (by establishing a connection between a node from *A* with a node from *B*), the consensus algorithm ensures that every node from *A* shall receive a list of nodes from *B* and vice versa.
+In a traditional network game engine, developers provide a host server. When players want to join a game, they contact this server which then grants the user access a lobby. This way, the host decides lobby membership as well as the order in which users became members and forwards this information back to users.
+
+<p align="center">
+  <img src="docs/fuse.gif"/>
+</p>
+
+Club uses a different approach, instead of relying on a single node to do the decision, it uses a distributed membership consensus algorithm. That is, when a group of nodes *A* joins another group of nodes *B* (by establishing a connection between a node from *A* with a node from *B*), the consensus algorithm ensures that every node from *A* shall receive a list of nodes from *B* and vice versa.
+
+<p align="center">
+  <img src="docs/disconnect.gif"/>
+</p>
 
 Additionally, in cases when one or more node pairs get disconnected the algorithm ensures that every node in every [connected component](https://en.wikipedia.org/wiki/Connected_component_(graph_theory)) that remains shall receive the same membership change information. This makes decision making after reconfiguration as simple (if not simpler) as with the standard approach.
 
@@ -19,6 +29,10 @@ Additionally, in cases when one or more node pairs get disconnected the algorith
 For important game decisions, such as whether to leave the lobby and start the game, or whether player #1 acquired a coin before player #2 did, Club ships with an algorithm to totally order some messages. That is, say that player #1 and player #2 sent a message, Club makes a guarantee that if someone receives the message from #1 before message from #2, then everyone else does as well.
 
 #### Fast unreliable message broadcast and routing
+
+<p align="center">
+  <img src="docs/broadcast.gif"/>
+</p>
 
 Apart from knowing who is currently present in the group, the library also tracks who is connected to whom. Given this information, it is able to construct an efficient routing table for delivering messages.
 
