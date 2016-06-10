@@ -36,9 +36,11 @@ For important game decisions, such as whether to leave the lobby and start the g
 
 Apart from knowing who is currently present in the group, the library also tracks who is connected to whom. Given this information, it is able to construct an efficient routing table for delivering messages.
 
-#### UDP hole punching for NAT traversal (TODO: symmetric NATs)
+#### UDP hole punching for NAT traversal
 
 [Most](http://nattest.net.in.tum.de/results.php) of the devices on the internet today are behind some kind of NAT that prevents two nodes to connect to each other directly. This may be either a home router, a firewall or it can be the ISP. There are techniques to get around these restrictions, from which the [UDP hole punching](https://en.wikipedia.org/wiki/UDP_hole_punching) one is considered most efficient.
+
+TODO: Symmetric NATs
 
 #### Rendezvous server
 
