@@ -20,7 +20,7 @@
 #include "Channel.h"
 #include "debug/ASSERT.h"
 
-namespace net { namespace PL {
+namespace net {
 
 struct Header
 {
@@ -82,7 +82,7 @@ inline std::ostream& operator<<(std::ostream& os, const Header& h)
             << h._channel << " " << h.id() << ")";
 }
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_HEADER_H__
 

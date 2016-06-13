@@ -16,9 +16,9 @@
 #define __NET_PL_BUFFER_H__
 
 #include <boost/asio.hpp>
-#include "net/PL/Header.h"
+#include "net/Header.h"
 
-namespace net { namespace PL {
+namespace net {
 
 /*
  * This Buffer structure is used to tell boost::asio
@@ -90,7 +90,7 @@ typedef Buffer<boost::asio::mutable_buffer> MutableBuffer;
 typedef Buffer<boost::asio::const_buffer>   ConstBuffer;
 
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_BUFFER_H__
 

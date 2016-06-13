@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "p2p_connect.h"
-#include "PL/ResenderSocket.h"
+#include "ResenderSocket.h"
 
 using namespace net;
 using namespace std;
@@ -22,7 +22,7 @@ using boost::optional;
 
 namespace asio = boost::asio;
 
-typedef PL::ResenderSocket Socket;
+typedef ResenderSocket Socket;
 typedef Socket::endpoint_type endpoint_type;
 
 typedef std::function<void( const boost::system::error_code&
@@ -47,9 +47,9 @@ struct P2PConnect : enable_shared_from_this<P2PConnect> {
   endpoint_type        retry_endpoint;
 
   Socket&     socket;
-  PL::Channel channel;
+  Channel     channel;
 
-  P2PConnect(Socket& socket, PL::Channel channel)
+  P2PConnect(Socket& socket, Channel channel)
     : socket(socket)
     , channel(channel)
   {}
@@ -142,7 +142,7 @@ struct P2PConnect : enable_shared_from_this<P2PConnect> {
 template<class Handler /* void(error_code) */>
 void p2p_connect_channel( Socket&              socket
                         , unsigned int         timeout_ms
-                        , PL::Channel          channel
+                        , Channel          channel
                         , const endpoint_type& remote_endpoint
                         , const Handler&       handler)
 {
@@ -153,7 +153,7 @@ void p2p_connect_channel( Socket&              socket
             , handler);
 }
 
-void net::p2p_connect( PL::ResenderSocket&  socket
+void net::p2p_connect( ResenderSocket&  socket
                      , unsigned int         timeout_ms
                      , const endpoint_type& remote_private_endpoint
                      , const endpoint_type& remote_public_endpoint
@@ -198,7 +198,7 @@ void net::p2p_connect( PL::ResenderSocket&  socket
   if (has_public_ep) {
     p2p_connect_channel( socket
                        , timeout_ms
-                       , PL::CHANNEL_P2P_CONNECT_PUBLIC()
+                       , CHANNEL_P2P_CONNECT_PUBLIC()
                        , remote_public_endpoint,
       [=, &socket](endpoint_type endpoint, error_code error) {
         auto& private_error = status->private_error;
@@ -218,8 +218,8 @@ void net::p2p_connect( PL::ResenderSocket&  socket
           status->public_error  = error;
           status->public_result = endpoint;
           if (!error) {
-            socket.cancel_sending  (PL::CHANNEL_P2P_CONNECT_PRIVATE());
-            socket.cancel_receiving(PL::CHANNEL_P2P_CONNECT_PRIVATE());
+            socket.cancel_sending  (CHANNEL_P2P_CONNECT_PRIVATE());
+            socket.cancel_receiving(CHANNEL_P2P_CONNECT_PRIVATE());
           }
         }
       });
@@ -228,7 +228,7 @@ void net::p2p_connect( PL::ResenderSocket&  socket
   if (has_private_ep) {
     p2p_connect_channel( socket
                        , timeout_ms
-                       , PL::CHANNEL_P2P_CONNECT_PRIVATE()
+                       , CHANNEL_P2P_CONNECT_PRIVATE()
                        , remote_private_endpoint,
       [=, &socket](endpoint_type endpoint, error_code error) {
         auto& public_error = status->public_error;
@@ -249,8 +249,8 @@ void net::p2p_connect( PL::ResenderSocket&  socket
           status->private_error  = error;
           status->private_result = endpoint;
           if (!error) {
-            socket.cancel_sending  (PL::CHANNEL_P2P_CONNECT_PUBLIC());
-            socket.cancel_receiving(PL::CHANNEL_P2P_CONNECT_PUBLIC());
+            socket.cancel_sending  (CHANNEL_P2P_CONNECT_PUBLIC());
+            socket.cancel_receiving(CHANNEL_P2P_CONNECT_PUBLIC());
           }
         }
       });

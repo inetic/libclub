@@ -15,11 +15,11 @@
 #ifndef __CLUB_SOCKET_H__
 #define __CLUB_SOCKET_H__
 
-#include "net/PL/ConnectedSocket.h"
+#include "net/ConnectedSocket.h"
 
 namespace club {
 
-typedef net::PL::ConnectedSocket Socket;
+typedef net::ConnectedSocket Socket;
 typedef Socket::endpoint_type    Endpoint;
 
 } // club namespace

@@ -35,7 +35,7 @@
 // * If socket is to be destroyed before io_service runs out
 //   of work, it will be closed implicitly in the destructor.
 
-namespace net { namespace PL {
+namespace net {
 
 //////////////////////////////////////////////////////////////////////
 // A socket that defines timeouts on async read/write operations.
@@ -69,7 +69,7 @@ private:
     };
 
     public:
-    TimedReceiver( Delegate& socket, PL::Channel debug_type)
+    TimedReceiver( Delegate& socket, Channel debug_type)
       : _socket(socket)
       , _timer(new boost::asio::deadline_timer(socket.get_io_service()))
       , _debug_type(debug_type)
@@ -186,7 +186,7 @@ private:
     }
 
     void send_ack(const endpoint_type& endpoint, Channel type, uint32_t id) {
-      PL::Header header(type, id, true, false);
+      Header header(type, id, true, false);
       Header::bytes_type bytes;
       header.to_bytes(bytes);
       boost::system::error_code er;
@@ -215,7 +215,7 @@ private:
     boost::optional<HandlerArgs> _handler_args;
 
     public:
-    PL::Channel _debug_type;
+    Channel _debug_type;
   };
 
   typedef std::shared_ptr<TimedReceiver>           TimedReceiverPtr;
@@ -538,7 +538,7 @@ private:
       }
     }
 
-    PL::Header rx_header;
+    Header rx_header;
     _rx_buffer.get_header(rx_header);
 
     ReceiversKey key(rx_header.channel(), rx_header.is_ack());
@@ -615,10 +615,10 @@ private:
 
   Receivers                      _receivers;
 
-  PL::ConstBuffer                _tx_buffer;
+  ConstBuffer                    _tx_buffer;
 
   std::vector<char>              _rx_data;
-  PL::MutableBuffer              _rx_buffer;
+  MutableBuffer                  _rx_buffer;
   udp::endpoint                  _rx_endpoint;
   boost::optional<udp::endpoint> _remote_filter;
 
@@ -628,7 +628,7 @@ protected:
   std::shared_ptr<bool>          _was_destroyed;
 };
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_TIMEOUTSOCKET_H__
 

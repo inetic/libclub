@@ -16,7 +16,7 @@
 #define __MAKE_CONNECTED_SOCKETS_H__
 
 #include <boost/asio.hpp>
-#include "net/PL/ConnectedSocket.h"
+#include "net/ConnectedSocket.h"
 #include "when_all.h"
 
 // -------------------------------------------------------------------
@@ -35,7 +35,6 @@ unspecified_to_loopback(boost::asio::ip::udp::endpoint e) {
 template<class H> void make_connected_sockets( boost::asio::io_service& ios
                                              , H handler) {
   using namespace net;
-  using namespace net::PL;
   using udp = boost::asio::ip::udp;
   using boost::system::error_code;
   using std::make_shared;
@@ -73,7 +72,6 @@ template<class H> void make_n_connected_socket_pairs
                          , size_t n
                          , H handler) {
   using namespace net;
-  using namespace net::PL;
   using SocketPtr = std::shared_ptr<ConnectedSocket>;
   using std::vector;
   using std::pair;
@@ -98,7 +96,6 @@ template<class H> void make_network( boost::asio::io_service& ios
                                    , size_t node_count
                                    , H handler) {
   using namespace net;
-  using namespace net::PL;
   using SocketPtr = std::shared_ptr<ConnectedSocket>;
   using udp = boost::asio::ip::udp;
   using boost::system::error_code;

@@ -26,7 +26,7 @@ public:
   typedef boost::asio::ip::udp::endpoint         endpoint_type;
   typedef std::function<void(const error_code&)> Handler;
   typedef std::chrono::high_resolution_clock     Clock;
-  typedef PL::TimeoutSocket                      Socket;
+  typedef TimeoutSocket                          Socket;
   typedef std::shared_ptr<bool>                  BoolPtr;
 
   KeepAlive(Socket& socket)
@@ -70,7 +70,7 @@ private:
     using std::placeholders::_3;
 
     _socket.async_receive_from(
-        PL::CHANNEL_KEEP_ALIVE()
+        CHANNEL_KEEP_ALIVE()
       , recv_timeout_ms()
       , boost::asio::null_buffers()
       , bind(&KeepAlive::on_recv, this, _was_destroyed, _1, _2, _3)
@@ -124,7 +124,7 @@ private:
     using std::placeholders::_1;
 
     _socket.async_send( 0
-                      , PL::CHANNEL_KEEP_ALIVE()
+                      , CHANNEL_KEEP_ALIVE()
                       , boost::asio::null_buffers()
                       , 0
                       , bind(&KeepAlive::on_sent, this, _was_destroyed, _1)

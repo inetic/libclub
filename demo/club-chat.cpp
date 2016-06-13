@@ -18,7 +18,7 @@
 #include <boost/program_options.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <net/PL/ConnectedSocket.h>
+#include <net/ConnectedSocket.h>
 #include <rendezvous/client.h>
 #include <club/hub.h>
 
@@ -32,7 +32,7 @@ using std::unique_ptr;
 using std::make_unique;
 using udp = boost::asio::ip::udp;
 using Error = boost::system::error_code;
-using net::PL::ConnectedSocket;
+using net::ConnectedSocket;
 
 namespace po = boost::program_options;
 namespace ip = boost::asio::ip;

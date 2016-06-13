@@ -32,10 +32,10 @@
 
 namespace net {
 
-namespace PL { class ResenderSocket; }
+class ResenderSocket;
 
 void p2p_connect
-    ( PL::ResenderSocket& socket
+    ( ResenderSocket& socket
     , unsigned int timeout_ms
     , const boost::asio::ip::udp::endpoint& remote_private_endpoint
     , const boost::asio::ip::udp::endpoint& remote_public_endpoint

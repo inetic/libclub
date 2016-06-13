@@ -21,7 +21,7 @@
 
 #define DEFAULT_TIMEOUT 1000
 
-namespace net { namespace PL {
+namespace net {
 
 //////////////////////////////////////////////////////////////////////
 // Socket that tries to resend a packet until it receives an ack
@@ -339,7 +339,7 @@ private:
 };
 
 
-} } // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_RESENDER_SOCKET_H__
 

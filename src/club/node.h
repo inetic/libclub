@@ -42,7 +42,7 @@ struct Node {
 
   struct SharedState {
     bool                              was_destroyed;
-    // The sockets in PL don't like being destroyed while waiting
+    // Our sockets don't like being destroyed while waiting
     // on callbacks.
     std::shared_ptr<Socket>           socket;
     Bytes                             rx_buffer;
@@ -133,7 +133,7 @@ struct Node {
     }
     auto state = _shared_state;
     state->socket->async_send
-        ( net::PL::CHANNEL_UNR()
+        ( net::CHANNEL_UNR()
         , b
         , 0
         , [state, handler](const Error&) { 
@@ -294,7 +294,7 @@ private:
     state->rx_unreliable_buffer.resize(SharedState::max_unreliable_buffer());
 
     state->socket->async_receive
-        ( net::PL::CHANNEL_UNR()
+        ( net::CHANNEL_UNR()
         , boost::asio::buffer(state->rx_unreliable_buffer)
         , -1
         , [this, state](const Error& error, size_t size) {

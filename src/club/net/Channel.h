@@ -15,7 +15,7 @@
 #ifndef __NET_PL_CHANNEL_H__
 #define __NET_PL_CHANNEL_H__
 
-namespace net { namespace PL {
+namespace net {
 
 class Channel {
   public:
@@ -106,7 +106,7 @@ static inline Channel CHANNEL_RECONNECT()           { return Channel(Channel::RE
 static inline Channel CHANNEL_PUNCH()               { return Channel(Channel::PUNCH, true); }
 static inline Channel CHANNEL_KEEP_ALIVE()          { return Channel(Channel::KEEP_ALIVE, true); }
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_CHANNEL_H__
 

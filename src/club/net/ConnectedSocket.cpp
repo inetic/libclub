@@ -14,7 +14,7 @@
 
 #include "ConnectedSocket.h"
 #include "ResenderSocket.h"
-#include "../p2p_connect.h"
+#include "p2p_connect.h"
 //#include "serialize/binary_stream_list.h"
 //#include "serialize/binary_stream_net.h"
 #include "binary/dynamic_encoder.h"
@@ -22,7 +22,6 @@
 #include "debug/log.h"
 
 using namespace net;
-using namespace net::PL;
 using boost::optional;
 namespace asio   = boost::asio;
 

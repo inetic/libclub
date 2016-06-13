@@ -20,7 +20,7 @@
 #include <chrono>
 #include "Channel.h"
 
-namespace net { namespace PL {
+namespace net {
 
 class ResenderSocket;
 
@@ -175,7 +175,7 @@ private:
   bool                      _remote_known_to_have_symmetric_nat;
 };
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_CONNECTED_SOCKET_H__
 

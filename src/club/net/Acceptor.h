@@ -21,7 +21,7 @@
 #include "../../Benchmark.h"
 #include "serialize/net.h"
 
-namespace net { namespace PL {
+namespace net {
 
 class Acceptor {
 
@@ -298,7 +298,7 @@ private:
   PortPredictor  _port_predictor;
 };
 
-}} // net::PL namespace
+} // net namespace
 
 #endif // ifndef __NET_PL_ACCEPTOR_H__
 
