@@ -17,7 +17,7 @@
 
 #include <map>
 #include <club/uuid.h>
-#include "socket.h"
+#include "club/socket.h"
 #include "club/hub.h"
 #include "message.h"
 #include "net/any_size.h"
@@ -133,7 +133,7 @@ struct Node {
     }
     auto state = _shared_state;
     state->socket->async_send
-        ( net::CHANNEL_UNR()
+        ( CHANNEL_UNR()
         , b
         , 0
         , [state, handler](const Error&) { 
@@ -247,9 +247,9 @@ private:
     auto buffer_ptr = state->tx_buffers.front();
     state->tx_buffers.pop_front();
 
-    net::send_any_size( *_shared_state->socket
-                      , boost::asio::buffer(*buffer_ptr)
-                      , 30000,
+    send_any_size( *_shared_state->socket
+                 , boost::asio::buffer(*buffer_ptr)
+                 , 30000,
       [this, state, buffer_ptr](Error error) {
         if (state->was_destroyed) return;
         _is_sending = false;
@@ -271,7 +271,7 @@ private:
 
   void start_reliable_recv_loop() {
     auto state = _shared_state;
-    net::recv_any_size(*state->socket, state->rx_buffer, -1,
+    recv_any_size(*state->socket, state->rx_buffer, -1,
         [this, state](Error error) {
           if (state->was_destroyed) return;
           if (is(ConnectState::disconnected)) return;
@@ -294,7 +294,7 @@ private:
     state->rx_unreliable_buffer.resize(SharedState::max_unreliable_buffer());
 
     state->socket->async_receive
-        ( net::CHANNEL_UNR()
+        ( CHANNEL_UNR()
         , boost::asio::buffer(state->rx_unreliable_buffer)
         , -1
         , [this, state](const Error& error, size_t size) {

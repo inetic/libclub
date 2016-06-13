@@ -16,7 +16,7 @@
 #define __MAKE_CONNECTED_SOCKETS_H__
 
 #include <boost/asio.hpp>
-#include "net/ConnectedSocket.h"
+#include "club/socket.h"
 #include "when_all.h"
 
 // -------------------------------------------------------------------
@@ -34,14 +34,14 @@ unspecified_to_loopback(boost::asio::ip::udp::endpoint e) {
 // -------------------------------------------------------------------
 template<class H> void make_connected_sockets( boost::asio::io_service& ios
                                              , H handler) {
-  using namespace net;
+  using namespace club;
   using udp = boost::asio::ip::udp;
   using boost::system::error_code;
   using std::make_shared;
   using std::move;
 
-  auto s1 = make_shared<ConnectedSocket>(ios, 0);
-  auto s2 = make_shared<ConnectedSocket>(ios, 0);
+  auto s1 = make_shared<Socket>(ios, 0);
+  auto s2 = make_shared<Socket>(ios, 0);
 
   WhenAll on_connect;
 
@@ -71,8 +71,8 @@ template<class H> void make_n_connected_socket_pairs
                          ( boost::asio::io_service& ios
                          , size_t n
                          , H handler) {
-  using namespace net;
-  using SocketPtr = std::shared_ptr<ConnectedSocket>;
+  using namespace club;
+  using SocketPtr = std::shared_ptr<Socket>;
   using std::vector;
   using std::pair;
   using std::make_pair;
@@ -95,8 +95,8 @@ template<class H> void make_n_connected_socket_pairs
 template<class H> void make_network( boost::asio::io_service& ios
                                    , size_t node_count
                                    , H handler) {
-  using namespace net;
-  using SocketPtr = std::shared_ptr<ConnectedSocket>;
+  using namespace club;
+  using SocketPtr = std::shared_ptr<Socket>;
   using udp = boost::asio::ip::udp;
   using boost::system::error_code;
   using std::make_shared;
@@ -106,7 +106,7 @@ template<class H> void make_network( boost::asio::io_service& ios
 
   for (size_t i = 0; i < node_count; ++i) {
     for (size_t j = 0; j < node_count - 1; ++j) {
-      (*network)[i].push_back(make_shared<ConnectedSocket>(ios, 0));
+      (*network)[i].push_back(make_shared<Socket>(ios, 0));
     }
   }
 

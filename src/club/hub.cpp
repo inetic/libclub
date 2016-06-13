@@ -33,7 +33,6 @@
 #include "connection_graph.h"
 #include "broadcast_routing_table.h"
 
-using namespace net;
 using namespace club;
 
 using std::shared_ptr;
@@ -729,7 +728,7 @@ void hub::broadcast_port_offer_to(Node& node, Address addr) {
                                  , std::chrono::seconds(2)
                                  , [=] ( error_code error
                                        , udp::socket udp_socket
-                                       , Endpoint reflexive_ep) {
+                                       , udp::endpoint reflexive_ep) {
           if (*was_destroyed) return;
 
           _stun_requests.erase(iter);

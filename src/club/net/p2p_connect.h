@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_P2PCONNECT_H__
-#define __NET_P2PCONNECT_H__
+#pragma once
 
 // The code implements algorithm as explained here:
 // http://www.brynosaurus.com/pub/net/p2pnat/
@@ -30,7 +29,7 @@
 
 #include <boost/asio/ip/udp.hpp>
 
-namespace net {
+namespace club {
 
 class ResenderSocket;
 
@@ -50,7 +49,4 @@ void p2p_connect
                                , const boost::asio::ip::udp::endpoint& used
                                )>& handler);
 
-} // net namespace.
-
-#endif // ifndef __NET_P2PCONNECT_H__
-
+} // club namespace.

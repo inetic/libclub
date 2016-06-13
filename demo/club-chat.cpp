@@ -18,7 +18,7 @@
 #include <boost/program_options.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <net/ConnectedSocket.h>
+#include <club/socket.h>
 #include <rendezvous/client.h>
 #include <club/hub.h>
 
@@ -32,7 +32,7 @@ using std::unique_ptr;
 using std::make_unique;
 using udp = boost::asio::ip::udp;
 using Error = boost::system::error_code;
-using net::ConnectedSocket;
+using club::Socket;
 
 namespace po = boost::program_options;
 namespace ip = boost::asio::ip;
@@ -92,7 +92,7 @@ struct Chat {
   unique_ptr<club::hub>               hub;
   std::set<club::uuid>                members;
   std::unique_ptr<rendezvous::client> rendezvous_client;
-  std::unique_ptr<ConnectedSocket>    socket_ptr;
+  std::unique_ptr<Socket>             socket_ptr;
 
   Chat(asio::io_service& ios, const Options& options)
     : io_service(ios)
@@ -153,7 +153,7 @@ struct Chat {
           return stop();
         }
 
-        socket_ptr.reset(new ConnectedSocket(move(socket)));
+        socket_ptr.reset(new Socket(move(socket)));
 
         socket_ptr->async_p2p_connect
           ( 5000 // Timeout in milliseconds

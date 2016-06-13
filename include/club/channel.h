@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_CHANNEL_H__
-#define __NET_PL_CHANNEL_H__
+#pragma once
 
-namespace net {
+namespace club {
 
 class Channel {
   public:
@@ -106,7 +105,4 @@ static inline Channel CHANNEL_RECONNECT()           { return Channel(Channel::RE
 static inline Channel CHANNEL_PUNCH()               { return Channel(Channel::PUNCH, true); }
 static inline Channel CHANNEL_KEEP_ALIVE()          { return Channel(Channel::KEEP_ALIVE, true); }
 
-} // net namespace
-
-#endif // ifndef __NET_PL_CHANNEL_H__
-
+} // club namespace

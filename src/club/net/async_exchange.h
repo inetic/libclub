@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_ASYNC_EXCHANGE__
-#define __NET_ASYNC_EXCHANGE__
+#pragma once
 
 #include <boost/optional.hpp>
 #include "any_size.h"
@@ -21,7 +20,7 @@
 // Send and receive concurrently, call handler when
 // both operations finish.
 
-namespace net {
+namespace club {
 
 template< class Socket
         , class Handler /* void ( const error_code& error
@@ -78,7 +77,4 @@ void async_exchange( Socket&          socket
                });
 }
 
-} // net namespace
-
-#endif // ifndef __NET_ASYNC_EXCHANGE__
-
+} // club namespace

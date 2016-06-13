@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_ACCEPTOR_H__
-#define __NET_PL_ACCEPTOR_H__
+#pragma once
 
 #include <map>
 #include "ConnectedSocket.h"
@@ -21,7 +20,7 @@
 #include "../../Benchmark.h"
 #include "serialize/net.h"
 
-namespace net {
+namespace club {
 
 class Acceptor {
 
@@ -298,7 +297,4 @@ private:
   PortPredictor  _port_predictor;
 };
 
-} // net namespace
-
-#endif // ifndef __NET_PL_ACCEPTOR_H__
-
+} // club namespace

@@ -15,7 +15,7 @@
 #include "p2p_connect.h"
 #include "ResenderSocket.h"
 
-using namespace net;
+using namespace club;
 using namespace std;
 
 using boost::optional;
@@ -153,11 +153,11 @@ void p2p_connect_channel( Socket&              socket
             , handler);
 }
 
-void net::p2p_connect( ResenderSocket&  socket
-                     , unsigned int         timeout_ms
-                     , const endpoint_type& remote_private_endpoint
-                     , const endpoint_type& remote_public_endpoint
-                     , const Handler&       handler) {
+void club::p2p_connect( ResenderSocket&  socket
+                      , unsigned int         timeout_ms
+                      , const endpoint_type& remote_private_endpoint
+                      , const endpoint_type& remote_public_endpoint
+                      , const Handler&       handler) {
 
   using error_code = boost::system::error_code;
 

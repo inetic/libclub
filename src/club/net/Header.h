@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_HEADER_H__
-#define __NET_PL_HEADER_H__
+#pragma once
 
 #include <array>
 #include <ostream>
-#include "Channel.h"
+#include "club/channel.h"
 #include "debug/ASSERT.h"
 
-namespace net {
+namespace club {
 
 struct Header
 {
@@ -82,7 +81,4 @@ inline std::ostream& operator<<(std::ostream& os, const Header& h)
             << h._channel << " " << h.id() << ")";
 }
 
-} // net namespace
-
-#endif // ifndef __NET_PL_HEADER_H__
-
+} // club namespace

@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_BUFFER_H__
-#define __NET_PL_BUFFER_H__
+#pragma once
 
 #include <boost/asio.hpp>
 #include "net/Header.h"
 
-namespace net {
+namespace club {
 
 /*
  * This Buffer structure is used to tell boost::asio
@@ -90,7 +89,4 @@ typedef Buffer<boost::asio::mutable_buffer> MutableBuffer;
 typedef Buffer<boost::asio::const_buffer>   ConstBuffer;
 
 
-} // net namespace
-
-#endif // ifndef __NET_PL_BUFFER_H__
-
+} // club namespace

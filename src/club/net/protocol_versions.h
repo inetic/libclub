@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PROTOCOL_VERSIONS__
-#define __NET_PROTOCOL_VERSIONS__
+#pragma once
 
 #define NET_PROTOCOL_VERSION ((uint32_t) 17)
-
-#endif // ifndef __NET_PROTOCOL_VERSIONS__
 

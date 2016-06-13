@@ -21,7 +21,6 @@
 #include "async_loop.h"
 #include "make_connected_sockets.h"
 
-using namespace net;
 namespace asio = boost::asio;
 using std::cout;
 using std::make_shared;
@@ -30,6 +29,7 @@ using std::shared_ptr;
 using boost::system::error_code;
 using boost::asio::io_service;
 using udp = boost::asio::ip::udp;
+using club::Socket;
 
 // -------------------------------------------------------------------
 std::vector<uint8_t> generate_buffer(unsigned int seed, size_t size) {
@@ -42,7 +42,7 @@ std::vector<uint8_t> generate_buffer(unsigned int seed, size_t size) {
 // Mostly test that the ios.run() call terminates when sockets
 // are explicitly closed.
 BOOST_AUTO_TEST_CASE(sockets_explicit_close) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
 
   io_service ios;
 
@@ -68,7 +68,7 @@ BOOST_AUTO_TEST_CASE(sockets_explicit_close) {
 // Mostly test that the ios.run() call terminates when sockets
 // are explicitly closed.
 BOOST_AUTO_TEST_CASE(sockets_destruct) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
 
   io_service ios;
 
@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(sockets_destruct) {
 // even if the sockets were not destroyed nor closed.
 #if 0 // Currently halts
 BOOST_AUTO_TEST_CASE(sockets_no_work) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
 
   io_service ios;
 
@@ -112,7 +112,7 @@ BOOST_AUTO_TEST_CASE(sockets_no_work) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(sockets_send_receive) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
 
   io_service ios;
 
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
 
   io_service ios;
 
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(sockets_exchange) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
   using Bytes = std::vector<uint8_t>;
 
   io_service ios;
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(sockets_exchange) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(sockets_exchange_N_times) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
   using std::vector;
   using Bytes = vector<uint8_t>;
 
@@ -327,7 +327,7 @@ BOOST_AUTO_TEST_CASE(sockets_exchange_N_times) {
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(sockets_make_network) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
   using std::vector;
 
   size_t sizes[] = {2, 3, 5, 9, 21, 32};
@@ -352,7 +352,7 @@ BOOST_AUTO_TEST_CASE(sockets_make_network) {
 // networks are created one after another.
 #if 0 // Currently fails with "Too many open files"
 BOOST_AUTO_TEST_CASE(sockets_make_networks) {
-  using SocketPtr = shared_ptr<ConnectedSocket>;
+  using SocketPtr = shared_ptr<Socket>;
   using std::vector;
 
   io_service ios;

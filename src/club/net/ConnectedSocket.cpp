@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ConnectedSocket.h"
+#include "club/socket.h"
 #include "ResenderSocket.h"
 #include "p2p_connect.h"
 //#include "serialize/binary_stream_list.h"
@@ -21,16 +21,16 @@
 #include "serialize/net.h"
 #include "debug/log.h"
 
-using namespace net;
+using namespace club;
 using boost::optional;
 namespace asio   = boost::asio;
 
 typedef ResenderSocket::endpoint_type      endpoint_type;
-typedef ConnectedSocket::Clock::duration   duration;
-typedef ConnectedSocket::Clock::time_point time_point;
+typedef Socket::Clock::duration   duration;
+typedef Socket::Clock::time_point time_point;
 
 ////////////////////////////////////////////////////////////////////////////////
-ConnectedSocket::ConnectedSocket(asio::io_service& io_service)
+Socket::Socket(asio::io_service& io_service)
   : _socket(std::make_shared<Delegate>(io_service))
   , _closed(false)
   , _received_close(false)
@@ -38,7 +38,7 @@ ConnectedSocket::ConnectedSocket(asio::io_service& io_service)
 {
 }
 
-ConnectedSocket::ConnectedSocket(udp::socket&& s)
+Socket::Socket(udp::socket&& s)
   : _socket(std::make_shared<Delegate>(std::move(s)))
   , _closed(false)
   , _received_close(false)
@@ -46,7 +46,7 @@ ConnectedSocket::ConnectedSocket(udp::socket&& s)
 {
 }
 
-ConnectedSocket::ConnectedSocket(ConnectedSocket&& s)
+Socket::Socket(Socket&& s)
   : _socket(std::move(s._socket))
   , _closed(s._closed)
   , _received_close(s._received_close)
@@ -57,7 +57,7 @@ ConnectedSocket::ConnectedSocket(ConnectedSocket&& s)
   s._remote_known_to_have_symmetric_nat = false;
 }
 
-ConnectedSocket::ConnectedSocket( asio::io_service&    io_service
+Socket::Socket( asio::io_service&    io_service
                                 , const endpoint_type& ep)
   : _socket(std::make_shared<Delegate>(io_service, ep))
   , _closed(false)
@@ -66,7 +66,7 @@ ConnectedSocket::ConnectedSocket( asio::io_service&    io_service
 {
 }
 
-ConnectedSocket::ConnectedSocket( asio::io_service& io_service
+Socket::Socket( asio::io_service& io_service
                                 , unsigned short    port)
   : _socket(std::make_shared<Delegate>( io_service
                                       , udp::endpoint(udp::v4(), port)))
@@ -77,29 +77,29 @@ ConnectedSocket::ConnectedSocket( asio::io_service& io_service
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-asio::io_service& ConnectedSocket::get_io_service() {
+asio::io_service& Socket::get_io_service() {
   return _socket->get_io_service();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-unsigned int ConnectedSocket::id() const { return _socket->id(); }
+unsigned int Socket::id() const { return _socket->id(); }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::move_counters_from(ResenderSocket& socket) {
-  _socket->move_counters_from(socket);
+void Socket::move_counters_from(ResenderSocket& rsocket) {
+  _socket->move_counters_from(rsocket);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::open () { _socket->open(); }
+void Socket::open () { _socket->open(); }
 
 ////////////////////////////////////////////////////////////////////////////////
-size_t ConnectedSocket::buffer_size() const {
+size_t Socket::buffer_size() const {
   return _socket->buffer_size();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 endpoint_type
-ConnectedSocket::local_endpoint_to(const endpoint_type remote_endpoint)
+Socket::local_endpoint_to(const endpoint_type remote_endpoint)
 {
   udp::socket tmp(get_io_service());
   tmp.connect(remote_endpoint);
@@ -109,7 +109,7 @@ ConnectedSocket::local_endpoint_to(const endpoint_type remote_endpoint)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-endpoint_type ConnectedSocket::local_endpoint() {
+endpoint_type Socket::local_endpoint() {
   try {
     unsigned short local_port = _socket->local_endpoint().port();
     endpoint_type remote      = _socket->remote_endpoint();
@@ -120,7 +120,7 @@ endpoint_type ConnectedSocket::local_endpoint() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-optional<endpoint_type> ConnectedSocket::remote_endpoint() const {
+optional<endpoint_type> Socket::remote_endpoint() const {
   if (_received_close)
     return optional<endpoint_type>();
   try {
@@ -131,15 +131,15 @@ optional<endpoint_type> ConnectedSocket::remote_endpoint() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-ConnectedSocket::~ConnectedSocket() {
+Socket::~Socket() {
   close();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool ConnectedSocket::is_open() const { return !_closed && _socket->is_open(); }
+bool Socket::is_open() const { return !_closed && _socket->is_open(); }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::close() {
+void Socket::close() {
   if (_closed) return;
 
   _closed = true;
@@ -163,15 +163,15 @@ void ConnectedSocket::close() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-bool ConnectedSocket::is_connected() const {
+bool Socket::is_connected() const {
   return !_closed && remote_endpoint();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_send( Channel                   channel
-                                , const asio::const_buffer& buffer
-                                , unsigned int              timeout_ms
-                                , const TXHandler&          handler)
+void Socket::async_send( Channel                   channel
+                       , const asio::const_buffer& buffer
+                       , unsigned int              timeout_ms
+                       , const TXHandler&          handler)
 {
   ASSERT(!*_socket->_was_destroyed);
 
@@ -193,26 +193,26 @@ void ConnectedSocket::async_send( Channel                   channel
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_send( const asio::const_buffer&  buffer
-                                , unsigned int   timeout_ms
-                                , const TXHandler& handler)
+void Socket::async_send( const asio::const_buffer&  buffer
+                       , unsigned int   timeout_ms
+                       , const TXHandler& handler)
 {
   async_send(CHANNEL_DAT(), buffer, timeout_ms, handler);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_receive( const asio::mutable_buffer&  buffer
-                                   , unsigned int   timeout_ms
-                                   , const RXHandler& handler)
+void Socket::async_receive( const asio::mutable_buffer&  buffer
+                          , unsigned int   timeout_ms
+                          , const RXHandler& handler)
 {
   async_receive(CHANNEL_DAT(), buffer, timeout_ms, handler);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_receive( Channel                     channel
-                                   , const asio::mutable_buffer& buffer
-                                   , unsigned int                timeout_ms
-                                   , const RXHandler&            handler)
+void Socket::async_receive( Channel                     channel
+                          , const asio::mutable_buffer& buffer
+                          , unsigned int                timeout_ms
+                          , const RXHandler&            handler)
 {
   ASSERT(!*_socket->_was_destroyed);
 
@@ -240,9 +240,9 @@ void ConnectedSocket::async_receive( Channel                     channel
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_connect( unsigned int          timeout_ms
-                                   , const endpoint_type&  remote_endpoint
-                                   , const ConnectHandler& handler)
+void Socket::async_connect( unsigned int          timeout_ms
+                          , const endpoint_type&  remote_endpoint
+                          , const ConnectHandler& handler)
 {
   binary::dynamic_encoder<char> encoder;
   encoder.put(local_endpoint_to(remote_endpoint));
@@ -270,12 +270,12 @@ void ConnectedSocket::async_connect( unsigned int          timeout_ms
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::bind(const endpoint_type& endpoint) {
+void Socket::bind(const endpoint_type& endpoint) {
   _socket->bind_remote(endpoint);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::async_p2p_connect
+void Socket::async_p2p_connect
     ( unsigned int             timeout_ms
     , const endpoint_type&     remote_private_endpoint
     , const endpoint_type&     remote_public_endpoint
@@ -306,7 +306,7 @@ void ConnectedSocket::async_p2p_connect
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::on_private_endpoint_sent
+void Socket::on_private_endpoint_sent
     ( const time_point              end_time
     , const std::shared_ptr<Bytes>& bytes
     , const ConnectHandler&         handler
@@ -343,7 +343,7 @@ void ConnectedSocket::on_private_endpoint_sent
 
 ////////////////////////////////////////////////////////////////////////////////
 duration::rep
-ConnectedSocket::milliseconds_left(const time_point& end) const {
+Socket::milliseconds_left(const time_point& end) const {
   using namespace std::chrono;
   milliseconds timeout_left_ms
     = duration_cast<milliseconds>(end - Clock::now());
@@ -353,7 +353,7 @@ ConnectedSocket::milliseconds_left(const time_point& end) const {
 
 ////////////////////////////////////////////////////////////////////////////////
 template<class Handler>
-void ConnectedSocket::on_private_endpoint_recv
+void Socket::on_private_endpoint_recv
     ( const time_point              end_time
     , const std::shared_ptr<Bytes>& bytes
     , const Handler&                handler
@@ -392,7 +392,7 @@ void ConnectedSocket::on_private_endpoint_recv
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::start_receiving_close() {
+void Socket::start_receiving_close() {
   KeepAlive& keep_alive = _socket->get_keep_alive();
 
   auto was_destroyed = _socket->_was_destroyed;
@@ -418,9 +418,9 @@ void ConnectedSocket::start_receiving_close() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::on_recv_close( const endpoint_type&
-                                   , const error_code&    error
-                                   , size_t               /*size*/)
+void Socket::on_recv_close( const endpoint_type&
+                          , const error_code&    error
+                          , size_t               /*size*/)
 {
   if (error) return;
 
@@ -429,12 +429,12 @@ void ConnectedSocket::on_recv_close( const endpoint_type&
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::debug(bool b) {
+void Socket::debug(bool b) {
   _socket->debug(b);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void ConnectedSocket::on_keep_alive_timeout(const error_code& error) {
+void Socket::on_keep_alive_timeout(const error_code& error) {
   if (error == asio::error::operation_aborted) {
     return;
   }

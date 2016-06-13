@@ -24,7 +24,7 @@
 #include "club/uuid.h"
 #include "club/node_impl.h"
 
-#include "socket.h"
+#include <club/socket.h>
 #include "log.h"
 
 namespace club {
@@ -116,7 +116,7 @@ private:
   Node& this_node();
 
   Node& insert_node(uuid id);
-  Node& insert_node(uuid id, std::shared_ptr<Socket> socket);
+  Node& insert_node(uuid id, std::shared_ptr<Socket>);
 
   Node*       find_node(uuid id);
   const Node* find_node(uuid id) const;

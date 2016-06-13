@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_TIMEOUTSOCKET_H__
-#define __NET_PL_TIMEOUTSOCKET_H__
+#pragma once
 
 #include <boost/optional.hpp>
 
@@ -35,7 +34,7 @@
 // * If socket is to be destroyed before io_service runs out
 //   of work, it will be closed implicitly in the destructor.
 
-namespace net {
+namespace club {
 
 //////////////////////////////////////////////////////////////////////
 // A socket that defines timeouts on async read/write operations.
@@ -628,7 +627,4 @@ protected:
   std::shared_ptr<bool>          _was_destroyed;
 };
 
-} // net namespace
-
-#endif // ifndef __NET_PL_TIMEOUTSOCKET_H__
-
+} // club namespace

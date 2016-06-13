@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_CONNECTED_SOCKET_H__
-#define __NET_PL_CONNECTED_SOCKET_H__
+#pragma once
 
 #include <boost/asio/ip/udp.hpp>
 #include <boost/optional.hpp>
 #include <chrono>
-#include "Channel.h"
+#include "channel.h"
 
-namespace net {
+namespace club {
 
 class ResenderSocket;
 
-class ConnectedSocket {
+class Socket {
   typedef boost::asio::ip::udp               udp;
 
 public:
@@ -51,16 +50,16 @@ public:
   // To have the system assing a random port to this socket, use the third
   // constructor and have port set to zero. (TODO: I'm not sure if the
   // first constructor is being used).
-  ConnectedSocket(boost::asio::io_service& io_service);
-  ConnectedSocket(udp::socket&&);
-  ConnectedSocket(ConnectedSocket&&);
-  ConnectedSocket(boost::asio::io_service& io_service, const endpoint_type& ep);
-  ConnectedSocket(boost::asio::io_service& io_service, unsigned short port);
+  Socket(boost::asio::io_service& io_service);
+  Socket(udp::socket&&);
+  Socket(Socket&&);
+  Socket(boost::asio::io_service& io_service, const endpoint_type& ep);
+  Socket(boost::asio::io_service& io_service, unsigned short port);
 
   // Delegated stuff.
   boost::asio::io_service& get_io_service();
   unsigned int id() const;
-  void move_counters_from(ResenderSocket& socket);
+  void move_counters_from(ResenderSocket& rsocket);
   void open ();
   size_t buffer_size() const;
 
@@ -77,7 +76,7 @@ public:
 
   boost::optional<endpoint_type> remote_endpoint() const;
 
-  ~ConnectedSocket();
+  ~Socket();
 
   bool is_open() const;
 
@@ -175,7 +174,4 @@ private:
   bool                      _remote_known_to_have_symmetric_nat;
 };
 
-} // net namespace
-
-#endif // ifndef __NET_PL_CONNECTED_SOCKET_H__
-
+} // club namespace

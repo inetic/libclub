@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_ANY_SIZE_H__
-#define __NET_ANY_SIZE_H__
+#pragma once
 
 #include <boost/asio.hpp>
 #include <boost/endian/conversion.hpp>
 
-namespace net {
+namespace club {
 
 namespace __detail {
   static unsigned short HEADER_SIZE = 4;
@@ -209,7 +208,4 @@ void recv_any_size( Socket&            socket
                , handler);
 }
 
-
-} // net namespace
-
-#endif // ifndef __NET_ANY_SIZE_H__
+} // club namespace

@@ -29,8 +29,7 @@
 #include "binary/decoder.h"
 #include "debug/string_tools.h"
 
-using namespace net;
-using SocketPtr = std::shared_ptr<ConnectedSocket>;
+using SocketPtr = std::shared_ptr<club::Socket>;
 using std::cout;
 using std::endl;
 using std::make_shared;

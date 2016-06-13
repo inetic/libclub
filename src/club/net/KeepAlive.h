@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_KEEP_ALIVE__
-#define __NET_KEEP_ALIVE__
+#pragma once
 
 #include <chrono>
 #include "TimeoutSocket.h"
 
-namespace net {
+namespace club {
 
 class KeepAlive {
 public:
@@ -164,7 +163,4 @@ private:
   std::shared_ptr<bool>       _was_destroyed;
 };
 
-} // net namespace
-
-#endif // ifndef __NET_KEEP_ALIVE__
-
+} // club namespace

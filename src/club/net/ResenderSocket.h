@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NET_PL_RESENDER_SOCKET_H__
-#define __NET_PL_RESENDER_SOCKET_H__
+#pragma once
 
 #include <boost/chrono.hpp>
 #include "TimeoutSocket.h"
@@ -21,7 +20,7 @@
 
 #define DEFAULT_TIMEOUT 1000
 
-namespace net {
+namespace club {
 
 //////////////////////////////////////////////////////////////////////
 // Socket that tries to resend a packet until it receives an ack
@@ -34,7 +33,7 @@ private:
   typedef boost::system::error_code error_code;
   typedef std::chrono::system_clock system_clock;
 
-  typedef TimeoutSocket               Socket;
+  typedef TimeoutSocket               TSocket;
 
 public:
   typedef udp::endpoint               endpoint_type;
@@ -43,7 +42,7 @@ public:
 
   //////////////////////////////////////////////////////////////////////////////
   ResenderSocket(boost::asio::io_service& io_service)
-    : Socket         (io_service)
+    : TSocket        (io_service)
     , _next_packet_id(0)
     , _keep_alive    (*this)
     , _retry_time_ms (200)
@@ -51,7 +50,7 @@ public:
   }
 
   ResenderSocket(udp::socket&& socket)
-    : Socket         (std::move(socket))
+    : TSocket        (std::move(socket))
     , _next_packet_id(0)
     , _keep_alive    (*this)
     , _retry_time_ms (200)
@@ -60,7 +59,7 @@ public:
 
   ResenderSocket( boost::asio::io_service&              io_service
                 , const boost::asio::ip::udp::endpoint& ep)
-    : Socket         (io_service, ep)
+    : TSocket        (io_service, ep)
     , _next_packet_id(0)
     , _keep_alive    (*this)
     , _retry_time_ms (200)
@@ -69,7 +68,7 @@ public:
 
   ResenderSocket( boost::asio::io_service& io_service
                 , unsigned short           port)
-    : Socket         (io_service, udp::endpoint(udp::v4(), port))
+    : TSocket        (io_service, udp::endpoint(udp::v4(), port))
     , _next_packet_id(0)
     , _keep_alive    (*this)
     , _retry_time_ms (200)
@@ -93,7 +92,7 @@ public:
   void move_counters_from(ResenderSocket& socket) {
     _next_packet_id = socket._next_packet_id;
     socket._next_packet_id = 0;
-    Socket::move_counters_from(socket);
+    TSocket::move_counters_from(socket);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -150,10 +149,10 @@ public:
 
     if (max_retry_ms == 0)
     {
-      Socket::async_send_to( packet_id
-                           , channel
-                           , tx_endpoint
-                           , buffer, 0, handler);
+      TSocket::async_send_to( packet_id
+                            , channel
+                            , tx_endpoint
+                            , buffer, 0, handler);
       return;
     }
 
@@ -167,32 +166,32 @@ public:
 
     auto was_destroyed = _was_destroyed;
 
-    Socket::async_send_to( packet_id
-                         , channel
-                         , tx_endpoint
-                         , buffer
-                         , retry_in_ms
+    TSocket::async_send_to( packet_id
+                          , channel
+                          , tx_endpoint
+                          , buffer
+                          , retry_in_ms
 
-                         , [ this
-                           , channel
-                           , packet_id
-                           , handler
-                           , time_max
-                           , tx_endpoint
-                           , buffer
-                           , was_destroyed]
-                           (const error_code& error)
-                           {
-                             ASSERT(!*was_destroyed);
-                             on_send_to( channel
-                                       , packet_id
-                                       , handler
-                                       , time_max
-                                       , tx_endpoint
-                                       , buffer
-                                       , error);
-                           }
-                          );
+                          , [ this
+                            , channel
+                            , packet_id
+                            , handler
+                            , time_max
+                            , tx_endpoint
+                            , buffer
+                            , was_destroyed]
+                            (const error_code& error)
+                            {
+                              ASSERT(!*was_destroyed);
+                              on_send_to( channel
+                                        , packet_id
+                                        , handler
+                                        , time_max
+                                        , tx_endpoint
+                                        , buffer
+                                        , error);
+                            }
+                           );
   }
 
   // handler :: void (const endpoint_type&, const error_code&, size_t)
@@ -203,7 +202,7 @@ public:
   {
     auto was_destroyed = _was_destroyed;
 
-    Socket::async_receive_from
+    TSocket::async_receive_from
         ( timeout_ms
         , buffer
         , [this, handler, was_destroyed]( const endpoint_type& endpoint
@@ -223,7 +222,7 @@ public:
                          , const Handler& handler)
   {
     auto was_destroyed = _was_destroyed;
-    Socket::async_receive_from
+    TSocket::async_receive_from
         ( channel
         , timeout_ms
         , buffer
@@ -285,7 +284,7 @@ private:
 
       auto was_destroyed = _was_destroyed;
 
-      Socket::async_send_to(
+      TSocket::async_send_to(
           packet_id
         , channel
         , tx_endpoint
@@ -326,10 +325,11 @@ private:
   }
 
   friend class Acceptor;
-  friend class ConnectedSocket;
+  friend class Socket;
+
   void reset_counters() {
     _next_packet_id = 0;
-    Socket::reset_last_acked_id();
+    TSocket::reset_last_acked_id();
   }
 
 private:
@@ -339,7 +339,4 @@ private:
 };
 
 
-} // net namespace
-
-#endif // ifndef __NET_PL_RESENDER_SOCKET_H__
-
+} // club namespace
