@@ -152,6 +152,21 @@ inline std::uint32_t decoder::get<std::uint32_t>() {
   return result;
 }
 
+template <>
+inline std::int32_t decoder::get<std::int32_t>() {
+  std::int32_t result;
+  if (size() < sizeof(result)) _was_error = true;
+  if (_was_error) return 0;
+
+  result = _current.begin[0] << 24
+         | _current.begin[1] << 16
+         | _current.begin[2] << 8
+         | _current.begin[3];
+
+  _current.begin += sizeof(result);
+  return result;
+}
+
 inline void decoder::get_raw(std::uint8_t* iter, std::size_t size) {
   if (this->size() < size) _was_error = true;
   if (_was_error) return;

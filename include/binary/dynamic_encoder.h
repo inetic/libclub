@@ -111,6 +111,17 @@ void encode(dynamic_encoder<B>& e, uint32_t value) {
   e.data[e.current++] = value         & 0xff;
 }
 
+template<typename B>
+inline
+void encode(dynamic_encoder<B>& e, int32_t value) {
+  e.grow_to_fit(sizeof(value));
+
+  e.data[e.current++] = (value >> 24) & 0xff;
+  e.data[e.current++] = (value >> 16) & 0xff;
+  e.data[e.current++] = (value >> 8)  & 0xff;
+  e.data[e.current++] = value         & 0xff;
+}
+
 template<class B>
 template<class Iterator>
 inline
