@@ -21,7 +21,7 @@
 #include "binary/encoder.h"
 #include "binary/dynamic_encoder.h"
 #include "binary/uuid.h"
-#include "serialize/list.h"
+#include "binary/list.h"
 #include "message.h"
 #include "net/async_exchange.h"
 #include "net/protocol_versions.h"
@@ -32,6 +32,7 @@
 #include "get_external_port.h"
 #include "connection_graph.h"
 #include "broadcast_routing_table.h"
+#include "log.h"
 
 using namespace club;
 
@@ -94,7 +95,7 @@ hub::hub(boost::asio::io_service& ios)
   : _io_service(ios)
   , _work(new Work(_io_service))
   , _id(boost::uuids::random_generator()())
-  , _log(_id)
+  , _log(new Log(_id))
   , _time_stamp(0)
   , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
@@ -102,7 +103,7 @@ hub::hub(boost::asio::io_service& ios)
   LOG("Created");
   _nodes[_id] = std::unique_ptr<Node>(new Node(this, _id));
   _last_quorum.insert(_id);
-  _log.last_commit_op = _id;
+  _log->last_commit_op = _id;
   _configs.insert(MessageId(_time_stamp, _id));
   _broadcast_routing_table->recalculate(single_node_graph(_id));
 }
@@ -218,7 +219,7 @@ void hub::on_peer_disconnected(const Node& node, std::string reason) {
 
 // -----------------------------------------------------------------------------
 void hub::process(Node&, Ack msg) {
-  _log.apply_ack(original_poster(msg), move(msg.ack_data));
+  _log->apply_ack(original_poster(msg), move(msg.ack_data));
 }
 
 // -----------------------------------------------------------------------------
@@ -237,7 +238,7 @@ void hub::process(Node& op, Fuse msg) {
 
   add_log_entry(move(msg));
 
-  auto fuse_entry = _log.find_highest_fuse_entry();
+  auto fuse_entry = _log->find_highest_fuse_entry();
 
   if (fuse_entry) {
     if (msg_id >= message_id(fuse_entry->message)) {
@@ -413,7 +414,7 @@ void hub::on_recv_raw(Node& proxy, const Bytes& data) {
 void hub::commit_what_was_seen_by_everyone() {
   const LogEntry* last_committed_fuse = nullptr;
 
-  for (auto& e : _log | reversed | map_values) {
+  for (auto& e : *_log | reversed | map_values) {
     if (e.message_type() == ::club::fuse && e.acked_by_quorum()) {
       last_committed_fuse = &e;
       for (auto id : _last_quorum) {
@@ -429,22 +430,22 @@ void hub::commit_what_was_seen_by_everyone() {
 #if USE_LOG
   {
     LOG("Checking what can be commited");
-    LOG("    Last committed: ", str(_log.last_committed));
-    LOG("    Last committed fuse: ", str(_log.last_fuse_commit));
+    LOG("    Last committed: ", str(_log->last_committed));
+    LOG("    Last committed fuse: ", str(_log->last_fuse_commit));
     LOG("    Last quorum: ", str(_last_quorum));
     LOG("    Entries:");
-    for (const auto& e : _log | map_values) {
+    for (const auto& e : *_log | map_values) {
       LOG("      ", e);
     }
   }
 #endif
 
-  auto entry_j = _log.begin();
+  auto entry_j = _log->begin();
 
   auto was_destroyed = _was_destroyed;
 
 
-  for (auto entry_i = entry_j; entry_i != _log.end(); entry_i = entry_j) {
+  for (auto entry_i = entry_j; entry_i != _log->end(); entry_i = entry_j) {
     entry_j = next(entry_i);
 
     auto& entry = entry_i->second;
@@ -467,7 +468,7 @@ void hub::commit_what_was_seen_by_everyone() {
       auto i = entry.predecessors.rbegin();
 
       for (; i != entry.predecessors.rend(); ++i) {
-        if (i->first == _log.last_committed) break;
+        if (i->first == _log->last_committed) break;
         if (_configs.count(config_id(entry.message)) == 0) continue;
         //if (_log.excluded_predecessors.count(i->first)) continue;
         break;
@@ -475,10 +476,10 @@ void hub::commit_what_was_seen_by_everyone() {
 
       if (i != entry.predecessors.rend()) {
         LOG("    Predecessor: ", str(*i));
-        if (i->first != _log.last_committed && i->first > _log.last_fuse_commit) {
+        if (i->first != _log->last_committed && i->first > _log->last_fuse_commit) {
           //if (!(i->first >>= _log.last_committed)) {
             LOG("    entry.predecessor != _log.last_committed "
-               , i->first, " != ", _log.last_committed);
+               , i->first, " != ", _log->last_committed);
             break;
           //}
         }
@@ -492,14 +493,14 @@ void hub::commit_what_was_seen_by_everyone() {
 
     LOG("    Committing: ", entry);
     auto e = move(entry_i->second);
-    _log.erase(entry_i);
+    _log->erase(entry_i);
 
     if (e.message_type() == ::club::fuse) {
-      _log.last_fuse_commit = message_id(e.message);
+      _log->last_fuse_commit = message_id(e.message);
     }
 
-    _log.last_committed = message_id(e.message);
-    _log.last_commit_op = original_poster(e.message);
+    _log->last_committed = message_id(e.message);
+    _log->last_commit_op = original_poster(e.message);
 
     commit(move(e));
 
@@ -518,16 +519,16 @@ template<class Message>
 void hub::add_log_entry(Message message) {
   LOG("Adding entry for message: ", message);
 
-  if(message_id(message) <= _log.last_committed) {
+  if(message_id(message) <= _log->last_committed) {
     if (Message::type() != ::club::fuse) {
       LOG("!!! message_id(message) should be > than _log.last_committed");
       LOG("!!! message_id(message) = ", message_id(message));
-      LOG("!!! _log.last_committed   = ", _log.last_committed);
+      LOG("!!! _log.last_committed   = ", _log->last_committed);
       ASSERT(0);
     }
   }
 
-  _log.insert_entry(LogEntry(move(message)));
+  _log->insert_entry(LogEntry(move(message)));
 }
 
 //------------------------------------------------------------------------------
@@ -552,7 +553,7 @@ Message hub::construct_ackable(Args&&... args) {
 
   auto m_id = MessageId(_time_stamp, _id);
 
-  const auto& predecessor_id = _log.get_predecessor_time(m_id);
+  const auto& predecessor_id = _log->get_predecessor_time(m_id);
 
   // TODO: m_id here is redundant, can be calculated from header.
   AckData ack_data { move(m_id)
@@ -571,7 +572,7 @@ Message hub::construct_ackable(Args&&... args) {
 
 // -----------------------------------------------------------------------------
 Ack hub::construct_ack(const MessageId& msg_id) {
-  const auto& predecessor_id = _log.get_predecessor_time(msg_id);
+  const auto& predecessor_id = _log->get_predecessor_time(msg_id);
 
   auto ack = construct<Ack>
              ( msg_id
@@ -579,7 +580,7 @@ Ack hub::construct_ack(const MessageId& msg_id) {
              , local_quorum());
 
   // We don't receive our own message back, so need to apply it manually.
-  _log.apply_ack(_id, ack.ack_data);
+  _log->apply_ack(_id, ack.ack_data);
   return ack;
 }
 

@@ -23,6 +23,7 @@
 #include "club/graph.h"
 #include "club/uuid.h"
 #include "club/node_impl.h"
+#include "club/message_id.h"
 
 #include <club/socket.h>
 #include "log.h"
@@ -32,6 +33,14 @@ namespace club {
 struct Node;
 class GetExternalPort;
 class BroadcastRoutingTable;
+struct Fuse;
+struct Sync;
+struct PortOffer;
+struct UserData;
+struct Ack;
+struct LogEntry;
+struct MessageId;
+class Log;
 
 class hub {
 private:
@@ -135,7 +144,7 @@ private:
   std::unique_ptr<Work>                  _work;
   uuid                                   _id;
   Nodes                                  _nodes;
-  Log                                    _log;
+  std::unique_ptr<Log>                   _log;
   TimeStamp                              _time_stamp;
   std::unique_ptr<BroadcastRoutingTable> _broadcast_routing_table;
   std::shared_ptr<bool>                  _was_destroyed;

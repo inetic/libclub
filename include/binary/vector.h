@@ -15,7 +15,7 @@
 #pragma once
 
 #include <vector>
-#include <debug/ASSERT.h>
+#include <assert.h>
 #include "binary/decoder.h"
 
 namespace std {
@@ -44,7 +44,7 @@ template<typename Encoder>
                     , size_t max_size = std::numeric_limits<uint32_t>::max()) {
     using namespace boost;
 
-    ASSERT(vector.size() < max_size);
+    assert(vector.size() < max_size);
 
     e.template put<uint32_t>(vector.size());
 
@@ -79,4 +79,4 @@ inline void decode( binary::decoder& d
 
 //------------------------------------------------------------------------------
 
-} // binary namespace
+} // std namespace

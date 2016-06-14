@@ -66,16 +66,8 @@ struct MessageId {
   }
 };
 
-} // club namespace
-
-
-#include "debug/ostream_uuid.h"
-
-namespace club {
-
-inline
-std::ostream& operator<<(std::ostream& os, const MessageId& o) {
-  return os << "(" << o.original_poster << ":" << o.timestamp << ")";
-}
+std::ostream& operator<<(std::ostream& os, const MessageId& o);
 
 } // club namespace
+
+
