@@ -634,7 +634,7 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
 
     node.send_unreliable(move(b), [counter, bytes, handler]() {
         if (--(*counter) == 0) handler();
-        });
+      });
   }
 }
 
@@ -662,7 +662,7 @@ void hub::node_received_unreliable_broadcast(const Bytes& bytes) {
                          , [shared_bytes]() {});
   }
 
-  on_receive_unreliable(source, const_buffer(d.current(), d.size()));
+  on_receive_unreliable(source, const_buffer(d.current() + 4, d.size() - 4));
 }
 
 // -----------------------------------------------------------------------------
