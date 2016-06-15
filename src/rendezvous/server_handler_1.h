@@ -105,8 +105,8 @@ void server_handler_1::forget(udp::endpoint from) {
   auto i = ep_to_service.find(from);
   if (i != ep_to_service.end()) {
     service_to_dms.erase(i->second);
+    ep_to_service.erase(i);
   }
-  ep_to_service.erase(i);
 }
 
 //------------------------------------------------------------------------------
