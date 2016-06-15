@@ -34,7 +34,7 @@
 #include "generic/variant_tools.h"
 
 #include "debug/string_tools.h"
-#include "debug/ostream_uuid.h"
+#include "club/debug/ostream_uuid.h"
 
 namespace club {
 
