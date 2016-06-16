@@ -19,8 +19,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include "stun-client.h"
 #include "debug/ASSERT.h"
-#include "binary/decoder.h"
-#include "binary/ip.h"
+#include "binary/serialize/ip.h"
 
 using Timer = boost::asio::steady_timer;
 using namespace club;

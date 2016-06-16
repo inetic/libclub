@@ -19,15 +19,15 @@
 #include <boost/uuid/uuid.hpp>
 #include <binary/encoder.h>
 #include <binary/decoder.h>
-#include "binary/uuid.h"
 
+#include "binary/serialize/uuid.h"
+#include "binary/serialize/vector.h"
+#include "binary/serialize/set.h"
+#include "binary/serialize/flat_set.h"
+#include "binary/serialize/string.h"
+#include "binary/serialize/pair.h"
 #include "club/uuid.h"
 #include "club/message_id.h"
-#include "binary/vector.h"
-#include "binary/set.h"
-#include "binary/flat_set.h"
-#include "binary/string.h"
-#include "binary/pair.h"
 #include "serialize/net.h"
 #include "serialize/message_id.h"
 

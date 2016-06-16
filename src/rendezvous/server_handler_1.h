@@ -18,7 +18,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/optional.hpp>
 #include <binary/encoder.h>
-#include <binary/ip.h>
+#include <binary/serialize/ip.h>
 #include <rendezvous/constants.h>
 #include <async/alarm.h>
 #include "options.h"

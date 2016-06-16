@@ -16,7 +16,7 @@
 #define __CLUB_BINARY_SERIALIZE_NET_H__
 
 #include "binary/decoder.h"
-#include "binary/ip.h"
+#include "binary/serialize/ip.h"
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/udp.hpp>
 

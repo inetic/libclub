@@ -22,7 +22,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <binary/encoder.h>
 #include <binary/decoder.h>
-#include <binary/ip.h>
+#include <binary/serialize/ip.h>
 #include <rendezvous/constants.h>
 
 namespace rendezvous {
