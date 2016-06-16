@@ -636,6 +636,10 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
         if (--(*counter) == 0) handler();
       });
   }
+
+  if (*counter == 0) {
+    get_io_service().post(move(handler));
+  }
 }
 
 // -----------------------------------------------------------------------------
