@@ -87,7 +87,6 @@ private:
                      , binary::decoder d);
 
 private:
-  boost::asio::io_service& _ios;
   udp::socket _socket;
   StatePtr _state;
 
@@ -102,8 +101,7 @@ namespace rendezvous {
 
 inline
 server::server(boost::asio::io_service& ios, options opt)
-  : _ios(ios)
-  , _socket(ios, udp::endpoint(udp::v4(), opt.port()))
+  : _socket(ios, udp::endpoint(udp::v4(), opt.port()))
   , _state(std::make_shared<State>())
   , _handler_1(new server_handler_1(ios, opt))
 {
