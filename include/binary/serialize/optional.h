@@ -12,52 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_BINARY_MAP_H__
-#define __CLUB_BINARY_MAP_H__
+#pragma once
 
-#include <binary/decoder.h>
-#include <map>
+#include <boost/optional.hpp>
+#include "binary/decoder.h"
 
-namespace std {
+namespace boost {
 
 //------------------------------------------------------------------------------
-template<typename Encoder, class T1, class T2>
+template<typename Encoder, class T>
 inline void encode( Encoder& e
-                  , const std::map<T1, T2>& map
-                  , size_t max_size = std::numeric_limits<uint32_t>::max()) {
+                  , const boost::optional<T>& opt) {
   using namespace boost;
 
-  e.template put((uint32_t) map.size());
-
-  for (const auto& item : map) {
-    e.template put(item);
+  if (opt) {
+    e.template put<uint8_t>(1);
+    e.template put<T>((typename std::remove_reference<T>::type)(*opt));
+  }
+  else {
+    e.template put<uint8_t>(0);
   }
 }
 
 //------------------------------------------------------------------------------
-template<class T1, class T2>
+template<class T>
 inline void decode( binary::decoder& d
-                  , std::map<T1, T2>& map
-                  , size_t max_size = std::numeric_limits<uint32_t>::max()) {
+                  , boost::optional<T>& opt) {
   using namespace boost;
 
   if (d.error()) return;
 
-  auto size = d.get<uint32_t>();
-
-  if (size > max_size) {
-    return d.set_error();
+  if (d.get<uint8_t>()) {
+    if (d.error()) return;
+    opt = d.get<typename std::remove_reference<T>::type>();
   }
-
-  for (uint32_t i = 0; i < size; ++i) {
-    auto value = d.get<std::pair<T1, T2>>();
-    map.insert(value);
-    if (d.error()) break;
+  else {
+    opt = boost::none;
   }
 }
 
 //------------------------------------------------------------------------------
 
-} // std namespace
-
-#endif // ifndef __CLUB_BINARY_MAP_H__
+} // boost namespace

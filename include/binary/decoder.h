@@ -138,6 +138,19 @@ inline std::uint16_t decoder::get<std::uint16_t>() {
 }
 
 template <>
+inline std::int16_t decoder::get<std::int16_t>() {
+  std::int16_t result;
+  if (size() < sizeof(result)) _was_error = true;
+  if (_was_error) return 0;
+
+  result = _current.begin[0] << 8
+         | _current.begin[1];
+
+  _current.begin += sizeof(result);
+  return result;
+}
+
+template <>
 inline std::uint32_t decoder::get<std::uint32_t>() {
   std::uint32_t result;
   if (size() < sizeof(result)) _was_error = true;
