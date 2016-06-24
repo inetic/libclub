@@ -63,25 +63,6 @@ add_executable(rendezvous-server ${sources})
 target_link_libraries(rendezvous-server ${Boost_LIBRARIES})
 
 ################################################################################
-project (rendezvous-client-server-tests)
-
-set(Boost_USE_STATIC_LIBS OFF)
-find_package(Boost ${BOOST_VERSION} COMPONENTS system unit_test_framework REQUIRED)
-find_package(Threads)
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread")
-
-include_directories(
-  "${Boost_INCLUDE_DIR}"
-  "${CMAKE_SOURCE_DIR}/include"
-  "${CMAKE_SOURCE_DIR}/src/rendezvous")
-
-file(GLOB sources "${CMAKE_SOURCE_DIR}/src/rendezvous/tests/main.cpp")
-
-add_executable(rendezvous-tests ${sources})
-target_link_libraries(rendezvous-tests ${Boost_LIBRARIES})
-
-################################################################################
 project (club-chat)
 
 set(Boost_USE_STATIC_LIBS ON)

@@ -32,6 +32,7 @@ static const uint8_t METHOD_MATCH = 0x01;
 
 static const uint8_t CLIENT_METHOD_FETCH = 0x00;
 static const uint8_t CLIENT_METHOD_CLOSE = 0x01;
+static const uint8_t CLIENT_METHOD_FETCH_AS_HOST = 0x02;
 
 // Same as in the STUN RFC.
 static const uint8_t IPV4_TAG = 0x01;

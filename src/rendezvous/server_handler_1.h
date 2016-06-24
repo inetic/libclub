@@ -45,10 +45,18 @@ class server_handler_1 {
   using StatePtr = std::shared_ptr<State>;
   using Constant = constants_v1;
 
-  struct DMS { // Dead Man's Switch
-    udp::endpoint    requester_external_ep;
-    udp::endpoint    requester_internal_ep;
-    std::unique_ptr<async::alarm> alarm;
+  struct Service {
+    service_type                  type;
+    udp::endpoint                 internal_ep;
+    bool                          is_host;
+    std::unique_ptr<async::alarm> dead_man_switch;
+  };
+
+  struct Entry {
+    udp::endpoint            external_endpoint;
+    udp::endpoint            internal_endpoint;
+    Service&                 service;
+    std::set<udp::endpoint>& service_endpoints;
   };
 
 public:
@@ -61,10 +69,7 @@ public:
   void handle(udp::endpoint from, binary::decoder, server&);
 
 private:
-  void on_alarm();
-  DMS make_dms( service_type service
-              , udp::endpoint
-              , udp::endpoint);
+  std::unique_ptr<async::alarm> make_dms(udp::endpoint);
 
   std::vector<uint8_t> payload( udp::endpoint  reflexive_ep
                               , udp::endpoint  ext_ep
@@ -74,14 +79,22 @@ private:
             , udp::endpoint ep1_ext, udp::endpoint ep1_int
             , udp::endpoint ep2_ext, udp::endpoint ep2_int);
 
-  void forget(udp::endpoint from);
+  void forget(udp::endpoint from, const char*);
+
+  Entry find_or_create_entry( udp::endpoint ext_ep
+                            , udp::endpoint int_ep
+                            , bool          is_host
+                            , service_type);
+
+  void remove_ep_from_service( udp::endpoint ep
+                             , service_type  service);
 
 private:
   StatePtr  _state;
   options   _options;
 
-  std::map<udp::endpoint, service_type> ep_to_service;
-  std::map<service_type, DMS> service_to_dms;
+  std::map<udp::endpoint, Service>                ep_to_service;
+  std::map<service_type, std::set<udp::endpoint>> service_to_endpoints;
 };
 
 } // rendezvous namespace
@@ -101,11 +114,90 @@ server_handler_1::server_handler_1( boost::asio::io_service& ios
 
 //------------------------------------------------------------------------------
 inline
-void server_handler_1::forget(udp::endpoint from) {
+void server_handler_1::forget(udp::endpoint from, const char* msg) {
+  using std::cout;
+  using std::endl;
+
   auto i = ep_to_service.find(from);
   if (i != ep_to_service.end()) {
-    service_to_dms.erase(i->second);
+
+    if (_options.verbosity() > 1) {
+      cout << "Forgetting: " << from << " (" << msg << ")" << endl;
+    }
+
+    auto j = service_to_endpoints.find(i->second.type);
+    if (j != service_to_endpoints.end()) {
+      j->second.erase(from);
+      if (j->second.empty()) {
+        service_to_endpoints.erase(i->second.type);
+      }
+    }
     ep_to_service.erase(i);
+  }
+}
+
+//------------------------------------------------------------------------------
+inline
+void
+server_handler_1::remove_ep_from_service( udp::endpoint ep
+                                        , service_type  service) {
+  auto eps_i = service_to_endpoints.find(service);
+
+  if (eps_i == service_to_endpoints.end()) {
+    return;
+  }
+
+  eps_i->second.erase(ep);
+
+  if (eps_i->second.empty()) {
+    service_to_endpoints.erase(service);
+  }
+}
+
+//------------------------------------------------------------------------------
+inline
+server_handler_1::Entry
+server_handler_1::find_or_create_entry( udp::endpoint ext_ep
+                                      , udp::endpoint int_ep
+                                      , bool          is_host
+                                      , service_type  service_t) {
+  auto ep_i = ep_to_service.find(ext_ep);
+
+  if (ep_i == ep_to_service.end()) {
+    // We've not heart from this endpoint yet.
+    auto pair = ep_to_service.emplace(ext_ep, Service{ service_t
+                                                     , int_ep
+                                                     , is_host
+                                                     , make_dms(ext_ep)});
+
+    auto& endpoints = service_to_endpoints[service_t];
+    endpoints.insert(ext_ep);
+    return Entry{ ext_ep
+                , int_ep
+                , pair.first->second
+                , endpoints };
+  }
+  else {
+    // We already know him.
+    auto& service = ep_i->second;
+
+    service.dead_man_switch->start(Constant::keepalive_duration());
+
+    service.is_host = is_host;
+
+    if (service.type != service_t) {
+      // He changed to another service.
+      remove_ep_from_service(ext_ep, service.type);
+      service.type = service_t;
+    }
+
+    auto& endpoints = service_to_endpoints[service_t];
+    endpoints.insert(ext_ep);
+
+    return Entry{ ext_ep
+                , int_ep
+                , ep_i->second
+                , endpoints };
   }
 }
 
@@ -134,14 +226,20 @@ void server_handler_1::handle( udp::endpoint from
     return;
   }
 
+  bool is_host;
+
   switch (client_method) {
-    case CLIENT_METHOD_CLOSE: return forget(from);
-    case CLIENT_METHOD_FETCH: break; // Handled in the rest of this function.
+    case CLIENT_METHOD_CLOSE: return forget(from, "close");
+    case CLIENT_METHOD_FETCH: is_host = false;
+                              break; // Handled in the rest of this function.
+    case CLIENT_METHOD_FETCH_AS_HOST:
+                              is_host = true;
+                              break; // Handled in the rest of this function.
     default: {
                if (_options.verbosity() > 0) {
                  cout << "Invalid client method from " << from << endl;
                }
-               return forget(from);
+               return forget(from, "invalid message");
              }
   }
 
@@ -165,104 +263,59 @@ void server_handler_1::handle( udp::endpoint from
                      his_internal_ep = udp::endpoint(addr, his_internal_port);
                      break;
                    }
-    default: return forget(from);
+    default: return forget(from, "invalid ip version");
   }
 
   if (d.error()) {
     if (_options.verbosity() > 0) {
       cout << "Error parsing message from " << from << endl;
     }
-    return forget(from);
+    return forget(from, "error parsing message");
   }
 
-  auto ep_i = ep_to_service.find(from);
-  auto service_i = service_to_dms.find(service);
+  auto entry = find_or_create_entry( from
+                                   , his_internal_ep
+                                   , is_host
+                                   , service);
 
-  if (ep_i == ep_to_service.end()) {
-    if (service_i == service_to_dms.end()) {
-      if (_options.verbosity() > 1) {
-        cout << "Registering " << from << " on service " << service << endl;
-      }
-      ep_to_service.emplace(from, service);
+  for (auto other_ext_ep : entry.service_endpoints) {
+    if (other_ext_ep == from) continue;
+    auto other_i = ep_to_service.find(other_ext_ep);
 
-      service_to_dms.emplace(service, make_dms( service
-                                              , from
-                                              , his_internal_ep));
-    }
-    else {
-      auto ext_ep   = service_i->second.requester_external_ep;
-      auto int_ep   = service_i->second.requester_internal_ep;
+    assert(other_i != ep_to_service.end());
+    assert(other_i->second.type == service);
 
-      if (_options.verbosity() > 1) {
-        cout << "Match " << ext_ep << ", " << from << endl;
-      }
-      match(server, ext_ep, int_ep
-                  , from, his_internal_ep);
-      ep_to_service.erase(ext_ep);
-      service_to_dms.erase(service_i);
-    }
-  }
-  else {
-    auto old_service = ep_i->second;
+    auto& other = other_i->second;
 
-    if (old_service == service) {
-      if (_options.verbosity() > 2) {
-        cout << "Refresh " << from << " service " << service << endl;
-      }
-      assert(service_i != service_to_dms.end());
-      service_i->second.alarm->start(Constant::keepalive_duration());
-    }
-    else {
-      service_to_dms.erase(old_service);
+    if (!is_host || !other.is_host) {
+      match(server, other_ext_ep
+                  , other.internal_ep
+                  , from
+                  , his_internal_ep);
 
-      if (service_i == service_to_dms.end()) {
-        if (_options.verbosity() > 1) {
-          cout << "Reregister " << from
-               << " service " << service
-               << " (old service: " << old_service << ")" << endl;
-        }
-        service_to_dms.emplace(service, make_dms(service
-                                                , from
-                                                , his_internal_ep));
-      }
-      else {
-        auto ext_ep   = service_i->second.requester_external_ep;
-        auto int_ep   = service_i->second.requester_internal_ep;
+      forget(from, "match 1");
+      forget(other_ext_ep, "match 2");
 
-        if (_options.verbosity() > 1) {
-          cout << "ReRegister match: " << from << " " << ext_ep << endl;
-        }
-        match(server, ext_ep, int_ep
-                    , from, his_internal_ep);
-        ep_to_service.erase(ep_i);
-        service_to_dms.erase(service_i);
-      }
+      return;
     }
   }
 }
 
 //------------------------------------------------------------------------------
 inline
-server_handler_1::DMS server_handler_1::make_dms( service_type  service
-                                                , udp::endpoint requester_ext
-                                                , udp::endpoint requester_int) {
+std::unique_ptr<async::alarm>
+server_handler_1::make_dms(udp::endpoint requester_ep) {
   using std::cout;
   using std::endl;
   using std::move;
 
-  return DMS({ requester_ext
-             , requester_int
-             , std::make_unique<async::alarm>
-                ( get_io_service()
-                , [=]() {
-                    if (_options.verbosity() > 1) {
-                      cout << "Deregister " << requester_ext
-                           << " on service " << service
-                           << " (timeout) " << endl;
-                    }
-                    ep_to_service.erase(requester_ext);
-                    service_to_dms.erase(service);
-                  })});
+  auto dms = std::make_unique<async::alarm>
+               ( get_io_service()
+               , [=]() { forget(requester_ep, "timeout"); });
+
+  dms->start(Constant::keepalive_duration());
+
+  return move(dms);
 }
 
 //------------------------------------------------------------------------------

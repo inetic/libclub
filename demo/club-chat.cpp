@@ -143,6 +143,7 @@ struct Chat {
       ( CHAT_SERVICE_NUMBER
       , move(socket)
       , options.server_endpoint
+      , false // connect as non-host
       , [=](Error error, udp::socket socket, udp::endpoint remote_ep) {
         rendezvous_client.reset();
 

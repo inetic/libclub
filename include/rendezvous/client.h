@@ -74,6 +74,7 @@ public:
   client( Service service_number
         , udp::socket
         , udp::endpoint server_ep
+        , bool is_host
         , Handler handler);
 
   boost::asio::io_service& get_io_service() const {
@@ -89,7 +90,7 @@ private:
   void on_recv(StatePtr, Error, size_t);
   void on_send(StatePtr);
 
-  std::vector<uint8_t> construct_fetch_message() const;
+  std::vector<uint8_t> construct_fetch_message(bool as_host) const;
   std::vector<uint8_t> construct_close_message() const;
 
 private:
@@ -109,13 +110,14 @@ inline
 client::client( Service service_number
               , udp::socket socket
               , udp::endpoint server_ep
+              , bool is_host
               , Handler handler)
   : _service_number(service_number)
   , _resend_timer(socket.get_io_service())
   , _server_ep(server_ep)
   , _state(std::make_shared<State>(std::move(socket), std::move(handler)))
 {
-  _state->tx_buffer = construct_fetch_message();
+  _state->tx_buffer = construct_fetch_message(is_host);
 
   start_sending(_state);
   start_receiving(_state);
@@ -242,7 +244,7 @@ client::~client() {
 }
 
 inline
-std::vector<uint8_t> client::construct_fetch_message() const {
+std::vector<uint8_t> client::construct_fetch_message(bool as_host) const {
   namespace ip = boost::asio::ip;
   ip::address internal_addr;
 
@@ -273,7 +275,13 @@ std::vector<uint8_t> client::construct_fetch_message() const {
   assert(e.written() == HEADER_SIZE);
 
   // Payload
-  e.put((uint8_t) CLIENT_METHOD_FETCH);
+  if (as_host) {
+    e.put((uint8_t) CLIENT_METHOD_FETCH_AS_HOST);
+  }
+  else {
+    e.put((uint8_t) CLIENT_METHOD_FETCH);
+  }
+
   e.put((Service) _service_number); // Service
   e.put((uint16_t) internal_port);
 
