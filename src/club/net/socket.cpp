@@ -35,6 +35,7 @@ Socket::Socket(asio::io_service& io_service)
   , _closed(false)
   , _received_close(false)
   , _remote_known_to_have_symmetric_nat(false)
+  , _self(std::make_shared<Socket*>(this))
 {
 }
 
@@ -43,6 +44,7 @@ Socket::Socket(udp::socket&& s)
   , _closed(false)
   , _received_close(false)
   , _remote_known_to_have_symmetric_nat(false)
+  , _self(std::make_shared<Socket*>(this))
 {
 }
 
@@ -51,28 +53,32 @@ Socket::Socket(Socket&& s)
   , _closed(s._closed)
   , _received_close(s._received_close)
   , _remote_known_to_have_symmetric_nat(s._remote_known_to_have_symmetric_nat)
+  , _self(s._self)
 {
   s._closed = true;
   s._received_close = false;
   s._remote_known_to_have_symmetric_nat = false;
+  *_self = this;
 }
 
 Socket::Socket( asio::io_service&    io_service
-                                , const endpoint_type& ep)
+              , const endpoint_type& ep)
   : _socket(std::make_shared<Delegate>(io_service, ep))
   , _closed(false)
   , _received_close(false)
   , _remote_known_to_have_symmetric_nat(false)
+  , _self(std::make_shared<Socket*>(this))
 {
 }
 
 Socket::Socket( asio::io_service& io_service
-                                , unsigned short    port)
+              , unsigned short    port)
   : _socket(std::make_shared<Delegate>( io_service
                                       , udp::endpoint(udp::v4(), port)))
   , _closed(false)
   , _received_close(false)
   , _remote_known_to_have_symmetric_nat(false)
+  , _self(std::make_shared<Socket*>(this))
 {
 }
 
@@ -222,14 +228,16 @@ void Socket::async_receive( Channel                     channel
     return;
   }
 
+  auto self = _self;
+
   _socket->async_receive_from
     ( channel
     , timeout_ms
     , asio::mutable_buffers_1(buffer)
-    , [=](const endpoint_type&, const error_code& error, size_t size)
+    , [self, handler](const endpoint_type&, const error_code& error, size_t size)
       {
         if (error && error != asio::error::timed_out) {
-          _closed = true;
+          (*self)->_closed = true;
           //_socket->close();
         }
 
@@ -255,17 +263,19 @@ void Socket::async_connect( unsigned int          timeout_ms
 
   Clock::time_point end_time = Clock::now() + milliseconds(timeout_ms);
 
+  auto self = _self;
+
   _socket->async_send_to
       ( remote_endpoint
       , asio::buffer(*buffer)
       , CHANNEL_DAT()
       , timeout_ms
 
-      , [=](const error_code& error) {
-          on_private_endpoint_sent( end_time
-                                  , buffer
-                                  , handler
-                                  , error);
+      , [self, end_time, buffer, handler](const error_code& error) {
+          (*self)->on_private_endpoint_sent( end_time
+                                           , buffer
+                                           , handler
+                                           , error);
         });
 }
 
@@ -285,19 +295,24 @@ void Socket::async_p2p_connect
     _socket->unbind_remote();
   }
 
+  auto self = _self;
+
   p2p_connect( *_socket
              , timeout_ms
              , remote_private_endpoint
              , remote_public_endpoint
-             , [=]( const error_code&    error
-                  , const endpoint_type& requested_endpoint
-                  , const endpoint_type& connected_endpoint)
+             , [self, handler]
+                     ( const error_code&    error
+                     , const endpoint_type& requested_endpoint
+                     , const endpoint_type& connected_endpoint)
                {
+                 auto s = *self;
+
                  if (!error) {
-                   _socket->bind_remote(connected_endpoint);
+                   s->_socket->bind_remote(connected_endpoint);
 
                    if (requested_endpoint != connected_endpoint) {
-                     _remote_known_to_have_symmetric_nat = true;
+                     s->_remote_known_to_have_symmetric_nat = true;
                    }
                  }
 
@@ -324,20 +339,23 @@ void Socket::on_private_endpoint_sent
     return;
   }
 
+  auto self = _self;
+
   _socket->async_receive_from
     ( time_left_ms
     , asio::buffer(*bytes)
-    , [=]( const endpoint_type& endpoint
-         , const error_code& error
-         , size_t size)
+    , [self, bytes, end_time, handler]
+        ( const endpoint_type& endpoint
+        , const error_code& error
+        , size_t size)
       {
         bytes->resize(std::min(size, bytes->size()));
 
-        on_private_endpoint_recv( end_time
-                                , bytes
-                                , handler
-                                , endpoint
-                                , error);
+        (*self)->on_private_endpoint_recv( end_time
+                                         , bytes
+                                         , handler
+                                         , endpoint
+                                         , error);
       });
 }
 
@@ -397,10 +415,12 @@ void Socket::start_receiving_close() {
 
   auto was_destroyed = _socket->_was_destroyed;
 
+  auto self = _self;
+
   if (!keep_alive.is_running()) {
-    keep_alive.start([=](const error_code& error) {
+    keep_alive.start([self, was_destroyed](const error_code& error) {
         if (*was_destroyed) return;
-        on_keep_alive_timeout(error);
+        (*self)->on_keep_alive_timeout(error);
         });
   }
 
@@ -409,11 +429,11 @@ void Socket::start_receiving_close() {
 
   _socket->async_receive_from
     ( CHANNEL_CLOSE(), -1, asio::null_buffers()
-    , [=]( const endpoint_type& endpoint
-         , const error_code&    error
-         , size_t               size) {
+    , [self, was_destroyed]( const endpoint_type& endpoint
+                           , const error_code&    error
+                           , size_t               size) {
            if (*was_destroyed) return;
-           on_recv_close(endpoint, error, size);
+           (*self)->on_recv_close(endpoint, error, size);
          });
 }
 

@@ -172,6 +172,7 @@ private:
   bool                      _closed;
   bool                      _received_close;
   bool                      _remote_known_to_have_symmetric_nat;
+  std::shared_ptr<Socket*>  _self;
 };
 
 } // club namespace
