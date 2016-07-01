@@ -27,12 +27,16 @@ static const size_t         HEADER_SIZE      = 8;
 static const size_t         MAX_PAYLOAD_SIZE = 1024 - HEADER_SIZE;
 static const uint32_t       COOKIE           = 0x3223B553;
 
-static const uint8_t METHOD_PING  = 0x00;
-static const uint8_t METHOD_MATCH = 0x01;
+static const uint8_t METHOD_PING      = 0x00;
+static const uint8_t METHOD_MATCH     = 0x01;
+static const uint8_t METHOD_REFLECTOR = 0x02;
+static const uint8_t METHOD_REFLECTED = 0x03;
 
-static const uint8_t CLIENT_METHOD_FETCH = 0x00;
-static const uint8_t CLIENT_METHOD_CLOSE = 0x01;
+static const uint8_t CLIENT_METHOD_FETCH         = 0x00;
+static const uint8_t CLIENT_METHOD_CLOSE         = 0x01;
 static const uint8_t CLIENT_METHOD_FETCH_AS_HOST = 0x02;
+static const uint8_t CLIENT_METHOD_GET_REFLECTOR = 0x03;
+static const uint8_t CLIENT_METHOD_REFLECT       = 0x04;
 
 // Same as in the STUN RFC.
 static const uint8_t IPV4_TAG = 0x01;

@@ -22,6 +22,7 @@
 #include <rendezvous/constants.h>
 #include <async/alarm.h>
 #include "options.h"
+#include "reflector.h"
 
 namespace rendezvous {
 
@@ -34,7 +35,7 @@ class server_handler_1 {
 
   struct State {
     boost::asio::io_service& ios;
-    bool was_destroyed;
+    bool                     was_destroyed;
 
     State(boost::asio::io_service& ios)
       : ios(ios)
@@ -48,6 +49,7 @@ class server_handler_1 {
   struct Service {
     service_type                  type;
     udp::endpoint                 internal_ep;
+    uint16_t                      reflected_port;
     bool                          is_host;
     std::unique_ptr<async::alarm> dead_man_switch;
   };
@@ -73,25 +75,30 @@ private:
 
   std::vector<uint8_t> payload( udp::endpoint  reflexive_ep
                               , udp::endpoint  ext_ep
-                              , udp::endpoint  int_ep) const;
+                              , udp::endpoint  int_ep
+                              , uint16_t) const;
 
   void match( server& server
-            , udp::endpoint ep1_ext, udp::endpoint ep1_int
-            , udp::endpoint ep2_ext, udp::endpoint ep2_int);
+            , udp::endpoint ep1_ext, udp::endpoint ep1_int, uint16_t
+            , udp::endpoint ep2_ext, udp::endpoint ep2_int, uint16_t);
 
   void forget(udp::endpoint from, const char*);
 
   Entry find_or_create_entry( udp::endpoint ext_ep
                             , udp::endpoint int_ep
+                            , uint16_t      reflected_port
                             , bool          is_host
                             , service_type);
 
   void remove_ep_from_service( udp::endpoint ep
                              , service_type  service);
 
+  void respond_with_reflector(udp::endpoint from, server&);
+
 private:
   StatePtr  _state;
   options   _options;
+  Reflector _reflector;
 
   std::map<udp::endpoint, Service>                ep_to_service;
   std::map<service_type, std::set<udp::endpoint>> service_to_endpoints;
@@ -109,6 +116,7 @@ server_handler_1::server_handler_1( boost::asio::io_service& ios
                                   , const options& opts)
   : _state(std::make_shared<State>(ios))
   , _options(opts)
+  , _reflector(ios)
 {
 }
 
@@ -159,6 +167,7 @@ inline
 server_handler_1::Entry
 server_handler_1::find_or_create_entry( udp::endpoint ext_ep
                                       , udp::endpoint int_ep
+                                      , uint16_t      reflected_port
                                       , bool          is_host
                                       , service_type  service_t) {
   auto ep_i = ep_to_service.find(ext_ep);
@@ -167,6 +176,7 @@ server_handler_1::find_or_create_entry( udp::endpoint ext_ep
     // We've not heart from this endpoint yet.
     auto pair = ep_to_service.emplace(ext_ep, Service{ service_t
                                                      , int_ep
+                                                     , reflected_port
                                                      , is_host
                                                      , make_dms(ext_ep)});
 
@@ -203,6 +213,25 @@ server_handler_1::find_or_create_entry( udp::endpoint ext_ep
 
 //------------------------------------------------------------------------------
 inline
+void
+server_handler_1::respond_with_reflector(udp::endpoint from, server& server) {
+  std::vector<uint8_t> payload(HEADER_SIZE + 4);
+
+  binary::encoder e(payload.data(), payload.size());
+
+  write_header(e, payload.size());
+
+  e.put((uint8_t)  METHOD_REFLECTOR);
+  e.put((uint8_t)  0); // Reserved.
+  e.put((uint16_t) _reflector.get_port());
+
+  assert(!e.error());
+
+  server.send_to(from, std::move(payload));
+}
+
+//------------------------------------------------------------------------------
+inline
 void server_handler_1::handle( udp::endpoint from
                              , binary::decoder d
                              , server& server) {
@@ -213,10 +242,6 @@ void server_handler_1::handle( udp::endpoint from
 
   namespace ip = boost::asio::ip;
 
-  if (_options.verbosity() > 2) {
-    cout << "handler_1::handle(" << from << ")" << endl;
-  }
-
   auto client_method = d.get<uint8_t>();
 
   if (d.error()) {
@@ -224,6 +249,11 @@ void server_handler_1::handle( udp::endpoint from
       cout << "Error parsing message from " << from << endl;
     }
     return;
+  }
+
+  if (_options.verbosity() > 2) {
+    cout << "handler_1::handle(" << from << ", "
+         << ((int) client_method) << ")" << endl;
   }
 
   bool is_host;
@@ -235,16 +265,20 @@ void server_handler_1::handle( udp::endpoint from
     case CLIENT_METHOD_FETCH_AS_HOST:
                               is_host = true;
                               break; // Handled in the rest of this function.
+    case CLIENT_METHOD_GET_REFLECTOR:
+                              return respond_with_reflector(from, server);
     default: {
                if (_options.verbosity() > 0) {
-                 cout << "Invalid client method from " << from << endl;
+                 cout << "Invalid client method (" << ((int) client_method)
+                      << ") from " << from << endl;
                }
                return forget(from, "invalid message");
              }
   }
 
   auto service = d.get<service_type>();
-  auto his_internal_port = d.get<uint16_t>();
+  auto his_reflected_port = d.get<uint16_t>();
+  auto his_internal_port  = d.get<uint16_t>();
 
   udp::endpoint his_internal_ep;
 
@@ -263,7 +297,8 @@ void server_handler_1::handle( udp::endpoint from
                      his_internal_ep = udp::endpoint(addr, his_internal_port);
                      break;
                    }
-    default: return forget(from, "invalid ip version");
+    default:
+                   return forget(from, "invalid ip version");
   }
 
   if (d.error()) {
@@ -275,11 +310,14 @@ void server_handler_1::handle( udp::endpoint from
 
   auto entry = find_or_create_entry( from
                                    , his_internal_ep
+                                   , his_reflected_port
                                    , is_host
                                    , service);
 
   for (auto other_ext_ep : entry.service_endpoints) {
-    if (other_ext_ep == from) continue;
+    if (other_ext_ep == from) {
+      continue;
+    }
     auto other_i = ep_to_service.find(other_ext_ep);
 
     assert(other_i != ep_to_service.end());
@@ -290,8 +328,10 @@ void server_handler_1::handle( udp::endpoint from
     if (!is_host || !other.is_host) {
       match(server, other_ext_ep
                   , other.internal_ep
+                  , other.reflected_port
                   , from
-                  , his_internal_ep);
+                  , his_internal_ep
+                  , his_reflected_port);
 
       forget(from, "match 1");
       forget(other_ext_ep, "match 2");
@@ -323,11 +363,12 @@ inline
 void server_handler_1::match( server& server
                             , udp::endpoint ep1_ext
                             , udp::endpoint ep1_int
+                            , uint16_t      reflected_port1
                             , udp::endpoint ep2_ext
-                            , udp::endpoint ep2_int) {
-  using std::move;
-  server.send_to(ep1_ext, payload(ep1_ext, ep2_ext, ep2_int));
-  server.send_to(ep2_ext, payload(ep2_ext, ep1_ext, ep1_int));
+                            , udp::endpoint ep2_int
+                            , uint16_t      reflected_port2) {
+  server.send_to(ep1_ext, payload(ep1_ext, ep2_ext, ep2_int, reflected_port2));
+  server.send_to(ep2_ext, payload(ep2_ext, ep1_ext, ep1_int, reflected_port1));
 }
 
 //------------------------------------------------------------------------------
@@ -341,25 +382,34 @@ inline
 std::vector<uint8_t> server_handler_1::payload
                        ( udp::endpoint reflexive_ep
                        , udp::endpoint ext_ep
-                       , udp::endpoint int_ep ) const {
+                       , udp::endpoint int_ep
+                       , uint16_t      reflected_port) const {
 
   namespace ip = boost::asio::ip;
+
+  bool is_sym = false;
+
+  if (reflected_port != 0) {
+    auto diff = reflected_port - ext_ep.port();
+    is_sym = diff != 0;
+    ext_ep.port(reflected_port + diff);
+  }
 
   // TODO Padding
   uint16_t payload_size
             = 1 /* method */
             + 3 /* port+ipv */ + (reflexive_ep.address().is_v4() ? 4 : 16)
             + 3 /* port+ipv */ + (ext_ep      .address().is_v4() ? 4 : 16)
-            + 3 /* port+ipv */ + (int_ep      .address().is_v4() ? 4 : 16);
+            + 3 /* port+ipv */ + (int_ep      .address().is_v4() ? 4 : 16)
+            + 1 /* (bool) other is symmetric */
+            ;
 
   std::vector<uint8_t> ret(HEADER_SIZE + payload_size);
 
   binary::encoder encoder(ret.data(), ret.size());
 
-  static const uint16_t plex = 1 << 15;
-  encoder.put((uint16_t) (plex | version));
-  encoder.put((uint16_t) payload_size);
-  encoder.put((uint32_t) COOKIE);
+  write_header(encoder, payload_size);
+
   encoder.put((uint8_t) METHOD_MATCH);
 
   for (auto ep : {reflexive_ep, ext_ep, int_ep}) {
@@ -374,6 +424,8 @@ std::vector<uint8_t> server_handler_1::payload
       encoder.put(ep.address().to_v6());
     }
   }
+
+  encoder.put((uint8_t) is_sym);
 
   assert(!encoder.error());
   ret.resize(encoder.written());
