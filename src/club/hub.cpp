@@ -25,7 +25,6 @@
 #include "message.h"
 #include "net/async_exchange.h"
 #include "net/protocol_versions.h"
-#include "generic/erase_if.h"
 #include "stun-client.h"
 #include <chrono>
 #include <iostream>
