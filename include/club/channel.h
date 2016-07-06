@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_CHANNEL_H
+#define CLUB_CHANNEL_H
 
 namespace club {
 
@@ -106,3 +107,5 @@ static inline Channel CHANNEL_PUNCH()               { return Channel(Channel::PU
 static inline Channel CHANNEL_KEEP_ALIVE()          { return Channel(Channel::KEEP_ALIVE, true); }
 
 } // club namespace
+
+#endif // ifndef CLUB_CHANNEL_H

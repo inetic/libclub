@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_MESSAGE_H__
-#define __CLUB_MESSAGE_H__
+#ifndef CLUB_MESSAGE_H
+#define CLUB_MESSAGE_H
 
 #include <iostream>
 #include <boost/uuid/uuid.hpp>
@@ -403,5 +403,4 @@ AckData& ack_data(LogMessage& message) {
 
 } // club namespace
 
-#endif // ifndef __CLUB_MESSAGE_H__
-
+#endif // ifndef CLUB_MESSAGE_H

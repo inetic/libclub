@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __BINARY_IP_H__
-#define __BINARY_IP_H__
+#ifndef BINARY_SERIALIZE_IP_H
+#define BINARY_SERIALIZE_IP_H
 
 #include <boost/asio/ip/udp.hpp>
 #include <binary/encoder.h>
@@ -52,4 +52,4 @@ inline void decode(decoder& d, boost::asio::ip::address_v6& addr) {
 } // binary namespace
 
 
-#endif // ifndef __BINARY_IP_H__
+#endif // ifndef BINARY_SERIALIZE_IP_H

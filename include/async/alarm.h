@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __ASYNC_ALARM_H__
-#define __ASYNC_ALARM_H__
+#ifndef ASYNC_ALARM_H
+#define ASYNC_ALARM_H
 
 #include <mutex>
 #include <boost/asio/steady_timer.hpp>
@@ -147,5 +147,5 @@ private:
 
 } // async namespace
 
-#endif // ifndef __ASYNC_ALARM_H__
+#endif // ifndef ASYNC_ALARM_H
 

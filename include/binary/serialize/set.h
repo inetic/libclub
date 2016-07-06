@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_BINARY_SET_H__
-#define __CLUB_BINARY_SET_H__
+#ifndef BINARY_SERIALIZE_SET_H
+#define BINARY_SERIALIZE_SET_H
 
 #include <binary/decoder.h>
 #include <set>
@@ -62,4 +62,4 @@ inline void decode( binary::decoder& d
 
 } // std namespace
 
-#endif // ifndef __CLUB_BINARY_SET_H__
+#endif // ifndef BINARY_SERIALIZE_SET_H

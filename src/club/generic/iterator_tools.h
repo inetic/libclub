@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __ITERATOR_TOOLS_H__
-#define __ITERATOR_TOOLS_H__
+#ifndef CLUB_ITERATOR_TOOLS_H
+#define CLUB_ITERATOR_TOOLS_H
 
 #include <iterator>
 
@@ -151,4 +151,4 @@ private:
   I _delegate;
 };
 
-#endif // __ITERATOR_TOOLS_H__
+#endif // CLUB_ITERATOR_TOOLS_H

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_HEADER_H
+#define CLUB_NET_HEADER_H
 
 #include <array>
 #include <ostream>
@@ -82,3 +83,5 @@ inline std::ostream& operator<<(std::ostream& os, const Header& h)
 }
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_HEADER_H

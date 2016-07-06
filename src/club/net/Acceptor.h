@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_ACCEPTOR_H
+#define CLUB_NET_ACCEPTOR_H
 
 #include <map>
 #include "ConnectedSocket.h"
@@ -298,3 +299,5 @@ private:
 };
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_ACCEPTOR_H

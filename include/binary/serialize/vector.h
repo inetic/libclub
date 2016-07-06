@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef BINARY_SERIALIZE_VECTOR_H
+#define BINARY_SERIALIZE_VECTOR_H
 
 #include <vector>
 #include <assert.h>
@@ -80,3 +81,5 @@ inline void decode( binary::decoder& d
 //------------------------------------------------------------------------------
 
 } // std namespace
+
+#endif // ifndef BINARY_SERIALIZE_VECTOR_H

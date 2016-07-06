@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __VARIANT_TOOLS_H__
-#define __VARIANT_TOOLS_H__
+#ifndef CLUB_VARIANT_TOOLS_H
+#define CLUB_VARIANT_TOOLS_H
 
 #include <boost/variant.hpp>
 #include "overload.h"
@@ -91,4 +91,4 @@ match(V& variant, F... f) {
 }
 
 
-#endif // __VARIANT_TOOLS_H__
+#endif // CLUB_VARIANT_TOOLS_H

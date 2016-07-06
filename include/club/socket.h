@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_SOCKET_H
+#define CLUB_SOCKET_H
 
 #include <boost/asio/ip/udp.hpp>
 #include <boost/optional.hpp>
@@ -176,3 +177,5 @@ private:
 };
 
 } // club namespace
+
+#endif // ifndef CLUB_SOCKET_H

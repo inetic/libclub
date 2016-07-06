@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef BINARY_SERIALIZE_OPTIONAL_H
+#define BINARY_SERIALIZE_OPTIONAL_H
 
 #include <boost/optional.hpp>
 #include "binary/decoder.h"
@@ -54,3 +55,5 @@ inline void decode( binary::decoder& d
 //------------------------------------------------------------------------------
 
 } // boost namespace
+
+#endif // ifndef BINARY_SERIALIZE_OPTIONAL_H

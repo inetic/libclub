@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_P2P_CONNECT_H
+#define CLUB_NET_P2P_CONNECT_H
 
 // The code implements algorithm as explained here:
 // http://www.brynosaurus.com/pub/net/p2pnat/
@@ -50,3 +51,5 @@ void p2p_connect
                                )>& handler);
 
 } // club namespace.
+
+#endif // ifndef CLUB_NET_P2P_CONNECT_H

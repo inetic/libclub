@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_RESENDER_SOCKET_H
+#define CLUB_NET_RESENDER_SOCKET_H
 
 #include <boost/chrono.hpp>
 #include "TimeoutSocket.h"
@@ -340,3 +341,5 @@ private:
 
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_RESENDER_SOCKET_H

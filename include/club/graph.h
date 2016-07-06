@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_GRAPH_H__
-#define __CLUB_GRAPH_H__
+#ifndef CLUB_GRAPH_H
+#define CLUB_GRAPH_H
 
 #include <map>
 #include <set>
@@ -117,4 +117,4 @@ std::ostream& operator<<(std::ostream& os, const Graph<T>& g) {
 
 } // club namespace
 
-#endif // ifndef __CLUB_GRAPH_H__
+#endif // ifndef CLUB_GRAPH_H

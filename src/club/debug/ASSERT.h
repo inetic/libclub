@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RUBBLERS_ASSERT_H__
-#define __RUBBLERS_ASSERT_H__
+#ifndef CLUB_ASSERT_H
+#define CLUB_ASSERT_H
 
 #include <cassert>
 #define ASSERT(V) assert(V)
 
-#endif // ifndef __RUBBLERS_ASSERT_H__
+#endif // ifndef CLUB_ASSERT_H

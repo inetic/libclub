@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RENDEZVOUS_SERVER_HANDLER_1_H__
-#define __RENDEZVOUS_SERVER_HANDLER_1_H__
+#ifndef RENDEZVOUS_SERVER_HANDLER_1_H
+#define RENDEZVOUS_SERVER_HANDLER_1_H
 
 #include <boost/asio/steady_timer.hpp>
 #include <boost/optional.hpp>
@@ -443,4 +443,4 @@ boost::asio::io_service& server_handler_1::get_io_service() const {
 
 } // rendezvous namespace
 
-#endif // ifndef __RENDEZVOUS_SERVER_HANDLER_1_H__
+#endif // ifndef RENDEZVOUS_SERVER_HANDLER_1_H

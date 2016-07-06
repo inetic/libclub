@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __BINARY_ENCODER_H__
-#define __BINARY_ENCODER_H__
+#ifndef BINARY_ENCODER_H
+#define BINARY_ENCODER_H
 
 namespace binary {
 
@@ -147,4 +147,4 @@ void encoder::put_raw(const Iterator* iter, std::size_t size) {
 
 } // binary namespace
 
-#endif // ifndef __BINARY_ENCODER_H__
+#endif // ifndef BINARY_ENCODER_H

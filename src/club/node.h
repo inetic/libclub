@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_NODE_H__
-#define __CLUB_NODE_H__
+#ifndef CLUB_NODE_H
+#define CLUB_NODE_H
 
 #include <map>
 #include <club/uuid.h>
@@ -362,4 +362,4 @@ std::ostream& operator<<(std::ostream& os, Node::ConnectState s) {
 
 } // club namespace
 
-#endif // ifndef __CLUB_NODE_H__
+#endif // ifndef CLUB_NODE_H

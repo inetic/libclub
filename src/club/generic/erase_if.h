@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_ERASE_IF_H__
-#define __CLUB_ERASE_IF_H__
+#ifndef CLUB_ERASE_IF_H
+#define CLUB_ERASE_IF_H
 
 namespace club {
 
@@ -31,4 +31,4 @@ template<class T, class F> void erase_if(T& collection, const F& f) {
 
 } // club namespace
 
-#endif // ifndef __CLUB_ERASE_IF_H__
+#endif // ifndef CLUB_ERASE_IF_H

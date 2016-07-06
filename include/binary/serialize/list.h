@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_SERIALIZE_LIST_H__
-#define __CLUB_SERIALIZE_LIST_H__
+#ifndef BINARY_SERIALIZE_LIST_H
+#define BINARY_SERIALIZE_LIST_H
 
 #include <list>
 #include "binary/decoder.h"
@@ -61,4 +61,4 @@ inline void decode( binary::decoder& d
 
 } // club namespace
 
-#endif // ifndef __CLUB_SERIALIZE_LIST_H__
+#endif // ifndef BINARY_SERIALIZE_LIST_H

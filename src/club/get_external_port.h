@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_GET_EXTERNAL_PORT_H__
-#define __CLUB_GET_EXTERNAL_PORT_H__
+#ifndef CLUB_GET_EXTERNAL_PORT_H
+#define CLUB_GET_EXTERNAL_PORT_H
 
 #include <mutex>
 #include <boost/asio/ip/udp.hpp>
@@ -162,4 +162,4 @@ GetExternalPort::~GetExternalPort() {
 
 } // club namespace
 
-#endif // ifndef __CLUB_GET_EXTERNAL_PORT_H__
+#endif // ifndef CLUB_GET_EXTERNAL_PORT_H

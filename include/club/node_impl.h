@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __NODE_IMPL_H__
-#define __NODE_IMPL_H__
+#ifndef CLUB_NODE_IMPL_H
+#define CLUB_NODE_IMPL_H
 
 namespace club {
 
@@ -53,4 +53,4 @@ uuid node_impl::id() const {
 } // club namespace
 
 
-#endif // ifndef __NODE_IMPL_H__
+#endif // ifndef CLUB_NODE_IMPL_H

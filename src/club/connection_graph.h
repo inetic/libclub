@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_CONNECTION_GRAPH_H__
-#define __CLUB_CONNECTION_GRAPH_H__
+#ifndef CLUB_CONNECTION_GRAPH_H
+#define CLUB_CONNECTION_GRAPH_H
 
 #include <boost/asio/ip/address.hpp>
 #include <map>
@@ -57,4 +57,4 @@ private:
 
 } // club namespace
 
-#endif // ifndef __CLUB_CONNECTION_GRAPH_H__
+#endif // ifndef CLUB_CONNECTION_GRAPH_H

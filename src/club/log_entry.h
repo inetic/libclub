@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_LOG_ENTRY_H
+#define CLUB_LOG_ENTRY_H
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/variant.hpp>
@@ -106,3 +107,5 @@ bool LogEntry::acked_by_quorum(const std::set<uuid>& alive) const {
 }
 
 } // club namespace
+
+#endif // ifndef CLUB_LOG_ENTRY_H

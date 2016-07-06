@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_UUID_H__
-#define __CLUB_UUID_H__
+#ifndef CLUB_UUID_H__
+#define CLUB_UUID_H__
 
 #include <boost/uuid/uuid.hpp>
 
@@ -21,4 +21,4 @@ namespace club {
   using uuid = boost::uuids::uuid;
 }
 
-#endif // ifndef __CLUB_UUID_H__
+#endif // ifndef CLUB_UUID_H

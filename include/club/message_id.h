@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_MESSAGE_ID_H
+#define CLUB_MESSAGE_ID_H
 
 #include <club/uuid.h>
 #include <boost/uuid/nil_generator.hpp>
@@ -70,4 +71,4 @@ std::ostream& operator<<(std::ostream& os, const MessageId& o);
 
 } // club namespace
 
-
+#endif // ifndef CLUB_MESSAGE_ID_H

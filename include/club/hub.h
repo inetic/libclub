@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_HUB_H__
-#define __CLUB_HUB_H__
+#ifndef CLUB_HUB_H
+#define CLUB_HUB_H
 
 #include <map>
 #include <boost/signals2.hpp>
@@ -158,4 +158,5 @@ private:
 };
 
 } // club namespace
-#endif // ifndef __CLUB_HUB_H__
+
+#endif // ifndef CLUB_HUB_H

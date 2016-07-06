@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_BINARY_SERIALIZE_NET_H__
-#define __CLUB_BINARY_SERIALIZE_NET_H__
+#ifndef CLUB_SERIALIZE_NET_H
+#define CLUB_SERIALIZE_NET_H
 
 #include "binary/decoder.h"
 #include "binary/serialize/ip.h"
@@ -80,5 +80,5 @@ inline void decode(decoder& d, boost::asio::ip::udp::endpoint& ep) {
 
 } // binary namespace
 
-#endif // ifndef __CLUB_BINARY_SERIALIZE_NET_H__
+#endif // ifndef CLUB_SERIALIZE_NET_H
 

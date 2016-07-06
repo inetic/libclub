@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __STRING_TOOLS_H__
-#define __STRING_TOOLS_H__
+#ifndef CLUB_STRING_TOOLS_H
+#define CLUB_STRING_TOOLS_H
 
 #include <array>
 #include <set>
@@ -99,4 +99,4 @@ std::string str(const boost::optional<T>& a) {
   }
 }
 
-#endif // __STRING_TOOLS_H__
+#endif // CLUB_STRING_TOOLS_H

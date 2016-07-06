@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RENDEZVOUS_CLIENT_H__
-#define __RENDEZVOUS_CLIENT_H__
+#ifndef RENDEZVOUS_CLIENT_H
+#define RENDEZVOUS_CLIENT_H
 
 #include <vector>
 #include <mutex>
@@ -465,4 +465,4 @@ std::vector<uint8_t> client::construct_close_message() const {
 
 } // rendezvous client
 
-#endif // ifndef __RENDEZVOUS_CLIENT_H__
+#endif // ifndef RENDEZVOUS_CLIENT_H

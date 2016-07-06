@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __OVERLOAD_H__
-#define __OVERLOAD_H__
+#ifndef CLUB_OVERLOAD_H
+#define CLUB_OVERLOAD_H
 
 // The overload function can be used to take several function objects with the
 // same return type and turn them into single polymorphic function object.
@@ -60,4 +60,4 @@ detail::Overloader<F...> overload(const F&... f) {
   return detail::Overloader<F...>(f...);
 }
 
-#endif // __OVERLOAD_H__
+#endif // CLUB_OVERLOAD_H

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_ASYNC_EXCHANGE_H
+#define CLUB_ASYNC_EXCHANGE_H
 
 #include <boost/optional.hpp>
 #include "any_size.h"
@@ -78,3 +79,5 @@ void async_exchange( Socket&          socket
 }
 
 } // club namespace
+
+#endif // ifndef CLUB_ASYNC_EXCHANGE_H

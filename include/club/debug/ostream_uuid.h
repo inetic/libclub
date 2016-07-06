@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_DEBUG_OSTREAM_UUID_H__
-#define __CLUB_DEBUG_OSTREAM_UUID_H__
+#ifndef CLUB_DEBUG_OSTREAM_UUID_H
+#define CLUB_DEBUG_OSTREAM_UUID_H
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/format.hpp>
@@ -35,4 +35,4 @@ inline std::ostream& operator<<(std::ostream& os, uuid id) {
 
 }} // boost::uuids namespace
 
-#endif // ifndef __CLUB_DEBUG_OSTREAM_UUID_H__
+#endif // ifndef CLUB_DEBUG_OSTREAM_UUID_H

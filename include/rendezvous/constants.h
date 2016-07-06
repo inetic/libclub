@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RENDEZVOUS_CONSTANTS_H__
-#define __RENDEZVOUS_CONSTANTS_H__
+#ifndef RENDEZVOUS_CONSTANTS_H
+#define RENDEZVOUS_CONSTANTS_H
 
 #include <boost/asio/steady_timer.hpp>
 #include <bitset>
@@ -50,4 +50,4 @@ struct constants_v1 {
 
 } // rendezvous namespace
 
-#endif // ifndef __RENDEZVOUS_CONSTANTS_H__
+#endif // ifndef RENDEZVOUS_CONSTANTS_H

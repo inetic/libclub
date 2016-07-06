@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __LOG_H__
-#define __LOG_H__
+#ifndef CLUB_LOG_H
+#define CLUB_LOG_H
 
 // Logging.
 // #ifndef NDEBUG
@@ -30,4 +30,4 @@ void log(const Ts&... args) {
 // void log(const Ts&... args) { }
 // #endif // ifndef NDEBUG
 
-#endif // __LOG_H__
+#endif // CLUB_LOG_H

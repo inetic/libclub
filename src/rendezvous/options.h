@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RENDEZVOUS_OPTIONS_H__
-#define __RENDEZVOUS_OPTIONS_H__
+#ifndef RENDEZVOUS_OPTIONS_H
+#define RENDEZVOUS_OPTIONS_H
 
 #include <boost/program_options.hpp>
 
@@ -79,4 +79,4 @@ void options::parse_command_line(int argc, const char* argv[]) {
 
 } // rendezvous namespace
 
-#endif //ifndef __RENDEZVOUS_OPTIONS_H__
+#endif //ifndef RENDEZVOUS_OPTIONS_H

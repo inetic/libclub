@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_KEEPALIVE_H
+#define CLUB_NET_KEEPALIVE_H
 
 #include <chrono>
 #include "TimeoutSocket.h"
@@ -164,3 +165,5 @@ private:
 };
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_KEEPALIVE_H

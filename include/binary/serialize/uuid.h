@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __BINARY_SERIALIZE_UUID_H__
-#define __BINARY_SERIALIZE_UUID_H__
+#ifndef BINARY_SERIALIZE_UUID_H
+#define BINARY_SERIALIZE_UUID_H
 
 #include <boost/uuid/uuid.hpp>
 #include <binary/decoder.h>
@@ -33,4 +33,4 @@ inline void decode(binary::decoder& d, boost::uuids::uuid& uuid) {
 
 }} // boost::uuids namespace
 
-#endif // ifndef __BINARY_SERIALIZE_UUID_H__
+#endif // ifndef BINARY_SERIALIZE_UUID_H

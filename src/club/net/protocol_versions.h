@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_PROTOCOL_VERSION
+#define CLUB_NET_PROTOCOL_VERSION
 
 #define NET_PROTOCOL_VERSION ((uint32_t) 17)
 
+#endif // ifndef CLUB_NET_PROTOCOL_VERSION

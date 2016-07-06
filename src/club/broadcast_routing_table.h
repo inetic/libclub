@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CLUB_BROADCAST_ROUTING_TABLE_H
+#define CLUB_BROADCAST_ROUTING_TABLE_H
 
 namespace club {
 
@@ -124,3 +125,5 @@ finish:
 //------------------------------------------------------------------------------
 
 } // club namespace
+
+#endif // ifndef CLUB_BROADCAST_ROUTING_TABLE_H

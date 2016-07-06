@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_ANY_SIZE_H
+#define CLUB_NET_ANY_SIZE_H
 
 #include <boost/asio.hpp>
 #include <boost/endian/conversion.hpp>
@@ -209,3 +210,5 @@ void recv_any_size( Socket&            socket
 }
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_ANY_SIZE_H

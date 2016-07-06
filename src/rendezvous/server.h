@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __RENDEZVOUS_SERVER_H__
-#define __RENDEZVOUS_SERVER_H__
+#ifndef RENDEZVOUS_SERVER_H
+#define RENDEZVOUS_SERVER_H
 
 #include <queue>
 #include <boost/asio/ip/udp.hpp>
@@ -183,4 +183,4 @@ void server::handle_payload( VersionType version
 
 } // rendezvous namespace
 
-#endif // ifndef __RENDEZVOUS_SERVER_H__
+#endif // ifndef RENDEZVOUS_SERVER_H

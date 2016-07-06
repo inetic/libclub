@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_STUN_CLIENT_H__
-#define __CLUB_STUN_CLIENT_H__
+#ifndef CLUB_STUN_CLIENT_H
+#define CLUB_STUN_CLIENT_H
 
 #include <map>
 #include <random>
@@ -58,4 +58,5 @@ private:
 };
 
 } // club namespace
-#endif // ifndef __CLUB_STUN_CLIENT_H__
+
+#endif // ifndef CLUB_STUN_CLIENT_H

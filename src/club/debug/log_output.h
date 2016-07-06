@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __LOG_OUTPUT_H__
-#define __LOG_OUTPUT_H__
+#ifndef CLUB_LOG_OUTPUT_H
+#define CLUB_LOG_OUTPUT_H
 
 #include <iostream>
 
@@ -21,4 +21,4 @@ inline void log(const std::string& s) {
   std::cerr << s << std::endl;
 }
 
-#endif // __LOG_OUTPUT_H__
+#endif // CLUB_LOG_OUTPUT_H

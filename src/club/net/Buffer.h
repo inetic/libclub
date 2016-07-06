@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_NET_BUFFER_H
+#define CLUB_NET_BUFFER_H
 
 #include <boost/asio.hpp>
 #include "net/Header.h"
@@ -90,3 +91,5 @@ typedef Buffer<boost::asio::const_buffer>   ConstBuffer;
 
 
 } // club namespace
+
+#endif // ifndef CLUB_NET_BUFFER_H

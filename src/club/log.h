@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_LOG_H
+#define CLUB_LOG_H
 
 #include <boost/range/adaptor/map.hpp>
 #include "log_entry.h"
@@ -166,3 +167,5 @@ LogEntry* Log::find_entry(const MessageId& clock) {
 
 //------------------------------------------------------------------------------
 } // club namespace
+
+#endif // ifndef CLUB_LOG_H

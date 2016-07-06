@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __CLUB_SERIALIZE_STRING_H__
-#define __CLUB_SERIALIZE_STRING_H__
+#ifndef BINARY_SERIALIZE_STRING_H
+#define BINARY_SERIALIZE_STRING_H
 
 #include <string>
 #include <debug/ASSERT.h>
@@ -61,4 +61,4 @@ inline void decode( binary::decoder& d
 
 } // std namespace
 
-#endif // ifndef __CLUB_SERIALIZE_STRING_H__
+#endif // ifndef BINARY_SERIALIZE_STRING_H

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef CLUB_SERIALIZE_MESSAGE_ID_H
+#define CLUB_SERIALIZE_MESSAGE_ID_H
 
 #include <binary/decoder.h>
 #include "message_id.h"
@@ -38,3 +39,5 @@ inline void decode(binary::decoder& d, MessageId& mid) {
 //------------------------------------------------------------------------------
 
 } // club namespace
+
+#endif // ifndef CLUB_SERIALIZE_MESSAGE_ID_H
