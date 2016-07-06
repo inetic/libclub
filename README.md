@@ -40,8 +40,6 @@ Apart from knowing who is currently present in the group, the library also track
 
 [Most](http://nattest.net.in.tum.de/results.php) of the devices on the internet today are behind some kind of NAT that prevents two nodes to connect to each other directly. This may be either a home router, a firewall or it can be the ISP. There are techniques to get around these restrictions, from which the [UDP hole punching](https://en.wikipedia.org/wiki/UDP_hole_punching) one is considered most efficient.
 
-TODO: Symmetric NATs
-
 #### Rendezvous server
 
 For nodes to connect to each other, they first need to find each other's IP endpoints. Club ships with a server that allows nodes to do just that.
