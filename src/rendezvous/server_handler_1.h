@@ -116,7 +116,7 @@ server_handler_1::server_handler_1( boost::asio::io_service& ios
                                   , const options& opts)
   : _state(std::make_shared<State>(ios))
   , _options(opts)
-  , _reflector(ios)
+  , _reflector(ios, version)
 {
 }
 
@@ -219,7 +219,7 @@ server_handler_1::respond_with_reflector(udp::endpoint from, server& server) {
 
   binary::encoder e(payload.data(), payload.size());
 
-  write_header(e, payload.size());
+  write_header(e, version, payload.size());
 
   e.put((uint8_t)  METHOD_REFLECTOR);
   e.put((uint8_t)  0); // Reserved.
@@ -408,7 +408,7 @@ std::vector<uint8_t> server_handler_1::payload
 
   binary::encoder encoder(ret.data(), ret.size());
 
-  write_header(encoder, payload_size);
+  write_header(encoder, version, payload_size);
 
   encoder.put((uint8_t) METHOD_MATCH);
 

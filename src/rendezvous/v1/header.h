@@ -5,10 +5,13 @@
 
 namespace rendezvous {
 
+/*
+ * Version 0 means the requester requested an unsupported version
+ */
 inline void write_header( binary::encoder& encoder
-                        , uint16_t payload_size) {
+                        , VersionType      version
+                        , uint16_t         payload_size) {
   static const uint16_t plex = 1 << 15;
-  static const VersionType version = 1;
   encoder.put((uint16_t) (plex | version));
   encoder.put((uint16_t) payload_size);
   encoder.put((uint32_t) COOKIE);

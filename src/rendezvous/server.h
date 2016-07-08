@@ -178,6 +178,13 @@ void server::handle_payload( VersionType version
   switch (version) {
     case server_handler_1::version: _handler_1->handle(sender, d, *this);
                                     break;
+    default: {
+               Bytes bytes(HEADER_SIZE);
+               binary::encoder e(bytes.data(), bytes.size());
+               // Zero in the 'version' argument means the requester
+               // asked for an unsupported version.
+               write_header(e, 0, 0);
+             }
   }
 }
 

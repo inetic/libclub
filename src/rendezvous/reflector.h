@@ -18,7 +18,7 @@ class Reflector {
   };
 
 public:
-  Reflector(boost::asio::io_service&);
+  Reflector(boost::asio::io_service&, VersionType);
 
   uint16_t get_port() const;
 
@@ -30,15 +30,17 @@ private:
 private:
   udp::socket            _socket;
   std::shared_ptr<State> _state;
+  const VersionType      _version;
 };
 
 //------------------------------------------------------------------------------
-Reflector::Reflector(boost::asio::io_service& ios)
+Reflector::Reflector(boost::asio::io_service& ios, VersionType version)
   : _socket(ios, udp::endpoint(udp::v4(), 0 /* random port */))
   , _state(std::make_shared<State>(State{ false
                                         , udp::endpoint()
                                         , std::vector<uint8_t>(512)
                                         , std::vector<uint8_t>(512) }))
+  , _version(version)
 {
   start_receiving();
 }
@@ -82,7 +84,7 @@ void Reflector::start_sending() {
 
   state->tx_buffer.resize(HEADER_SIZE + payload_size);
 
-  write_header(e, payload_size);
+  write_header(e, _version, payload_size);
 
   e.put(METHOD_REFLECTED);
   e.put((uint8_t) 0 /* reserved */);
