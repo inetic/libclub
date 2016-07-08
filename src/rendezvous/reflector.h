@@ -1,9 +1,9 @@
-#ifndef RENDEZVOUS_V1_REFLECTOR_H
-#define RENDEZVOUS_V1_REFLECTOR_H
+#ifndef RENDEZVOUS_REFLECTOR_H
+#define RENDEZVOUS_REFLECTOR_H
 
 #include <binary/serialize/ip.h>
 #include "rendezvous/constants.h"
-#include "v1/header.h"
+#include "header.h"
 
 namespace rendezvous {
 
@@ -110,4 +110,4 @@ Reflector::~Reflector() {
 
 } // rendezvous namespace
 
-#endif // ifndef RENDEZVOUS_V1_REFLECTOR_H
+#endif // ifndef RENDEZVOUS_REFLECTOR_H

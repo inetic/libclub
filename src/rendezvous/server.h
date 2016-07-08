@@ -23,7 +23,7 @@
 
 namespace rendezvous {
 
-class server_handler_1;
+class handler;
 
 // Header:
 //    0                   1                   2                   3
@@ -90,12 +90,12 @@ private:
   udp::socket _socket;
   StatePtr _state;
 
-  std::unique_ptr<server_handler_1> _handler_1;
+  std::unique_ptr<handler> _handler;
 };
 
 } // rendezvous namespace
 
-#include "server_handler_1.h"
+#include "handler.h"
 
 namespace rendezvous {
 
@@ -103,7 +103,7 @@ inline
 server::server(boost::asio::io_service& ios, options opt)
   : _socket(ios, udp::endpoint(udp::v4(), opt.port()))
   , _state(std::make_shared<State>())
-  , _handler_1(new server_handler_1(ios, opt))
+  , _handler(new handler(ios, opt))
 {
   start_receiving(_state);
 }
@@ -176,8 +176,8 @@ void server::handle_payload( VersionType version
                            , udp::endpoint sender
                            , binary::decoder d) {
   switch (version) {
-    case server_handler_1::version: _handler_1->handle(sender, d, *this);
-                                    break;
+    case handler::version: _handler->handle(sender, d, *this);
+                           break;
     default: {
                Bytes bytes(HEADER_SIZE);
                binary::encoder e(bytes.data(), bytes.size());

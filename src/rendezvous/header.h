@@ -1,5 +1,5 @@
-#ifndef RENDEZVOUS_V1_HEADER_H
-#define RENDEZVOUS_V1_HEADER_H
+#ifndef RENDEZVOUS_HEADER_H
+#define RENDEZVOUS_HEADER_H
 
 #include <rendezvous/constants.h>
 
@@ -19,4 +19,4 @@ inline void write_header( binary::encoder& encoder
 
 } // rendezvous namespace
 
-#endif // ifndef RENDEZVOUS_V1_HEADER_H
+#endif // ifndef RENDEZVOUS_HEADER_H

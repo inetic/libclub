@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef RENDEZVOUS_SERVER_HANDLER_1_H
-#define RENDEZVOUS_SERVER_HANDLER_1_H
+#ifndef RENDEZVOUS_HANDLER_H
+#define RENDEZVOUS_HANDLER_H
 
 #include <boost/asio/steady_timer.hpp>
 #include <boost/optional.hpp>
@@ -28,7 +28,7 @@ namespace rendezvous {
 
 class server;
 
-class server_handler_1 {
+class handler {
   using service_type = uint32_t;
   using udp = boost::asio::ip::udp;
   using Address = boost::asio::ip::address;
@@ -64,8 +64,8 @@ class server_handler_1 {
 public:
   static const VersionType version = 1;
 
-  server_handler_1(boost::asio::io_service&, const options&);
-  ~server_handler_1();
+  handler(boost::asio::io_service&, const options&);
+  ~handler();
 
   boost::asio::io_service& get_io_service() const;
   void handle(udp::endpoint from, binary::decoder, server&);
@@ -112,8 +112,8 @@ namespace rendezvous {
 
 //------------------------------------------------------------------------------
 inline
-server_handler_1::server_handler_1( boost::asio::io_service& ios
-                                  , const options& opts)
+handler::handler( boost::asio::io_service& ios
+                , const options& opts)
   : _state(std::make_shared<State>(ios))
   , _options(opts)
   , _reflector(ios, version)
@@ -122,7 +122,7 @@ server_handler_1::server_handler_1( boost::asio::io_service& ios
 
 //------------------------------------------------------------------------------
 inline
-void server_handler_1::forget(udp::endpoint from, const char* msg) {
+void handler::forget(udp::endpoint from, const char* msg) {
   using std::cout;
   using std::endl;
 
@@ -147,7 +147,7 @@ void server_handler_1::forget(udp::endpoint from, const char* msg) {
 //------------------------------------------------------------------------------
 inline
 void
-server_handler_1::remove_ep_from_service( udp::endpoint ep
+handler::remove_ep_from_service( udp::endpoint ep
                                         , service_type  service) {
   auto eps_i = service_to_endpoints.find(service);
 
@@ -164,12 +164,12 @@ server_handler_1::remove_ep_from_service( udp::endpoint ep
 
 //------------------------------------------------------------------------------
 inline
-server_handler_1::Entry
-server_handler_1::find_or_create_entry( udp::endpoint ext_ep
-                                      , udp::endpoint int_ep
-                                      , uint16_t      reflected_port
-                                      , bool          is_host
-                                      , service_type  service_t) {
+handler::Entry
+handler::find_or_create_entry( udp::endpoint ext_ep
+                             , udp::endpoint int_ep
+                             , uint16_t      reflected_port
+                             , bool          is_host
+                             , service_type  service_t) {
   auto ep_i = ep_to_service.find(ext_ep);
 
   if (ep_i == ep_to_service.end()) {
@@ -214,7 +214,7 @@ server_handler_1::find_or_create_entry( udp::endpoint ext_ep
 //------------------------------------------------------------------------------
 inline
 void
-server_handler_1::respond_with_reflector(udp::endpoint from, server& server) {
+handler::respond_with_reflector(udp::endpoint from, server& server) {
   std::vector<uint8_t> payload(HEADER_SIZE + 4);
 
   binary::encoder e(payload.data(), payload.size());
@@ -232,7 +232,7 @@ server_handler_1::respond_with_reflector(udp::endpoint from, server& server) {
 
 //------------------------------------------------------------------------------
 inline
-void server_handler_1::handle( udp::endpoint from
+void handler::handle( udp::endpoint from
                              , binary::decoder d
                              , server& server) {
 
@@ -344,7 +344,7 @@ void server_handler_1::handle( udp::endpoint from
 //------------------------------------------------------------------------------
 inline
 std::unique_ptr<async::alarm>
-server_handler_1::make_dms(udp::endpoint requester_ep) {
+handler::make_dms(udp::endpoint requester_ep) {
   using std::cout;
   using std::endl;
   using std::move;
@@ -360,30 +360,29 @@ server_handler_1::make_dms(udp::endpoint requester_ep) {
 
 //------------------------------------------------------------------------------
 inline
-void server_handler_1::match( server& server
-                            , udp::endpoint ep1_ext
-                            , udp::endpoint ep1_int
-                            , uint16_t      reflected_port1
-                            , udp::endpoint ep2_ext
-                            , udp::endpoint ep2_int
-                            , uint16_t      reflected_port2) {
+void handler::match( server& server
+                   , udp::endpoint ep1_ext
+                   , udp::endpoint ep1_int
+                   , uint16_t      reflected_port1
+                   , udp::endpoint ep2_ext
+                   , udp::endpoint ep2_int
+                   , uint16_t      reflected_port2) {
   server.send_to(ep1_ext, payload(ep1_ext, ep2_ext, ep2_int, reflected_port2));
   server.send_to(ep2_ext, payload(ep2_ext, ep1_ext, ep1_int, reflected_port1));
 }
 
 //------------------------------------------------------------------------------
 inline
-server_handler_1::~server_handler_1() {
+handler::~handler() {
   _state->was_destroyed = true;
 }
 
 //------------------------------------------------------------------------------
 inline
-std::vector<uint8_t> server_handler_1::payload
-                       ( udp::endpoint reflexive_ep
-                       , udp::endpoint ext_ep
-                       , udp::endpoint int_ep
-                       , uint16_t      reflected_port) const {
+std::vector<uint8_t> handler::payload( udp::endpoint reflexive_ep
+                                     , udp::endpoint ext_ep
+                                     , udp::endpoint int_ep
+                                     , uint16_t      reflected_port) const {
 
   namespace ip = boost::asio::ip;
 
@@ -435,7 +434,7 @@ std::vector<uint8_t> server_handler_1::payload
 
 //------------------------------------------------------------------------------
 inline
-boost::asio::io_service& server_handler_1::get_io_service() const {
+boost::asio::io_service& handler::get_io_service() const {
   return _state->ios;
 }
 
@@ -443,4 +442,4 @@ boost::asio::io_service& server_handler_1::get_io_service() const {
 
 } // rendezvous namespace
 
-#endif // ifndef RENDEZVOUS_SERVER_HANDLER_1_H
+#endif // ifndef RENDEZVOUS_HANDLER_H
