@@ -184,6 +184,7 @@ void server::handle_payload( VersionType version
                // Zero in the 'version' argument means the requester
                // asked for an unsupported version.
                write_header(e, 0, 0);
+               send_to(sender, std::move(bytes));
              }
   }
 }

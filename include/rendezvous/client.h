@@ -192,7 +192,6 @@ void client::on_recv(StatePtr state, Error error, size_t size) {
   auto plex_and_version = d.get<uint16_t>();
   auto length           = d.get<uint16_t>();
   auto cookie           = d.get<uint32_t>();
-  auto method           = d.get<uint8_t>();
 
   if (d.error()) return start_receiving(move(state));
 
@@ -205,6 +204,17 @@ void client::on_recv(StatePtr state, Error error, size_t size) {
   // TODO: Check version.
   if (plex != PLEX)           return start_receiving(move(state));
   if (cookie != COOKIE)       return start_receiving(move(state));
+
+  auto version = plex_and_version & 0x3fff;
+
+  if (version == 0) {
+    // Unsupported version by the server.
+    return state->exec( boost::asio::error::no_protocol_option
+                      , udp::endpoint()
+                      , false);
+  }
+
+  auto method = d.get<uint8_t>();
 
   switch (method) {
     case METHOD_MATCH:     break; // Handled in the rest of this function.
