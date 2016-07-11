@@ -54,3 +54,8 @@ In any connected network which doesn't form a [complete graph](https://en.wikipe
 
 Currently Club only depends on Boost.
 
+## Donate
+
+The library is currently in its alpha stage. That is, there are some bugfixes to be addressed, and there are tons of features that can be added. I love working on this project, but given how time consuming it is I'll not be able to devote as much time as needed without an outside financial support. Thus please consider donating to the project if you (as me) believe decentralization is the future for future gaming.
+
+<a class="coinbase-button" data-code="eee7e10861d2e35f10bcaa9f3cfe35c3" data-button-style="custom_small" href="https://www.coinbase.com/checkouts/eee7e10861d2e35f10bcaa9f3cfe35c3">Donate Bitcoins</a><script src="https://www.coinbase.com/assets/button.js" type="text/javascript"></script>
