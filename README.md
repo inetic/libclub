@@ -6,6 +6,10 @@ On the other hand, decentralized systems add another layers of complexity on top
 
 Club implements solutions to such problems and hides this complexity behind a simple to use API.
 
+## Sample game
+
+I've created a [silly game](https://play.google.com/store/apps/details?id=com.sicoop) for Android phones where Club can be seen in action. As mentioned below, Club currently lacks a proper congestion control so playing the game with a slow internet may result in glithes.
+
 ## Features
 
 #### Group membership consensus
@@ -56,6 +60,6 @@ Currently Club only depends on Boost.
 
 ## Donate
 
-The library is currently in its alpha stage. That is, there are some bugfixes to be addressed, and there are tons of features that can be added. I love working on this project, but given how time consuming it is I'll not be able to devote as much time as needed without an outside financial support. Thus please consider donating to the project if you (as me) believe decentralization is the future for future gaming.
+The library is currently in its alpha stage. That is, there are some bugfixes to be addressed, and there are tons of features that can be added. I love working on this project, but given how time consuming it is I'll not be able to devote as much time as needed without an outside financial support. Thus please consider donating to the project if you (as me) believe decentralization is the future for multiplayer gaming.
 
 <a class="coinbase-button" data-code="eee7e10861d2e35f10bcaa9f3cfe35c3" data-button-style="custom_small" href="https://www.coinbase.com/checkouts/eee7e10861d2e35f10bcaa9f3cfe35c3">Donate Bitcoins</a><script src="https://www.coinbase.com/assets/button.js" type="text/javascript"></script>
