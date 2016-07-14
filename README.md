@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/inetic/libclub.svg?branch=travis)](https://travis-ci.org/inetic/libclub)
 <span class="badge-paypal"><a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=GME2V7WLLFRT2" title="Donate to this project using Paypal"><img src="https://img.shields.io/badge/paypal-donate-yellow.svg" alt="PayPal donate button" /></a></span>
 <span class="badge-bitcoin"><a href="https://www.coinbase.com/checkouts/95751916234a5d59b197d8ef1916cfe6" title="Donate once-off to this project using Bitcoin"><img src="https://img.shields.io/badge/bitcoin-donate-yellow.svg" alt="Bitcoin donate button" /></a></span>
 

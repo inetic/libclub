@@ -1,0 +1,54 @@
+sudo: required
+dist: xenial
+
+# Enable C++ support
+language: cpp
+## Install dependencies
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - g++-5
+matrix:
+  include:
+    # Compiler selection
+    - compiler: gcc
+
+# Build steps
+script:
+  - export CXX=g++-5
+  - export CC=gcc-5
+  - cd ../
+  - root=`pwd`
+  # Install boost
+  - boost_major=1
+  - boost_minor=60
+  - boost_patch=0
+  - boost=boost_${boost_major}_${boost_minor}_${boost_patch}
+  - wget http://downloads.sourceforge.net/project/boost/boost/${boost_major}.${boost_minor}.${boost_patch}/${boost}.tar.bz2
+  - tar xf ${boost}.tar.bz2
+  - cd ${boost}
+  - ./bootstrap.sh
+  - ./b2 install -d+0 --link=shared --prefix=${root}/boost --with-system --with-program_options --with-test
+  - cd ../
+  # Install stunserver
+  - wget http://www.stunprotocol.org/stunserver-1.2.10.tgz
+  - tar xf stunserver-1.2.10.tgz
+  - cd stunserver
+  - make BOOST_INCLUDE=-I${root}/boost/include
+  - cd ..
+  # Build Club
+  - cd libclub
+  - mkdir build
+  - cd build
+  - cmake .. -DBOOST_INCLUDEDIR=${root}/boost/include -DBOOST_LIBRARYDIR=${root}/boost/lib
+  - make
+  # Run Club tests
+  - cd ..
+  - ../stunserver/server/stunserver --primaryport=3478 &
+  - ../stunserver/server/stunserver --primaryport=3480 &
+  - ../stunserver/server/stunserver --primaryport=3482 &
+  - ../stunserver/server/stunserver --primaryport=3484 &
+  - ../stunserver/server/stunserver --primaryport=3486 &
+  - ./build/club-tests --log_level=test_suite
