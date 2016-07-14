@@ -19,7 +19,7 @@
 
 #include <iostream>
 #include <boost/asio.hpp>
-#include "../club/stun-client.h"
+#include "../club/stun_client.h"
 
 using std::cout;
 using std::endl;

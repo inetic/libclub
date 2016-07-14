@@ -25,7 +25,7 @@
 #include "message.h"
 #include "net/async_exchange.h"
 #include "net/protocol_versions.h"
-#include "stun-client.h"
+#include "stun_client.h"
 #include <chrono>
 #include <iostream>
 #include "get_external_port.h"

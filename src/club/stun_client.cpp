@@ -17,7 +17,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/endian/conversion.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include "stun-client.h"
+#include "stun_client.h"
 #include "debug/ASSERT.h"
 #include "binary/serialize/ip.h"
 

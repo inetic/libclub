@@ -18,7 +18,7 @@
 #include <mutex>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include "stun-client.h"
+#include "stun_client.h"
 
 namespace club {
 
