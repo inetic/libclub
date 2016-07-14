@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __ASYNC_LOOP_H__
-#define __ASYNC_LOOP_H__
+#ifndef ASYNC_LOOP_H
+#define ASYNC_LOOP_H
 
 using Cont = std::function<void()>;
 
@@ -26,4 +26,4 @@ template<class Handler> void async_loop(Handler h) {
   async_loop_(0, std::move(h));
 }
 
-#endif // ifndef __ASYNC_LOOP_H__
+#endif // ifndef ASYNC_LOOP_H

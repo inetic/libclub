@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __WHEN_ALL_H__
-#define __WHEN_ALL_H__
+#ifndef WHEN_ALL_H
+#define WHEN_ALL_H
 
 class WhenAll {
   using Handler = std::function<void()>;
@@ -54,5 +54,4 @@ private:
   std::shared_ptr<Handler> _handler;
 };
 
-#endif // ifndef __WHEN_ALL_H__
-
+#endif // ifndef WHEN_ALL_H

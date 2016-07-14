@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __MAKE_CONNECTED_SOCKETS_H__
-#define __MAKE_CONNECTED_SOCKETS_H__
+#ifndef MAKE_CONNECTED_SOCKETS_H
+#define MAKE_CONNECTED_SOCKETS_H
 
 #include <boost/asio.hpp>
 #include "club/socket.h"
@@ -147,4 +147,4 @@ template<class H> void make_network( boost::asio::io_service& ios
 
 // -------------------------------------------------------------------
 
-#endif // ifndef __MAKE_CONNECTED_SOCKETS_H__
+#endif // ifndef MAKE_CONNECTED_SOCKETS_H

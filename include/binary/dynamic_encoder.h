@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __BINARY_DYNAMIC_ENCODER_H__
-#define __BINARY_DYNAMIC_ENCODER_H__
+#ifndef BINARY_DYNAMIC_ENCODER_H
+#define BINARY_DYNAMIC_ENCODER_H
 
 namespace binary {
 
@@ -145,4 +145,4 @@ void binary::dynamic_encoder<B>::put(T&& value) {
   encode(*this, std::forward<T>(value));
 }
 
-#endif // ifndef __BINARY_DYNAMIC_ENCODER_H__
+#endif // ifndef BINARY_DYNAMIC_ENCODER_H

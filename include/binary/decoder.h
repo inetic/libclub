@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef __BINARY_DECODER_H__
-#define __BINARY_DECODER_H__
+#ifndef BINARY_DECODER_H
+#define BINARY_DECODER_H
 
 #include <boost/detail/endian.hpp>
 
@@ -205,4 +205,4 @@ inline T binary::decoder::get(Args&&... args) {
   return retval;
 }
 
-#endif // ifndef __BINARY_DECODER_H__
+#endif // ifndef BINARY_DECODER_H
