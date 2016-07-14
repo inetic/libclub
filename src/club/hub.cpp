@@ -469,7 +469,6 @@ void hub::commit_what_was_seen_by_everyone() {
       for (; i != entry.predecessors.rend(); ++i) {
         if (i->first == _log->last_committed) break;
         if (_configs.count(config_id(entry.message)) == 0) continue;
-        //if (_log.excluded_predecessors.count(i->first)) continue;
         break;
       }
 

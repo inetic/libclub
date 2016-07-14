@@ -43,8 +43,7 @@ public:
   MessageId last_committed;
   uuid   last_commit_op;
   std::map<MessageId, std::map<uuid, AckData>> pending_acks;
-  // TODO: This set currently only grows.
-  std::set<MessageId> excluded_predecessors;
+
 private:
   uuid _our_id;
 };
