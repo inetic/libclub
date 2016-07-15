@@ -41,6 +41,7 @@ struct Ack;
 struct LogEntry;
 struct MessageId;
 class Log;
+class SeenMessages;
 
 class hub {
 private:
@@ -152,7 +153,7 @@ private:
   // TODO: This must be refactored, otherwise the memory will
   //       grow indefinitely.
   std::set<MessageId> _configs;
-  std::set<MessageId> _seen;
+  std::unique_ptr<SeenMessages> _seen;
 
   std::list<std::unique_ptr<GetExternalPort>> _stun_requests;
 };

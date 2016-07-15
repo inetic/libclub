@@ -32,6 +32,7 @@
 #include "connection_graph.h"
 #include "broadcast_routing_table.h"
 #include "log.h"
+#include "seen_messages.h"
 
 using namespace club;
 
@@ -98,6 +99,7 @@ hub::hub(boost::asio::io_service& ios)
   , _time_stamp(0)
   , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
+  , _seen(new SeenMessages())
 {
   LOG("Created");
   _nodes[_id] = std::unique_ptr<Node>(new Node(this, _id));
@@ -317,6 +319,11 @@ void hub::on_commit_fuse(LogEntry entry) {
 
     for (auto id : entry.lost) {
       lost.insert(hub::node{id});
+    }
+
+    // Forget about the lost nodes
+    for (auto id : entry.lost) {
+      _seen->forget_messages_from_user(id);
       _nodes.erase(id);
     }
 
@@ -342,12 +349,12 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) 
   auto op_id = original_poster(msg);
   auto op = find_node(op_id);
 
-  if (_seen.count(message_id(msg))) {
+  if (_seen->is_in(message_id(msg))) {
     ON_RECV_LOG(msg, " (ignored: already seen ", message_id(msg), ")");
     return;
   }
 
-  _seen.insert(message_id(msg));
+  _seen->insert(message_id(msg));
 
   _time_stamp = std::max(_time_stamp, msg.header.time_stamp);
 
@@ -492,6 +499,8 @@ void hub::commit_what_was_seen_by_everyone() {
     LOG("    Committing: ", entry);
     auto e = move(entry_i->second);
     _log->erase(entry_i);
+
+    _seen->seen_everything_up_to(message_id(e.message));
 
     if (e.message_type() == ::club::fuse) {
       _log->last_fuse_commit = message_id(e.message);

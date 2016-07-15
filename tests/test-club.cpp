@@ -260,12 +260,6 @@ void consecutive_fusions(const size_t N) {
     hubs.emplace_back(new club::hub(ios));
 
     hubs[i]->on_insert.connect([&, i](set<club::hub::node> nodes){
-          //cout << hubs[i]->id() << " adds ";
-          //for (auto node : nodes) {
-          //  cout << node.id();
-          //}
-          //cout << endl;
-
           insert_count += nodes.size();
           on_finish();
         });
