@@ -150,8 +150,10 @@ private:
   std::unique_ptr<BroadcastRoutingTable> _broadcast_routing_table;
   std::shared_ptr<bool>                  _was_destroyed;
 
-  // TODO: This must be refactored, otherwise the memory will
-  //       grow indefinitely.
+  // TODO: This must be refactored, otherwise the memory will grow indefinitely.
+  //       Luckily reconfiguration doesn't happen too often, so apps that are
+  //       expected to run for only a couple of hours this shouldn't be a
+  //       problem.
   std::set<MessageId> _configs;
   std::unique_ptr<SeenMessages> _seen;
 
