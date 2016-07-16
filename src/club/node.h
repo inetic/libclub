@@ -328,8 +328,6 @@ public:
 
   bool user_notified;
 
-  boost::optional<uuid> router;
-
 private:
   ConnectState connect_state;
 
