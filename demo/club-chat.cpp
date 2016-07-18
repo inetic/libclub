@@ -112,17 +112,16 @@ struct Chat {
   }
 
   void init_callbacks() {
-    // Every time one of the nodes already present in Club sends data
-    // using the `total_order_broadcast` function, it shall be received
-    // here (even by the sender). Additionally, even if multiple nodes
-    // sent data concurrently, Club makes sure every node receives
-    // the data in the same order.
+    // Every time one of the nodes already present in Club sends data using the
+    // `total_order_broadcast` function, it shall be received here (even by the
+    // sender). Additionally, even if multiple nodes sent data concurrently,
+    // Club makes sure every node receives the data in the same order.
     hub->on_receive.connect([](club::hub::node node, const vector<char>& data) {
         cout << node.id() << ": " << string(data.begin(), data.end()) << endl;
       });
 
-    // This is called when nodes are added to the network. Every node
-    // shall see the same sequence on inserts.
+    // This is called when nodes are added to the network. Every node shall see
+    // the same sequence on inserts.
     hub->on_insert.connect([this](std::set<club::hub::node> nodes) {
         for (auto node : nodes) {
           members.insert(node.id());
@@ -130,9 +129,8 @@ struct Chat {
         }
       });
 
-    // When nodes are removed from the network. Again, each node
-    // (in a remaining connected component) shall see the same sequence
-    // of removals.
+    // When nodes are removed from the network. Again, each node (in a remaining
+    // connected component) shall see the same sequence of removals.
     hub->on_remove.connect([=](std::set<club::hub::node> nodes) {
         bool lost_leader = false;
         for (auto node : nodes) {
@@ -151,25 +149,24 @@ struct Chat {
   void start_fetching_peers() {
     if (rendezvous_client) return;
 
-    // We let only one node of the already established network to request
-    // for new nodes. Note that it wouldn't be a problem if multiple
-    // nodes tried to expand the network at once, but in the context of
-    // this application it would be wasteful.
+    // We let only one node of the already established network to request for
+    // new nodes. Note that it wouldn't be a problem if multiple nodes tried to
+    // expand the network at once, but in the context of this application it
+    // would be wasteful.
     if (!is_leader(hub->id())) return;
 
     cout << "start fetching peers" << endl;
 
-    // Try to create an UDP socket and bind it to port `options.local_port`.
-    // If it fails (e.g. if the port is already bound to another socket),
-    // it will bind to a random port.
+    // Try to create an UDP socket and bind it to port `options.local_port`. If
+    // it fails (e.g. if the port is already bound to another socket), it will
+    // bind to a random port.
     udp::socket socket = create_socket( hub->get_io_service()
                                       , options.local_port);
 
-    // Contact the rendezvous server and stay connected until
-    // another chatter also contacts it. Once the server knows of two
-    // nodes, it sends UDP endpoints of one to the other. Once
-    // `rendezvous::client` receives such endpoint, it calls the
-    // handler with it.
+    // Contact the rendezvous server and stay connected until another chatter
+    // also contacts it. Once the server knows of two nodes, it sends UDP
+    // endpoints of one to the other. Once `rendezvous::client` receives such
+    // endpoint, it calls the handler with it.
     rendezvous_client = make_unique<rendezvous::client>
       ( CHAT_SERVICE_NUMBER
       , move(socket)
@@ -187,9 +184,9 @@ struct Chat {
 
         socket_ptr.reset(new Socket(move(socket)));
 
-        // Now we know the endpoint of the other chatter, we try to
-        // connect to it directly (rendezvous). This takes care of the
-        // NAT hole punching as well.
+        // Now we know the endpoint of the other chatter, we try to connect to
+        // it directly (rendezvous). This takes care of the NAT hole punching
+        // as well.
         socket_ptr->async_p2p_connect
           ( 5000 // Timeout in milliseconds
           , udp::endpoint()
@@ -203,8 +200,8 @@ struct Chat {
               return stop();
             }
 
-            // We're directly connected to the new node, now we tell
-            // Club about our new connection.
+            // We're directly connected to the new node, now we tell Club about
+            // our new connection.
             hub->fuse( move(*socket_ptr)
                      , [&](Error error, club::uuid id) {
                          if (error) {
