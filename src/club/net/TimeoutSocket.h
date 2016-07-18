@@ -169,6 +169,7 @@ private:
     }
 
     private:
+
     void on_timeout( const std::shared_ptr<boost::asio::deadline_timer>&
                    , const error_code& e) {
       using namespace boost::asio;
@@ -186,13 +187,12 @@ private:
     }
 
     void send_ack(const endpoint_type& endpoint, Channel type, uint32_t id) {
-      Header header(type, id, true, false);
-      Header::bytes_type bytes;
-      header.to_bytes(bytes);
-      boost::system::error_code er;
-      _socket.async_send_to( boost::asio::buffer(bytes)
+      auto bytes = std::make_shared<Header::bytes_type>
+                     (Header(type, id, true, false).to_bytes());
+
+      _socket.async_send_to( boost::asio::buffer(*bytes)
                            , endpoint
-                           , [](error_code, size_t){});
+                           , [bytes](error_code, size_t){});
     }
 
     void fire_handler( const endpoint_type& endpoint

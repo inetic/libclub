@@ -25,8 +25,6 @@ private:
   typedef std::map<MessageId, LogEntry> Map;
 
 public:
-  Log(uuid our_id);
-
   MessageId get_predecessor_time(const MessageId&);
   LogEntry* get_predecessor(const MessageId&);
 
@@ -43,19 +41,11 @@ public:
   MessageId last_committed;
   uuid   last_commit_op;
   std::map<MessageId, std::map<uuid, AckData>> pending_acks;
-
-private:
-  uuid _our_id;
 };
 
 } // club namespace
 
 namespace club {
-
-//------------------------------------------------------------------------------
-inline Log::Log(uuid our_id)
-  : _our_id(our_id) {
-}
 
 //------------------------------------------------------------------------------
 inline

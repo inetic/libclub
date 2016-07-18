@@ -41,12 +41,16 @@ struct Header
     ASSERT(!(_is_ack && _needs_ack));
   }
 
-  void to_bytes(bytes_type& bytes) const {
+  bytes_type to_bytes() const {
+    bytes_type bytes;
+
     bytes[0] = _channel.type();
     bytes[1] = _channel.is_internal();
     bytes[2] = _is_ack;
     bytes[3] = _needs_ack;
     *((uint32_t*) &bytes[4]) = _id;
+
+    return bytes;
   }
 
   void from_bytes(const bytes_type& bytes) {

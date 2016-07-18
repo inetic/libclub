@@ -75,8 +75,8 @@ public:
   const_iterator begin() const { return _buffers->begin(); }
   const_iterator end() const   { return _buffers->end(); }
 
-  void get_header(Header& h) const { h.from_bytes(*_header_buffer); }
-  void set_header(const Header& h) { h.to_bytes(*_header_buffer);   }
+  void get_header(Header& h) const { h.from_bytes(*_header_buffer);  }
+  void set_header(const Header& h) { *_header_buffer = h.to_bytes(); }
 
 private:
   // This class shall be copyed a lot, that's why _buffers is a pointer.

@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
       WhenAll when_all;
 
       auto on_send = when_all.make_continuation();
-      async_loop([&tx_bytes, s1, on_send] (unsigned int i, Cont cont) {
+      async_loop([&tx_bytes, s1, on_send, buf_size] (unsigned int i, Cont cont) {
           if (i == N) { return on_send(); }
 
           tx_bytes = generate_buffer(i, buf_size);
@@ -185,13 +185,13 @@ BOOST_AUTO_TEST_CASE(sockets_send_receive_N_times) {
           });
 
       auto on_receive = when_all.make_continuation();
-      async_loop([&rx_bytes, &tx_bytes, s2, on_receive]
+      async_loop([&rx_bytes, &tx_bytes, s2, on_receive, buf_size]
                  (unsigned int i, Cont cont) {
           if (i == N) { return on_receive(); }
 
           s2->async_receive( asio::buffer(rx_bytes)
                            , 1000
-                           , [i, s2, cont, &rx_bytes, &tx_bytes]
+                           , [i, s2, cont, &rx_bytes, &tx_bytes, buf_size]
                              (error_code e, size_t size) {
                                BOOST_CHECK_EQUAL(buf_size, size);
                                BOOST_CHECK_MESSAGE(!e, e.message());
@@ -296,13 +296,13 @@ BOOST_AUTO_TEST_CASE(sockets_exchange_N_times) {
           });
 
         auto on_receive = when_all.make_continuation();
-        async_loop([s, on_receive, rx_bytes]
+        async_loop([s, on_receive, rx_bytes, buf_size]
                    (unsigned int i, Cont cont) {
             if (i == N) return on_receive();
 
             s->async_receive( asio::buffer(*rx_bytes)
                             , 1000
-                            , [i, s, cont, rx_bytes]
+                            , [i, s, cont, rx_bytes, buf_size]
                               (error_code e, size_t size) {
                                 auto tx_bytes = generate_buffer(i, buf_size);
                                 BOOST_CHECK_EQUAL(size, buf_size);
