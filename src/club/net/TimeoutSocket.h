@@ -200,8 +200,8 @@ private:
                      , size_t               size )
     {
       ASSERT(_handler);
-      RXHandler h = _handler;
-      _handler = RXHandler();
+      RXHandler h = std::move(_handler);
+      _handler = nullptr;
       h(endpoint, error, size);
     }
 
