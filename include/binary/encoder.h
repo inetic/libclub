@@ -37,6 +37,8 @@ public:
   template<class T> void put(T&& value);
   template<class Iterator> void put_raw(const Iterator*, std::size_t);
 
+  void set_error() { _was_error = true; }
+
 private:
 // TODO
 public:

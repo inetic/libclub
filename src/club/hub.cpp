@@ -34,6 +34,8 @@
 #include "log.h"
 #include "seen_messages.h"
 
+#include "transport/transmit_queue.h"
+
 using namespace club;
 
 using std::shared_ptr;
@@ -99,6 +101,7 @@ hub::hub(boost::asio::io_service& ios)
   , _time_stamp(0)
   , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
+  , _outbound_messages(new OutboundMessages())
   , _seen(new SeenMessages())
 {
   LOG("Created");
