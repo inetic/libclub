@@ -15,7 +15,7 @@
 #ifndef CLUB_SEEN_MESSAGES_H
 #define CLUB_SEEN_MESSAGES_H
 
-#include <club/message_id.h>
+#include "message_id.h"
 
 namespace club {
 

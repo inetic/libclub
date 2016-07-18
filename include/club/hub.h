@@ -23,7 +23,6 @@
 #include "club/graph.h"
 #include "club/uuid.h"
 #include "club/node_impl.h"
-#include "club/message_id.h"
 
 #include <club/socket.h>
 #include "log.h"

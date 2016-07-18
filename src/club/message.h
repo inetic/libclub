@@ -27,7 +27,7 @@
 #include "binary/serialize/string.h"
 #include "binary/serialize/pair.h"
 #include "club/uuid.h"
-#include "club/message_id.h"
+#include "message_id.h"
 #include "serialize/net.h"
 #include "serialize/message_id.h"
 
