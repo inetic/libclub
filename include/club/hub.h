@@ -25,6 +25,7 @@
 #include "club/node_impl.h"
 
 #include <club/socket.h>
+#include <club/detail/time_stamp.h>
 #include "log.h"
 
 namespace club {

@@ -16,11 +16,10 @@
 #define CLUB_MESSAGE_ID_H
 
 #include <club/uuid.h>
+#include <club/detail/time_stamp.h>
 #include <boost/uuid/nil_generator.hpp>
 
 namespace club {
-
-typedef uint32_t TimeStamp;
 
 struct MessageId {
   TimeStamp timestamp;
