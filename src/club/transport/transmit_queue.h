@@ -80,7 +80,7 @@ private:
   std::shared_ptr<OutboundMessages> _outbound_messages;
   std::set<uuid>                    _targets;
 
-  // Invariant that must hold: _messages.empty() <=> _next != _messages.end()
+  // Invariant that must hold: _messages.empty() <=> _next == _messages.end()
   Messages                     _messages;
   typename Messages::iterator  _next;
 
@@ -119,20 +119,20 @@ TransmitQueue<Id>::circular_increment(typename Messages::iterator& i) {
 }
 
 //------------------------------------------------------------------------------
+/*
+ * Tell the _outbound_messages object that we're no longer using this message.
+ */
 template<class Id>
 void
 TransmitQueue<Id>::release(Message& m) {
+  using std::move;
   using std::shared_ptr;
 
   if (auto pp = boost::get<shared_ptr<ReliableMessage>>(&m)) {
-    SequenceNumber sn = (*pp)->sequence_number;
-    pp->reset(); // Decrement counter
-    _outbound_messages->release(sn);
+    _outbound_messages->release(move(*pp));
   }
   else if (auto pp = boost::get<shared_ptr<UnreliableMessage>>(&m)) {
-    Id id = std::move((*pp)->id);
-    pp->reset(); // Decrement counter
-    _outbound_messages->release(id);
+    _outbound_messages->release(move(*pp));
   }
 }
 
@@ -240,7 +240,6 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
   if (auto pp1 = get<shared_ptr<UnreliableMessage>>(&msg)) {
     assert(*pp1);
     encoder.put((uint8_t) 0);
-    encode_targets(encoder, targets);
     bytes = &(**pp1).bytes;
   }
   else {
@@ -250,9 +249,10 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
 
     encoder.put((uint8_t) 1);
     encoder.put(msg.sequence_number);
-    encode_targets(encoder, targets);
     bytes = &msg.bytes;
   }
+
+  encode_targets(encoder, targets);
 
   const auto size = bytes->size();
 

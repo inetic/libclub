@@ -51,8 +51,8 @@ private:
 
   UnreliableMessage* find_unreliable(const UnreliableId&);
 
-  void release(SequenceNumber);
-  void release(const UnreliableId&);
+  void release(std::shared_ptr<ReliableMessage>&&);
+  void release(std::shared_ptr<UnreliableMessage>&&);
 
   void register_transport(Transport*);
   void deregister_transport(Transport*);
@@ -149,10 +149,11 @@ OutboundMessages<Id>::add_unreliable_message( Id                     id
 }
 
 //------------------------------------------------------------------------------
-template<class Id> void OutboundMessages<Id>::release(SequenceNumber sn) {
-  auto i = _reliable_messages.find(sn);
+template<class Id>
+void OutboundMessages<Id>::release(std::shared_ptr<ReliableMessage>&& m) {
+  auto i = _reliable_messages.find(m->sequence_number);
   if (i == _reliable_messages.end()) return;
-  if (i->second.lock()) return; // Someone still owns the message
+  if (m.use_count() > 1) return; // Someone else still uses this message.
   // TODO: If targets of the message is not empty, we must store it to some
   // other variable (could be called `_orphans`) and remove it from there
   // when we're notified that a node was removed from the network.
@@ -160,10 +161,11 @@ template<class Id> void OutboundMessages<Id>::release(SequenceNumber sn) {
 }
 
 //------------------------------------------------------------------------------
-template<class Id> void OutboundMessages<Id>::release(const Id& id) {
-  auto i = _unreliable_messages.find(id);
+template<class Id>
+void OutboundMessages<Id>::release(std::shared_ptr<UnreliableMessage>&& m) {
+  auto i = _unreliable_messages.find(m->id);
   if (i == _unreliable_messages.end()) return;
-  if (i->second.lock()) return; // Someone still owns the message
+  if (m.use_count() > 1) return; // Someone else still uses this message.
   _unreliable_messages.erase(i);
 }
 
