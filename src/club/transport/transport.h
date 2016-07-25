@@ -156,7 +156,12 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   _message_reader.set_data(state->rx_buffer.data(), size);
 
   while (_message_reader.read_one()) {
-    _inbound->on_receive(error, _message_reader.message_data());
+    for (const auto& target : _message_reader.targets()) {
+      if (target == _id) {
+        _inbound->on_receive(error, _message_reader.message_data());
+        continue;
+      }
+    }
 
     if (state->was_destroyed) {
       return;

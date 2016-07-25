@@ -97,7 +97,7 @@ void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
 BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
   asio::io_service ios;
 
-  Node n1, n2; 
+  Node n1, n2;
 
   n2.on_recv = [&](auto b) {
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
@@ -108,6 +108,94 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
   connect_nodes(ios, n1, n2);
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t counter = 0;
+
+  n2.on_recv = [&](auto b) {
+    if (counter++ == 0) {
+      BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+    }
+    else {
+      BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({4,5,6,7}));
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  connect_nodes(ios, n1, n2);
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages_causal) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t counter = 0;
+
+  n2.on_recv = [&](auto b) {
+    if (counter++ == 0) {
+      BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+      n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+    }
+    else {
+      BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({4,5,6,7}));
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  connect_nodes(ios, n1, n2);
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_exchange) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  connect_nodes(ios, n1, n2);
+
+  size_t counter = 0;
+
+  n1.on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({2,3,4,5}));
+
+    if (counter++ == 1) {
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  n2.on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+
+    if (counter++ == 1) {
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n2.send_unreliable(std::vector<uint8_t>{2,3,4,5}, set<uuid>{n1.id});
 
   ios.run();
 }
