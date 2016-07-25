@@ -24,16 +24,8 @@ struct ReliableMessageId {
 
 //------------------------------------------------------------------------------
 template<typename UnreliableValue>
-struct MessageId
-  : public boost::variant< ReliableMessageId
-                         , UnreliableMessageId<UnreliableValue>
-                         >
-{
-  using Base = boost::variant< ReliableMessageId
-                             , UnreliableMessageId<UnreliableValue>
-                             >;
-  using Base::Base;
-};
+using MessageId = boost::variant< ReliableMessageId
+                                , UnreliableMessageId<UnreliableValue> >;
 
 //------------------------------------------------------------------------------
 

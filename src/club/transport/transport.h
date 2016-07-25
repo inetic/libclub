@@ -162,31 +162,27 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   _message_reader.set_data(state->rx_buffer.data(), size);
 
-  while (_message_reader.read_one()) {
-    auto& targets = _message_reader.targets();
+  while (auto msg = _message_reader.read_one()) {
+    auto& targets = msg->targets;
 
+    if (msg->source == _id) {
+      assert(0 && "Our message was returned back");
+      continue;
+    }
+
+    // Notify user only if we're one of the targets.
     if (targets.count(_id)) {
       targets.erase(_id);
-      _inbound->on_receive(error, _message_reader.payload());
+      _inbound->on_receive(error, msg->payload);
+      if (state->was_destroyed) return;
     }
 
+    // Forward the message.
     if (!targets.empty()) {
-      auto source = _message_reader.source();
-
-      if (source != _id) {
-        // TODO: *Move* the values.
-        outbound().forward_message( _message_reader.source()
-                                  , targets
-                                  , _message_reader.message_id()
-                                  , _message_reader.payload_with_type());
-      }
-      else {
-        assert(0 && "Our message was returned back");
-      }
-    }
-
-    if (state->was_destroyed) {
-      return;
+      outbound().forward_message( move(msg->source)
+                                , move(targets)
+                                , std::move(msg->id)
+                                , msg->type_and_payload);
     }
   }
 

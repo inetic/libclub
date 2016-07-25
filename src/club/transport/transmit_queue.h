@@ -37,7 +37,6 @@ private:
 
   using Message = transport::OutMessage<UnreliableId>;
   using MessagePtr = std::shared_ptr<Message>;
-
   using Messages = std::list<MessagePtr>;
 
 public:

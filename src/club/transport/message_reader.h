@@ -17,23 +17,10 @@ public:
 
   void set_data(const uint8_t* data, size_t);
 
-  bool read_one();
-
-  const uuid&               source()       const { return _source; }
-  const std::set<uuid>&     targets()      const { return _targets; }
-        std::set<uuid>&     targets()            { return _targets; }
-  MessageId                 message_id()   const { return _message_id; }
-  boost::asio::const_buffer payload()           const { return _payload; }
-  boost::asio::const_buffer payload_with_type() const { return _payload_with_type; }
+  boost::optional<InMessage<UnreliableId>> read_one();
 
 private:
   binary::decoder                 _decoder;
-  uuid                            _source;
-  std::set<uuid>                  _targets;
-  boost::asio::const_buffer       _payload;
-  boost::asio::const_buffer       _payload_with_type;
-  MessageId                       _message_id;
-  boost::optional<SequenceNumber> _sequence_number;
 };
 
 //------------------------------------------------------------------------------
@@ -49,53 +36,63 @@ void MessageReader<Id>::set_data(const uint8_t* data, size_t size) {
 }
 
 template<class Id>
-bool MessageReader<Id>::read_one() {
+boost::optional<InMessage<Id>> MessageReader<Id>::read_one() {
+  using std::move;
+
   // TODO: See if the number of octets can be reduced.
 
-  if (_decoder.error()) return false;
+  if (_decoder.error()) return boost::none;
 
-  _source = _decoder.get<uuid>();
+  auto source = _decoder.get<uuid>();
 
-  if (_decoder.error()) return false;
+  if (_decoder.error()) return boost::none;
 
   auto target_count = _decoder.get<uint8_t>();
 
-  if (_decoder.error()) return false;
+  if (_decoder.error()) return boost::none;
 
-  _targets.clear();
+  std::set<uuid> targets;
 
   for (auto i = 0; i < target_count; ++i) {
-    _targets.insert(_decoder.get<uuid>());
-    if (_decoder.error()) return false;
+    targets.insert(_decoder.get<uuid>());
+    if (_decoder.error()) return boost::none;
   }
 
   auto type_start = _decoder.current();
 
   auto is_reliable = _decoder.get<uint8_t>();
 
+  MessageId message_id;
+
   if (is_reliable) {
-    _message_id = ReliableMessageId{_decoder.get<SequenceNumber>()};
+    message_id = ReliableMessageId{_decoder.get<SequenceNumber>()};
   }
   else {
-    _message_id = UnreliableMessageId{_decoder.get<Id>()};
+    message_id = UnreliableMessageId{_decoder.get<Id>()};
   }
 
-  if (_decoder.error()) return false;
+  if (_decoder.error()) return boost::none;
 
   auto message_size = _decoder.get<uint16_t>();
 
-  if (_decoder.error()) return false;
+  if (_decoder.error()) return boost::none;
 
   if (message_size > _decoder.size()) {
-    return false;
+    return boost::none;
   }
 
   using boost::asio::const_buffer;
 
-  _payload = const_buffer(_decoder.current(), message_size);
-  _payload_with_type = const_buffer(type_start, message_size + (_decoder.current() - type_start));
+  auto header_size = _decoder.current() - type_start;
 
-  return true;
+  auto payload = const_buffer(_decoder.current(), message_size);
+  auto payload_with_type = const_buffer(type_start, message_size + header_size);
+
+  return InMessage<Id>( move(source)
+                      , move(targets)
+                      , std::move(message_id)
+                      , payload
+                      , payload_with_type );
 }
 
 }} // club::transport namespace

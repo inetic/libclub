@@ -22,6 +22,35 @@
 
 namespace club { namespace transport {
 
+//------------------------------------------------------------------------------
+template<typename UnreliableId>
+struct InMessage {
+  using MessageId = transport::MessageId<UnreliableId>;
+
+  uuid                      source;
+  std::set<uuid>            targets;
+  MessageId                 id;
+  boost::asio::const_buffer payload;
+  boost::asio::const_buffer type_and_payload;
+
+  InMessage( uuid                      source
+           , std::set<uuid>&&          targets
+           , MessageId                 id
+           , boost::asio::const_buffer payload
+           , boost::asio::const_buffer type_and_payload)
+    : source(std::move(source))
+    , targets(std::move(targets))
+    , id(std::move(id))
+    , payload(payload)
+    , type_and_payload(type_and_payload)
+  {}
+
+  bool is_reliable() const {
+    return boost::get<ReliableMessageId>(&id) != nullptr;
+  }
+};
+
+//------------------------------------------------------------------------------
 template<typename UnreliableId>
 struct OutMessage {
   using MessageId = transport::MessageId<UnreliableId>;
@@ -45,6 +74,8 @@ struct OutMessage {
     return boost::get<ReliableMessageId>(&id) != nullptr;
   }
 };
+
+//------------------------------------------------------------------------------
 
 }} // club::transport namespace
 
