@@ -49,7 +49,7 @@ public:
 private:
   friend class ::club::transport::OutboundMessages<UnreliableId>;
 
-  void insert_message(Message m);
+  void insert_message(std::shared_ptr<Message> m);
 
   void start_receiving(std::shared_ptr<SocketState>);
 
@@ -220,7 +220,7 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::insert_message(Message m) {
+void Transport<Id>::insert_message(std::shared_ptr<Message> m) {
   _transmit_queue.insert_message(std::move(m));
 
   if (!_is_sending) {

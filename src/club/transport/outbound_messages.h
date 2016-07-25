@@ -27,11 +27,11 @@ template<typename UnreliableId>
 class OutboundMessages {
 private:
   using Queue             = TransmitQueue<UnreliableId>;
-  using UnreliableMessage = UnreliableMessageT<UnreliableId>;
+  using Message           = transport::Message<UnreliableId>;
   using Transport         = ::club::transport::Transport<UnreliableId>;
 
-  using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<ReliableMessage>>;
-  using UnreliableMessages = std::map<UnreliableId,   std::weak_ptr<UnreliableMessage>>;
+  using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
+  using UnreliableMessages = std::map<UnreliableId,   std::weak_ptr<Message>>;
 
 public:
   OutboundMessages();
@@ -51,10 +51,7 @@ private:
   friend class ::club::transport::Transport<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
-  UnreliableMessage* find_unreliable(const UnreliableId&);
-
-  void release(std::shared_ptr<ReliableMessage>&&);
-  void release(std::shared_ptr<UnreliableMessage>&&);
+  void release(std::shared_ptr<Message>&&);
 
   void register_transport(Transport*);
   void deregister_transport(Transport*);
@@ -125,11 +122,11 @@ OutboundMessages<Id>::add_reliable_message( uuid                   source
   encoder.put((uint16_t) data.size());
   encoder.put_raw(data.data(), data.size());
 
-  auto message = make_shared<ReliableMessage>( move(source)
-                                             , move(targets)
-                                             , sn
-                                             , move(data_)
-                                             );
+  auto message = make_shared<Message>( move(source)
+                                     , move(targets)
+                                     , sn
+                                     , move(data_)
+                                     );
 
   _reliable_messages.emplace(sn, message);
 
@@ -169,11 +166,11 @@ OutboundMessages<Id>::add_unreliable_message( uuid                   source
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
-    auto message = make_shared<UnreliableMessage>( move(source)
-                                                 , move(targets)
-                                                 , move(id)
-                                                 , move(data_)
-                                                 );
+    auto message = make_shared<Message>( move(source)
+                                       , move(targets)
+                                       , typename Message::Unreliable{move(id)}
+                                       , move(data_)
+                                       );
 
     _unreliable_messages.emplace(move(id), move(message));
 
@@ -186,23 +183,25 @@ OutboundMessages<Id>::add_unreliable_message( uuid                   source
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::release(std::shared_ptr<ReliableMessage>&& m) {
-  auto i = _reliable_messages.find(m->sequence_number);
-  if (i == _reliable_messages.end()) return;
-  if (m.use_count() > 1) return; // Someone else still uses this message.
-  // TODO: If targets of the message is not empty, we must store it to some
-  // other variable (could be called `_orphans`) and remove it from there
-  // when we're notified that a node was removed from the network.
-  _reliable_messages.erase(i);
-}
+void OutboundMessages<Id>::release(std::shared_ptr<Message>&& m) {
+  // TODO: Split these in two functions.
 
-//------------------------------------------------------------------------------
-template<class Id>
-void OutboundMessages<Id>::release(std::shared_ptr<UnreliableMessage>&& m) {
-  auto i = _unreliable_messages.find(m->id);
-  if (i == _unreliable_messages.end()) return;
-  if (m.use_count() > 1) return; // Someone else still uses this message.
-  _unreliable_messages.erase(i);
+  if (auto p = boost::get<typename Message::Reliable>(&m->id)) {
+    auto i = _reliable_messages.find(p->sequence_number);
+    if (i == _reliable_messages.end()) return;
+    if (m.use_count() > 1) return; // Someone else still uses this message.
+    // TODO: If targets of the message is not empty, we must store it to some
+    // other variable (could be called `_orphans`) and remove it from there
+    // when we're notified that a node was removed from the network.
+    _reliable_messages.erase(i);
+  } else
+  if (auto p = boost::get<typename Message::Unreliable>(&m->id)) {
+    auto i = _unreliable_messages.find(p->identifier);
+    if (i == _unreliable_messages.end()) return;
+    if (m.use_count() > 1) return; // Someone else still uses this message.
+    _unreliable_messages.erase(i);
+  }
+  else { assert(0); }
 }
 
 //------------------------------------------------------------------------------

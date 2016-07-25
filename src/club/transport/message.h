@@ -21,39 +21,31 @@
 
 namespace club { namespace transport {
 
-struct ReliableMessage {
-  uuid                 source;
-  std::set<uuid>       targets;
-  SequenceNumber       sequence_number;
-  std::vector<uint8_t> bytes;
-
-  ReliableMessage( uuid source
-                 , std::set<uuid>&& targets
-                 , SequenceNumber   sn
-                 , std::vector<uint8_t>&& bytes)
-    : source(std::move(source))
-    , targets(std::move(targets))
-    , sequence_number(sn)
-    , bytes(std::move(bytes))
-  {}
-};
-
 template<typename UnreliableId>
-struct UnreliableMessageT {
+struct Message {
+  struct Reliable   { SequenceNumber sequence_number; };
+  struct Unreliable { UnreliableId   identifier;      };
+
+  using Id = boost::variant<Reliable, Unreliable>;
+
   uuid                 source;
   std::set<uuid>       targets;
-  UnreliableId         id;
+  Id                   id;
   std::vector<uint8_t> bytes;
 
-  UnreliableMessageT( uuid                   source
-                    , std::set<uuid>&&       targets
-                    , UnreliableId&&         id
-                    , std::vector<uint8_t>&& bytes)
+  Message( uuid                   source
+         , std::set<uuid>&&       targets
+         , Id                     id
+         , std::vector<uint8_t>&& bytes)
     : source(std::move(source))
     , targets(std::move(targets))
     , id(std::move(id))
     , bytes(std::move(bytes))
   {}
+
+  bool is_reliable() const {
+    return boost::get<Reliable>(&id) != nullptr;
+  }
 };
 
 }} // club::transport namespace

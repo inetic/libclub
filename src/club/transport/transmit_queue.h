@@ -34,14 +34,11 @@ private:
 
   using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
   using uuid = boost::uuids::uuid;
-  using UnreliableMessage = UnreliableMessageT<UnreliableId>;
 
-  using Message
-    = boost::variant< std::shared_ptr<ReliableMessage>
-                    , std::shared_ptr<UnreliableMessage>
-                    >;
+  using Message = transport::Message<UnreliableId>;
+  using MessagePtr = std::shared_ptr<Message>;
 
-  using Messages = std::list<Message>;
+  using Messages = std::list<MessagePtr>;
 
 public:
   TransmitQueue(std::shared_ptr<OutboundMessages>);
@@ -51,18 +48,15 @@ public:
 private:
   void add_target(const uuid&);
 
-  void insert_message(Message);
+  void insert_message(MessagePtr);
 
   void circular_increment(typename Messages::iterator& i);
-
-  static std::set<uuid>& targets_of(Message&);
 
   static void set_intersection( const std::set<uuid>&
                               , const std::set<uuid>&
                               , std::vector<uuid>&);
 
   void erase(typename Messages::iterator i);
-  void release(Message& m);
 
   bool try_encode( binary::encoder&
                  , const std::vector<uuid>&
@@ -105,7 +99,7 @@ void TransmitQueue<Id>::add_target(const uuid& id) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void TransmitQueue<Id>::insert_message(Message message) {
+void TransmitQueue<Id>::insert_message(MessagePtr message) {
   _messages.insert(_next, std::move(message));
   if (_next == _messages.end()) _next = _messages.begin();
 }
@@ -119,28 +113,14 @@ TransmitQueue<Id>::circular_increment(typename Messages::iterator& i) {
 }
 
 //------------------------------------------------------------------------------
-/*
- * Tell the _outbound_messages object that we're no longer using this message.
- */
-template<class Id>
-void
-TransmitQueue<Id>::release(Message& m) {
-  using std::move;
-  using std::shared_ptr;
-
-  if (auto pp = boost::get<shared_ptr<ReliableMessage>>(&m)) {
-    _outbound_messages->release(move(*pp));
-  }
-  else if (auto pp = boost::get<shared_ptr<UnreliableMessage>>(&m)) {
-    _outbound_messages->release(move(*pp));
-  }
-}
-
-//------------------------------------------------------------------------------
 template<class Id>
 void
 TransmitQueue<Id>::erase(typename Messages::iterator i) {
-  release(*i);
+  using std::move;
+  using std::shared_ptr;
+
+  //Tell the _outbound_messages object that we're no longer using this message.
+  _outbound_messages->release(std::move(*i));
 
   if (i == _next) {
     _next = _messages.erase(i);
@@ -171,7 +151,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
 
     is_last = current == last;
 
-    set_intersection(targets_of(*current), _targets, _target_intersection);
+    set_intersection((*current)->targets, _targets, _target_intersection);
 
     if (_target_intersection.empty()) {
       erase(current);
@@ -179,7 +159,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
       continue;
     }
 
-    if (!try_encode(encoder, _target_intersection, *current)) {
+    if (!try_encode(encoder, _target_intersection, **current)) {
       _next = current;
       break;
     }
@@ -187,8 +167,8 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
     ++count;
 
     // Unreliable entries are sent only once to each target.
-    if (auto pp = boost::get<std::shared_ptr<UnreliableMessage>>(&*current)) {
-      auto& m = **pp;
+    if (!(*current)->is_reliable()) {
+      auto& m = **current;
 
       for (const auto& target : _targets) {
         m.targets.erase(target);
@@ -232,24 +212,9 @@ void
 TransmitQueue<Id>::encode( binary::encoder& encoder
                          , const std::vector<uuid>& targets
                          , const Message& msg) const {
-  using boost::get;
-  using std::shared_ptr;
-
-  if (auto pp = get<shared_ptr<UnreliableMessage>>(&msg)) {
-    auto& msg = **pp;
-
-    encoder.put(msg.source);
-    encode_targets(encoder, targets);
-    encoder.put_raw(msg.bytes.data(), msg.bytes.size());
-  }
-  else if (auto pp = get<shared_ptr<ReliableMessage>>(&msg)) {
-    auto& msg = **pp;
-
-    encoder.put(msg.source);
-    encode_targets(encoder, targets);
-    encoder.put_raw(msg.bytes.data(), msg.bytes.size());
-  }
-  else { assert(0); }
+  encoder.put(msg.source);
+  encode_targets(encoder, targets);
+  encoder.put_raw(msg.bytes.data(), msg.bytes.size());
 }
 
 //------------------------------------------------------------------------------
@@ -266,25 +231,6 @@ TransmitQueue<Id>::encode_targets( binary::encoder& encoder
 
   for (const auto& id : targets) {
     encoder.put(id);
-  }
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
-std::set<typename TransmitQueue<Id>::uuid>&
-TransmitQueue<Id>::targets_of(Message& e)
-{
-  using boost::get;
-  using std::shared_ptr;
-
-  if (auto pp1 = get<shared_ptr<UnreliableMessage>>(&e)) {
-    assert(*pp1);
-    return (*pp1)->targets;
-  }
-  else {
-    auto pp2 = get<shared_ptr<ReliableMessage>>(&e);
-    assert(pp2 && *pp2);
-    return (*pp2)->targets;
   }
 }
 
