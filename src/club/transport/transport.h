@@ -232,6 +232,7 @@ void Transport<Id>::on_send( const boost::system::error_code& error
     assert(0);
   }
 
+  // TODO: Proper congestion control
   _timer.expires_from_now(std::chrono::milliseconds(100));
   _timer.async_wait([this, state = move(state)]
                     (const error_code error) {
