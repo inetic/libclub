@@ -54,6 +54,11 @@ private:
   void register_transport(Transport*);
   void deregister_transport(Transport*);
 
+  void forward_message( uuid                      source
+                      , std::set<uuid>            targets
+                      , typename Message::Id      message_id
+                      , boost::asio::const_buffer buffer);
+
 private:
   uuid                 _our_id;
   SequenceNumber       _next_sequence_number;
@@ -154,6 +159,7 @@ OutboundMessages<Id>::send_unreliable( Id                     id
     // TODO: Same as above, it is inefficient to *copy* the data
     //       just to prepend a small header.
     std::vector<uint8_t> data_( 1 // Is unreliable flag
+                              + sizeof(Id)
                               + sizeof(uint16_t) // Size of data
                               + data.size()
                               );
@@ -161,6 +167,7 @@ OutboundMessages<Id>::send_unreliable( Id                     id
     binary::encoder encoder(data_.data(), data_.size());
 
     encoder.put((uint8_t) 0);
+    encoder.put(id);
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
@@ -177,6 +184,33 @@ OutboundMessages<Id>::send_unreliable( Id                     id
     }
   }
 
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void OutboundMessages<Id>::forward_message( uuid                      source
+                                          , std::set<uuid>            targets
+                                          , typename Message::Id      message_id
+                                          , boost::asio::const_buffer buffer) {
+  using namespace std;
+
+  auto begin = boost::asio::buffer_cast<const uint8_t*>(buffer);
+
+  std::vector<uint8_t> data( begin
+                           , begin + boost::asio::buffer_size(buffer));
+
+  auto message = make_shared<Message>( move(source)
+                                     , move(targets)
+                                     , std::move(message_id)
+                                     , move(data) );
+
+  // TODO: Same as with unreliable messages, store the message in a
+  // std::map so that we don't put identical messages to message queues
+  // (through transports).
+
+  for (auto t : _transports) {
+    t->insert_message(message);
+  }
 }
 
 //------------------------------------------------------------------------------

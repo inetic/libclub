@@ -30,9 +30,10 @@ private:
   };
 
 public:
-  using TransmitQueue    = ::club::transport::TransmitQueue<UnreliableId>;
-  using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
-  using InboundMessages  = ::club::transport::InboundMessages<UnreliableId>;
+  using TransmitQueue    = transport::TransmitQueue<UnreliableId>;
+  using OutboundMessages = transport::OutboundMessages<UnreliableId>;
+  using InboundMessages  = transport::InboundMessages<UnreliableId>;
+  using MessageReader    = transport::MessageReader<UnreliableId>;
   using Message = typename TransmitQueue::Message;
 
 public:
@@ -41,6 +42,10 @@ public:
            , udp::endpoint                     remote_endpoint
            , std::shared_ptr<OutboundMessages> outbound
            , std::shared_ptr<InboundMessages>  inbound);
+
+
+  Transport(Transport&&) = delete;
+  Transport& operator=(Transport&&) = delete;
 
   void add_target(const uuid&);
 
@@ -61,6 +66,8 @@ private:
 
   void on_send( const boost::system::error_code&
               , std::shared_ptr<SocketState>);
+
+  OutboundMessages& outbound() { return _transmit_queue.outbound_messages(); }
 
 private:
   uuid                             _id;
@@ -94,7 +101,7 @@ Transport<UnreliableId>
   , _socket_state(std::make_shared<SocketState>())
 {
   _inbound->register_transport(this);
-  _transmit_queue.outbound_messages().register_transport(this);
+  this->outbound().register_transport(this);
   start_receiving(_socket_state);
 }
 
@@ -102,7 +109,7 @@ Transport<UnreliableId>
 template<typename UnreliableId>
 Transport<UnreliableId>::~Transport() {
   _inbound->deregister_transport(this);
-  _transmit_queue.outbound_messages().deregister_transport(this);
+  outbound().deregister_transport(this);
   _socket_state->was_destroyed = true;
 }
 
@@ -156,10 +163,25 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   _message_reader.set_data(state->rx_buffer.data(), size);
 
   while (_message_reader.read_one()) {
-    for (const auto& target : _message_reader.targets()) {
-      if (target == _id) {
-        _inbound->on_receive(error, _message_reader.message_data());
-        continue;
+    auto& targets = _message_reader.targets();
+
+    if (targets.count(_id)) {
+      targets.erase(_id);
+      _inbound->on_receive(error, _message_reader.payload());
+    }
+
+    if (!targets.empty()) {
+      auto source = _message_reader.source();
+
+      if (source != _id) {
+        // TODO: *Move* the values.
+        outbound().forward_message( _message_reader.source()
+                                  , targets
+                                  , _message_reader.message_id()
+                                  , _message_reader.payload_with_type());
+      }
+      else {
+        assert(0 && "Our message was returned back");
       }
     }
 

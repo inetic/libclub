@@ -6,7 +6,10 @@
 
 namespace club { namespace transport {
 
+template<class UnreliableId>
 class MessageReader {
+  using Message = transport::Message<UnreliableId>;
+
 public:
   MessageReader();
 
@@ -15,31 +18,36 @@ public:
   bool read_one();
 
   const uuid&               source()       const { return _source; }
-  const std::vector<uuid>&  targets()      const { return _targets; }
-  boost::asio::const_buffer message_data() const { return _message; }
-
-  boost::optional<SequenceNumber>
-    sequence_number() const { return _sequence_number; }
+  const std::set<uuid>&     targets()      const { return _targets; }
+        std::set<uuid>&     targets()            { return _targets; }
+  typename Message::Id      message_id()   const { return _message_id; }
+  boost::asio::const_buffer payload()           const { return _payload; }
+  boost::asio::const_buffer payload_with_type() const { return _payload_with_type; }
 
 private:
   binary::decoder                 _decoder;
   uuid                            _source;
-  std::vector<uuid>               _targets;
-  boost::asio::const_buffer       _message;
+  std::set<uuid>                  _targets;
+  boost::asio::const_buffer       _payload;
+  boost::asio::const_buffer       _payload_with_type;
+  typename Message::Id            _message_id;
   boost::optional<SequenceNumber> _sequence_number;
 };
 
 //------------------------------------------------------------------------------
 // Implementation
 //------------------------------------------------------------------------------
-MessageReader::MessageReader()
+template<class Id>
+MessageReader<Id>::MessageReader()
 {}
 
-void MessageReader::set_data(const uint8_t* data, size_t size) {
+template<class Id>
+void MessageReader<Id>::set_data(const uint8_t* data, size_t size) {
   _decoder.reset(data, size);
 }
 
-bool MessageReader::read_one() {
+template<class Id>
+bool MessageReader<Id>::read_one() {
   // TODO: See if the number of octets can be reduced.
 
   if (_decoder.error()) return false;
@@ -52,20 +60,22 @@ bool MessageReader::read_one() {
 
   if (_decoder.error()) return false;
 
-  _targets.resize(target_count);
+  _targets.clear();
 
   for (auto i = 0; i < target_count; ++i) {
-    _targets[i] = _decoder.get<uuid>();
+    _targets.insert(_decoder.get<uuid>());
     if (_decoder.error()) return false;
   }
 
-  auto has_sequence_number = _decoder.get<uint8_t>();
+  auto type_start = _decoder.current();
 
-  if (has_sequence_number) {
-    _sequence_number = _decoder.get<SequenceNumber>();
+  auto is_reliable = _decoder.get<uint8_t>();
+
+  if (is_reliable) {
+    _message_id = typename Message::Reliable{_decoder.get<SequenceNumber>()};
   }
   else {
-    _sequence_number = boost::none;
+    _message_id = typename Message::Unreliable{_decoder.get<Id>()};
   }
 
   if (_decoder.error()) return false;
@@ -78,7 +88,10 @@ bool MessageReader::read_one() {
     return false;
   }
 
-  _message = boost::asio::const_buffer(_decoder.current(), message_size);
+  using boost::asio::const_buffer;
+
+  _payload = const_buffer(_decoder.current(), message_size);
+  _payload_with_type = const_buffer(type_start, message_size + (_decoder.current() - type_start));
 
   return true;
 }

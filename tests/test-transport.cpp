@@ -32,12 +32,14 @@ using boost::system::error_code;
 using boost::asio::const_buffer;
 
 using uuid             = club::uuid;
-using UnreliableId     = uint64_t;
+using UnreliableId     = uint32_t;
 using TransmitQueue    = club::transport::TransmitQueue<UnreliableId>;
 using OutboundMessages = club::transport::OutboundMessages<UnreliableId>;
 using InboundMessages  = club::transport::InboundMessages<UnreliableId>;
 using Transport        = club::transport::Transport<UnreliableId>;
 using udp              = boost::asio::ip::udp;
+
+using TransportPtr = std::unique_ptr<Transport>;
 
 namespace asio = boost::asio;
 
@@ -51,13 +53,15 @@ vector<uint8_t> buf_to_vector(const_buffer buf) {
 //------------------------------------------------------------------------------
 struct Node {
   uuid                              id;
-  std::list<Transport>              transports;
+  std::map<uuid, TransportPtr>      transports;
   shared_ptr<OutboundMessages>      outbound;
   shared_ptr<InboundMessages>       inbound;
   std::function<void(const_buffer)> on_recv;
 
-  void add_transport(udp::socket s, udp::endpoint e) {
-    transports.emplace_back(id, move(s), e, outbound, inbound);
+  void add_transport(uuid other_id, udp::socket s, udp::endpoint e) {
+    auto t = std::make_unique<Transport>(id, move(s), e, outbound, inbound);
+    transports.emplace(std::make_pair(other_id, move(t)));
+    transports[other_id]->add_target(other_id);
   }
 
   void send_unreliable(vector<uint8_t> data, set<uuid> targets) {
@@ -84,13 +88,8 @@ void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
   auto ep1 = s1.local_endpoint();
   auto ep2 = s2.local_endpoint();
 
-  n1.add_transport(move(s1), move(ep2));
-
-  n1.transports.back().add_target(n2.id);
-
-  n2.add_transport(move(s2), move(ep1));
-
-  n2.transports.back().add_target(n1.id);
+  n1.add_transport(n2.id, move(s1), move(ep2));
+  n2.add_transport(n1.id, move(s2), move(ep1));
 }
 
 //------------------------------------------------------------------------------
@@ -196,6 +195,31 @@ BOOST_AUTO_TEST_CASE(test_transport_exchange) {
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
   n2.send_unreliable(std::vector<uint8_t>{2,3,4,5}, set<uuid>{n1.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_forward) {
+  asio::io_service ios;
+
+  Node n1, n2, n3;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+
+  // Tell n1 that it can reach n3 through n2.
+  n1.transports[n2.id]->add_target(n3.id);
+
+  n3.on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+
+    n1.transports.clear();
+    n2.transports.clear();
+    n3.transports.clear();
+  };
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
 
   ios.run();
 }
