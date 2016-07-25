@@ -17,6 +17,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/uuid/uuid_generators.hpp>
+#include <boost/functional/hash.hpp>
 #include <transport/transport.h>
 
 //------------------------------------------------------------------------------
@@ -59,6 +60,14 @@ struct Node {
     transports.emplace_back(id, move(s), e, outbound, inbound);
   }
 
+  void send_unreliable(vector<uint8_t> data, set<uuid> targets) {
+    auto data_id = boost::hash_value(data);
+
+    outbound->send_unreliable( data_id
+                             , move(data)
+                             , move(targets));
+  }
+
   Node()
     : id(boost::uuids::random_generator()())
     , outbound(make_shared<OutboundMessages>(id))
@@ -98,9 +107,7 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.outbound->send_unreliable( 0
-                              , vector<uint8_t>{0,1,2,3}
-                              , set<uuid>{n2.id});
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
 
   ios.run();
 }
