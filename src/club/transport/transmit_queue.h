@@ -35,7 +35,7 @@ private:
   using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
   using uuid = boost::uuids::uuid;
 
-  using Message = transport::Message<UnreliableId>;
+  using Message = transport::OutMessage<UnreliableId>;
   using MessagePtr = std::shared_ptr<Message>;
 
   using Messages = std::list<MessagePtr>;

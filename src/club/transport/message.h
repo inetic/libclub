@@ -18,25 +18,23 @@
 #include <set>
 #include <club/uuid.h>
 #include "sequence_number.h"
+#include "message_id.h"
 
 namespace club { namespace transport {
 
 template<typename UnreliableId>
-struct Message {
-  struct Reliable   { SequenceNumber sequence_number; };
-  struct Unreliable { UnreliableId   identifier;      };
-
-  using Id = boost::variant<Reliable, Unreliable>;
+struct OutMessage {
+  using MessageId = transport::MessageId<UnreliableId>;
 
   uuid                 source;
   std::set<uuid>       targets;
-  Id                   id;
+  MessageId            id;
   std::vector<uint8_t> bytes;
 
-  Message( uuid                   source
-         , std::set<uuid>&&       targets
-         , Id                     id
-         , std::vector<uint8_t>&& bytes)
+  OutMessage( uuid                   source
+            , std::set<uuid>&&       targets
+            , MessageId              id
+            , std::vector<uint8_t>&& bytes)
     : source(std::move(source))
     , targets(std::move(targets))
     , id(std::move(id))
@@ -44,7 +42,7 @@ struct Message {
   {}
 
   bool is_reliable() const {
-    return boost::get<Reliable>(&id) != nullptr;
+    return boost::get<ReliableMessageId>(&id) != nullptr;
   }
 };
 

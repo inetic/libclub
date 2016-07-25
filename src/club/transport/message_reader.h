@@ -8,7 +8,9 @@ namespace club { namespace transport {
 
 template<class UnreliableId>
 class MessageReader {
-  using Message = transport::Message<UnreliableId>;
+  using Message             = transport::OutMessage<UnreliableId>;
+  using MessageId           = transport::MessageId<UnreliableId>;
+  using UnreliableMessageId = transport::UnreliableMessageId<UnreliableId>;
 
 public:
   MessageReader();
@@ -20,7 +22,7 @@ public:
   const uuid&               source()       const { return _source; }
   const std::set<uuid>&     targets()      const { return _targets; }
         std::set<uuid>&     targets()            { return _targets; }
-  typename Message::Id      message_id()   const { return _message_id; }
+  MessageId                 message_id()   const { return _message_id; }
   boost::asio::const_buffer payload()           const { return _payload; }
   boost::asio::const_buffer payload_with_type() const { return _payload_with_type; }
 
@@ -30,7 +32,7 @@ private:
   std::set<uuid>                  _targets;
   boost::asio::const_buffer       _payload;
   boost::asio::const_buffer       _payload_with_type;
-  typename Message::Id            _message_id;
+  MessageId                       _message_id;
   boost::optional<SequenceNumber> _sequence_number;
 };
 
@@ -72,10 +74,10 @@ bool MessageReader<Id>::read_one() {
   auto is_reliable = _decoder.get<uint8_t>();
 
   if (is_reliable) {
-    _message_id = typename Message::Reliable{_decoder.get<SequenceNumber>()};
+    _message_id = ReliableMessageId{_decoder.get<SequenceNumber>()};
   }
   else {
-    _message_id = typename Message::Unreliable{_decoder.get<Id>()};
+    _message_id = UnreliableMessageId{_decoder.get<Id>()};
   }
 
   if (_decoder.error()) return false;
