@@ -237,22 +237,26 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
 
   std::vector<uint8_t>* bytes = nullptr;
 
-  if (auto pp1 = get<shared_ptr<UnreliableMessage>>(&msg)) {
-    assert(*pp1);
+  if (auto pp = get<shared_ptr<UnreliableMessage>>(&msg)) {
+    auto& msg = **pp;
+
+    encoder.put(msg.source);
+    encode_targets(encoder, targets);
+
     encoder.put((uint8_t) 0);
-    bytes = &(**pp1).bytes;
+    bytes = &msg.bytes;
   }
-  else {
-    auto pp2 = get<shared_ptr<ReliableMessage>>(&msg);
-    assert(pp2 && *pp2);
-    auto& msg = **pp2;
+  else if (auto pp = get<shared_ptr<ReliableMessage>>(&msg)) {
+    auto& msg = **pp;
+
+    encoder.put(msg.source);
+    encode_targets(encoder, targets);
 
     encoder.put((uint8_t) 1);
     encoder.put(msg.sequence_number);
     bytes = &msg.bytes;
   }
-
-  encode_targets(encoder, targets);
+  else { assert(0); }
 
   const auto size = bytes->size();
 

@@ -36,12 +36,14 @@ private:
 public:
   OutboundMessages();
 
-  void add_reliable_message( std::vector<uint8_t>&&
-                           , std::set<uuid> targets);
+  void add_reliable_message( uuid                   source
+                           , std::vector<uint8_t>&& data
+                           , std::set<uuid>         targets);
 
-  void add_unreliable_message( UnreliableId id
-                             , std::vector<uint8_t>&&
-                             , std::set<uuid> targets);
+  void add_unreliable_message( uuid                   source
+                             , UnreliableId           id
+                             , std::vector<uint8_t>&& data
+                             , std::set<uuid>         targets);
 
   void acknowledge(const uuid&, SequenceNumber);
 
@@ -99,13 +101,15 @@ void OutboundMessages<Id>::acknowledge(const uuid& target, SequenceNumber sn) {
 //------------------------------------------------------------------------------
 template<class Id>
 void
-OutboundMessages<Id>::add_reliable_message( std::vector<uint8_t>&& data
+OutboundMessages<Id>::add_reliable_message( uuid                   source
+                                          , std::vector<uint8_t>&& data
                                           , std::set<uuid>         targets) {
   using namespace std;
 
   auto sn = _next_sequence_number++;
 
-  auto message = make_shared<ReliableMessage>( move(targets)
+  auto message = make_shared<ReliableMessage>( move(source)
+                                             , move(targets)
                                              , sn
                                              , move(data)
                                              );
@@ -120,7 +124,8 @@ OutboundMessages<Id>::add_reliable_message( std::vector<uint8_t>&& data
 //------------------------------------------------------------------------------
 template<class Id>
 void
-OutboundMessages<Id>::add_unreliable_message( Id                     id
+OutboundMessages<Id>::add_unreliable_message( uuid                   source
+                                            , Id                     id
                                             , std::vector<uint8_t>&& data
                                             , std::set<uuid>         targets) {
   using namespace std;
@@ -134,7 +139,8 @@ OutboundMessages<Id>::add_unreliable_message( Id                     id
     // else { it was there but was already sent, so noop }
   }
   else {
-    auto message = make_shared<UnreliableMessage>( move(targets)
+    auto message = make_shared<UnreliableMessage>( move(source)
+                                                 , move(targets)
                                                  , move(id)
                                                  , move(data)
                                                  );

@@ -14,6 +14,7 @@ public:
 
   bool read_one();
 
+  const uuid&               source()       const { return _source; }
   const std::vector<uuid>&  targets()      const { return _targets; }
   boost::asio::const_buffer message_data() const { return _message; }
 
@@ -22,6 +23,7 @@ public:
 
 private:
   binary::decoder                 _decoder;
+  uuid                            _source;
   std::vector<uuid>               _targets;
   boost::asio::const_buffer       _message;
   boost::optional<SequenceNumber> _sequence_number;
@@ -42,14 +44,9 @@ bool MessageReader::read_one() {
 
   if (_decoder.error()) return false;
 
-  auto has_sequence_number = _decoder.get<uint8_t>();
+  _source = _decoder.get<uuid>();
 
-  if (has_sequence_number) {
-    _sequence_number = _decoder.get<SequenceNumber>();
-  }
-  else {
-    _sequence_number = boost::none;
-  }
+  if (_decoder.error()) return false;
 
   auto target_count = _decoder.get<uint8_t>();
 
@@ -59,6 +56,16 @@ bool MessageReader::read_one() {
 
   for (auto i = 0; i < target_count; ++i) {
     _targets[i] = _decoder.get<uuid>();
+    if (_decoder.error()) return false;
+  }
+
+  auto has_sequence_number = _decoder.get<uint8_t>();
+
+  if (has_sequence_number) {
+    _sequence_number = _decoder.get<SequenceNumber>();
+  }
+  else {
+    _sequence_number = boost::none;
   }
 
   if (_decoder.error()) return false;

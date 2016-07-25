@@ -98,7 +98,8 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.outbound->add_unreliable_message( 0
+  n1.outbound->add_unreliable_message( n1.id
+                                     , 0
                                      , vector<uint8_t>{0,1,2,3}
                                      , set<uuid>{n2.id});
 

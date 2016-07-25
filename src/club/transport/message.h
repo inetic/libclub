@@ -22,14 +22,17 @@
 namespace club { namespace transport {
 
 struct ReliableMessage {
+  uuid                 source;
   std::set<uuid>       targets;
   SequenceNumber       sequence_number;
   std::vector<uint8_t> bytes;
 
-  ReliableMessage( std::set<uuid>&& targets
+  ReliableMessage( uuid source
+                 , std::set<uuid>&& targets
                  , SequenceNumber   sn
                  , std::vector<uint8_t>&& bytes)
-    : targets(std::move(targets))
+    : source(std::move(source))
+    , targets(std::move(targets))
     , sequence_number(sn)
     , bytes(std::move(bytes))
   {}
@@ -37,14 +40,17 @@ struct ReliableMessage {
 
 template<typename UnreliableId>
 struct UnreliableMessageT {
+  uuid                 source;
   std::set<uuid>       targets;
   UnreliableId         id;
   std::vector<uint8_t> bytes;
 
-  UnreliableMessageT( std::set<uuid>&&       targets
+  UnreliableMessageT( uuid                   source
+                    , std::set<uuid>&&       targets
                     , UnreliableId&&         id
                     , std::vector<uint8_t>&& bytes)
-    : targets(std::move(targets))
+    : source(std::move(source))
+    , targets(std::move(targets))
     , id(std::move(id))
     , bytes(std::move(bytes))
   {}
