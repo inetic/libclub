@@ -34,6 +34,7 @@ using uuid             = club::uuid;
 using UnreliableId     = uint64_t;
 using TransmitQueue    = club::transport::TransmitQueue<UnreliableId>;
 using OutboundMessages = club::transport::OutboundMessages<UnreliableId>;
+using InboundMessages  = club::transport::InboundMessages<UnreliableId>;
 using Transport        = club::transport::Transport<UnreliableId>;
 using udp              = boost::asio::ip::udp;
 
@@ -48,18 +49,21 @@ vector<uint8_t> buf_to_vector(const_buffer buf) {
 
 //------------------------------------------------------------------------------
 struct Node {
-  uuid                         id;
-  std::list<Transport>         transports;
-  shared_ptr<OutboundMessages> outbound;
+  uuid                              id;
+  std::list<Transport>              transports;
+  shared_ptr<OutboundMessages>      outbound;
+  shared_ptr<InboundMessages>       inbound;
+  std::function<void(const_buffer)> on_recv;
 
-  template<class OnReceive>
-  void add_transport(udp::socket s, udp::endpoint e, OnReceive on_recv) {
-    transports.emplace_back(id, move(s), e, outbound, move(on_recv));
+  void add_transport(udp::socket s, udp::endpoint e) {
+    transports.emplace_back(id, move(s), e, outbound, inbound);
   }
 
   Node()
     : id(boost::uuids::random_generator()())
     , outbound(make_shared<OutboundMessages>())
+    , inbound(make_shared<InboundMessages>
+        ([this](auto b) { this->on_recv(b); }))
   {}
 };
 
@@ -71,17 +75,11 @@ void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
   auto ep1 = s1.local_endpoint();
   auto ep2 = s2.local_endpoint();
 
-  n1.add_transport(move(s1), move(ep2), [](error_code, const_buffer) {});
+  n1.add_transport(move(s1), move(ep2));
 
   n1.transports.back().add_target(n2.id);
 
-  n2.add_transport(move(s2), move(ep1)
-                  , [&](error_code e, const_buffer buf) {
-                      auto recv = buf_to_vector(buf);
-                      BOOST_REQUIRE(recv == vector<uint8_t>({0,1,2,3}));
-                      n1.transports.clear();
-                      n2.transports.clear();
-                    });
+  n2.add_transport(move(s2), move(ep1));
 
   n2.transports.back().add_target(n1.id);
 }
@@ -91,6 +89,12 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
   asio::io_service ios;
 
   Node n1, n2; 
+
+  n2.on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+    n1.transports.clear();
+    n2.transports.clear();
+  };
 
   connect_nodes(ios, n1, n2);
 

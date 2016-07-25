@@ -4,6 +4,7 @@
 #include <iostream>
 #include <boost/asio/steady_timer.hpp>
 #include <transport/transmit_queue.h>
+#include <transport/inbound_messages.h>
 #include <transport/message_reader.h>
 
 namespace club { namespace transport {
@@ -20,7 +21,6 @@ private:
     udp::endpoint        rx_endpoint;
     std::vector<uint8_t> rx_buffer;
     std::vector<uint8_t> tx_buffer;
-    OnReceive            on_receive;
 
     SocketState()
       : was_destroyed(false)
@@ -32,6 +32,7 @@ private:
 public:
   using TransmitQueue    = ::club::transport::TransmitQueue<UnreliableId>;
   using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
+  using InboundMessages  = ::club::transport::InboundMessages<UnreliableId>;
   using Message = typename TransmitQueue::Message;
 
 public:
@@ -39,7 +40,7 @@ public:
            , udp::socket                       socket
            , udp::endpoint                     remote_endpoint
            , std::shared_ptr<OutboundMessages> outbound
-           , OnReceive                         on_receive);
+           , std::shared_ptr<InboundMessages>  inbound);
 
   void add_target(const uuid&);
 
@@ -62,14 +63,15 @@ private:
               , std::shared_ptr<SocketState>);
 
 private:
-  uuid                         _id;
-  bool                         _is_sending;
-  udp::socket                  _socket;
-  udp::endpoint                _remote_endpoint;
-  TransmitQueue                _transmit_queue;
-  MessageReader                _message_reader;
-  boost::asio::steady_timer    _timer;
-  std::shared_ptr<SocketState> _socket_state;
+  uuid                             _id;
+  bool                             _is_sending;
+  udp::socket                      _socket;
+  udp::endpoint                    _remote_endpoint;
+  TransmitQueue                    _transmit_queue;
+  std::shared_ptr<InboundMessages> _inbound;
+  MessageReader                    _message_reader;
+  boost::asio::steady_timer        _timer;
+  std::shared_ptr<SocketState>     _socket_state;
 };
 
 //------------------------------------------------------------------------------
@@ -81,16 +83,17 @@ Transport<UnreliableId>
            , udp::socket                       socket
            , udp::endpoint                     remote_endpoint
            , std::shared_ptr<OutboundMessages> outbound
-           , OnReceive                         on_receive)
+           , std::shared_ptr<InboundMessages>  inbound)
   : _id(std::move(id))
   , _is_sending(false)
   , _socket(std::move(socket))
   , _remote_endpoint(std::move(remote_endpoint))
   , _transmit_queue(std::move(outbound))
+  , _inbound(std::move(inbound))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
 {
-  _socket_state->on_receive = std::move(on_receive);
+  _inbound->register_transport(this);
   _transmit_queue.outbound_messages().register_transport(this);
   start_receiving(_socket_state);
 }
@@ -98,6 +101,7 @@ Transport<UnreliableId>
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
 Transport<UnreliableId>::~Transport() {
+  _inbound->deregister_transport(this);
   _transmit_queue.outbound_messages().deregister_transport(this);
   _socket_state->was_destroyed = true;
 }
@@ -139,7 +143,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   if (state->was_destroyed) return;
 
   if (error) {
-    return state->on_receive(error, asio::const_buffer(0, 0));
+    return _inbound->on_receive(error, asio::const_buffer(0, 0));
   }
 
   // Ignore packets from unknown sources.
@@ -152,7 +156,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   _message_reader.set_data(state->rx_buffer.data(), size);
 
   while (_message_reader.read_one()) {
-    state->on_receive(error, _message_reader.message_data());
+    _inbound->on_receive(error, _message_reader.message_data());
 
     if (state->was_destroyed) {
       return;
