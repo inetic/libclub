@@ -108,10 +108,27 @@ OutboundMessages<Id>::add_reliable_message( uuid                   source
 
   auto sn = _next_sequence_number++;
 
+  // TODO: It is inefficient to *copy* the data into the new vector just to
+  //       prepend a small header (same below).
+  std::vector<uint8_t> data_( 1 // Is reliable flag
+                            + sizeof(SequenceNumber)
+                            + sizeof(uint16_t) // Size of data
+                            + data.size()
+                            );
+
+  binary::encoder encoder(data_.data(), data_.size());
+
+  assert(data.size() <= std::numeric_limits<uint16_t>::max());
+
+  encoder.put((uint8_t) 1);
+  encoder.put(sn);
+  encoder.put((uint16_t) data.size());
+  encoder.put_raw(data.data(), data.size());
+
   auto message = make_shared<ReliableMessage>( move(source)
                                              , move(targets)
                                              , sn
-                                             , move(data)
+                                             , move(data_)
                                              );
 
   _reliable_messages.emplace(sn, message);
@@ -139,10 +156,23 @@ OutboundMessages<Id>::add_unreliable_message( uuid                   source
     // else { it was there but was already sent, so noop }
   }
   else {
+    // TODO: Same as above, it is inefficient to *copy* the data
+    //       just to prepend a small header.
+    std::vector<uint8_t> data_( 1 // Is unreliable flag
+                              + sizeof(uint16_t) // Size of data
+                              + data.size()
+                              );
+
+    binary::encoder encoder(data_.data(), data_.size());
+
+    encoder.put((uint8_t) 0);
+    encoder.put((uint16_t) data.size());
+    encoder.put_raw(data.data(), data.size());
+
     auto message = make_shared<UnreliableMessage>( move(source)
                                                  , move(targets)
                                                  , move(id)
-                                                 , move(data)
+                                                 , move(data_)
                                                  );
 
     _unreliable_messages.emplace(move(id), move(message));

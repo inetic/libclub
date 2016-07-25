@@ -235,33 +235,21 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
   using boost::get;
   using std::shared_ptr;
 
-  std::vector<uint8_t>* bytes = nullptr;
-
   if (auto pp = get<shared_ptr<UnreliableMessage>>(&msg)) {
     auto& msg = **pp;
 
     encoder.put(msg.source);
     encode_targets(encoder, targets);
-
-    encoder.put((uint8_t) 0);
-    bytes = &msg.bytes;
+    encoder.put_raw(msg.bytes.data(), msg.bytes.size());
   }
   else if (auto pp = get<shared_ptr<ReliableMessage>>(&msg)) {
     auto& msg = **pp;
 
     encoder.put(msg.source);
     encode_targets(encoder, targets);
-
-    encoder.put((uint8_t) 1);
-    encoder.put(msg.sequence_number);
-    bytes = &msg.bytes;
+    encoder.put_raw(msg.bytes.data(), msg.bytes.size());
   }
   else { assert(0); }
-
-  const auto size = bytes->size();
-
-  encoder.put((uint16_t) size);
-  encoder.put_raw(bytes->data(), size);
 }
 
 //------------------------------------------------------------------------------
