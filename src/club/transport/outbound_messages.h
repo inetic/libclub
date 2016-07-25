@@ -34,16 +34,14 @@ private:
   using UnreliableMessages = std::map<UnreliableId,   std::weak_ptr<Message>>;
 
 public:
-  OutboundMessages();
+  OutboundMessages(uuid our_id);
 
-  void add_reliable_message( uuid                   source
-                           , std::vector<uint8_t>&& data
-                           , std::set<uuid>         targets);
+  void send_reliable( std::vector<uint8_t>&& data
+                    , std::set<uuid>         targets);
 
-  void add_unreliable_message( uuid                   source
-                             , UnreliableId           id
-                             , std::vector<uint8_t>&& data
-                             , std::set<uuid>         targets);
+  void send_unreliable( UnreliableId           id
+                      , std::vector<uint8_t>&& data
+                      , std::set<uuid>         targets);
 
   void acknowledge(const uuid&, SequenceNumber);
 
@@ -57,6 +55,7 @@ private:
   void deregister_transport(Transport*);
 
 private:
+  uuid                 _our_id;
   SequenceNumber       _next_sequence_number;
   std::set<Transport*> _transports;
   ReliableMessages     _reliable_messages;
@@ -66,8 +65,9 @@ private:
 //------------------------------------------------------------------------------
 // Implementation
 //------------------------------------------------------------------------------
-template<class Id> OutboundMessages<Id>::OutboundMessages()
-  : _next_sequence_number(0) // TODO: Should this be initialized to a random number?
+template<class Id> OutboundMessages<Id>::OutboundMessages(uuid our_id)
+  : _our_id(std::move(our_id))
+  , _next_sequence_number(0) // TODO: Should this be initialized to a random number?
 {
 }
 
@@ -98,9 +98,8 @@ void OutboundMessages<Id>::acknowledge(const uuid& target, SequenceNumber sn) {
 //------------------------------------------------------------------------------
 template<class Id>
 void
-OutboundMessages<Id>::add_reliable_message( uuid                   source
-                                          , std::vector<uint8_t>&& data
-                                          , std::set<uuid>         targets) {
+OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
+                                   , std::set<uuid>         targets) {
   using namespace std;
 
   auto sn = _next_sequence_number++;
@@ -122,7 +121,7 @@ OutboundMessages<Id>::add_reliable_message( uuid                   source
   encoder.put((uint16_t) data.size());
   encoder.put_raw(data.data(), data.size());
 
-  auto message = make_shared<Message>( move(source)
+  auto message = make_shared<Message>( _our_id
                                      , move(targets)
                                      , sn
                                      , move(data_)
@@ -138,10 +137,9 @@ OutboundMessages<Id>::add_reliable_message( uuid                   source
 //------------------------------------------------------------------------------
 template<class Id>
 void
-OutboundMessages<Id>::add_unreliable_message( uuid                   source
-                                            , Id                     id
-                                            , std::vector<uint8_t>&& data
-                                            , std::set<uuid>         targets) {
+OutboundMessages<Id>::send_unreliable( Id                     id
+                                     , std::vector<uint8_t>&& data
+                                     , std::set<uuid>         targets) {
   using namespace std;
 
   auto i = _unreliable_messages.find(id);
@@ -166,7 +164,7 @@ OutboundMessages<Id>::add_unreliable_message( uuid                   source
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
-    auto message = make_shared<Message>( move(source)
+    auto message = make_shared<Message>( _our_id
                                        , move(targets)
                                        , typename Message::Unreliable{move(id)}
                                        , move(data_)

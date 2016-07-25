@@ -61,7 +61,7 @@ struct Node {
 
   Node()
     : id(boost::uuids::random_generator()())
-    , outbound(make_shared<OutboundMessages>())
+    , outbound(make_shared<OutboundMessages>(id))
     , inbound(make_shared<InboundMessages>
         ([this](auto b) { this->on_recv(b); }))
   {}
@@ -98,10 +98,9 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.outbound->add_unreliable_message( n1.id
-                                     , 0
-                                     , vector<uint8_t>{0,1,2,3}
-                                     , set<uuid>{n2.id});
+  n1.outbound->send_unreliable( 0
+                              , vector<uint8_t>{0,1,2,3}
+                              , set<uuid>{n2.id});
 
   ios.run();
 }

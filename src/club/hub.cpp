@@ -101,7 +101,7 @@ hub::hub(boost::asio::io_service& ios)
   , _time_stamp(0)
   , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
-  , _outbound_messages(new OutboundMessages())
+  , _outbound_messages(new OutboundMessages(_id))
   , _seen(new SeenMessages())
 {
   LOG("Created");
