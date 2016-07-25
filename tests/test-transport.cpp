@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(test_transport_exchange) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_forward) {
+BOOST_AUTO_TEST_CASE(test_transport_forward_one_hop) {
   asio::io_service ios;
 
   Node n1, n2, n3;
@@ -220,6 +220,99 @@ BOOST_AUTO_TEST_CASE(test_transport_forward) {
   };
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_forward_two_hops) {
+  asio::io_service ios;
+
+  Node n1, n2, n3, n4;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+  connect_nodes(ios, n3, n4);
+
+  // Setup routing tables
+  n1.transports[n2.id]->add_target(n3.id);
+  n1.transports[n2.id]->add_target(n4.id);
+  n2.transports[n3.id]->add_target(n4.id);
+
+  n4.on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+
+    n1.transports.clear();
+    n2.transports.clear();
+    n3.transports.clear();
+    n4.transports.clear();
+  };
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n4.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_two_targets) {
+  asio::io_service ios;
+
+  Node n1, n2, n3;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n1, n3);
+
+  size_t counter = 0;
+
+  auto on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+
+    if (++counter == 2) {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    }
+  };
+
+  n2.on_recv = on_recv;
+  n3.on_recv = on_recv;
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_one_hop_two_targets) {
+  asio::io_service ios;
+
+  Node n1, n2, n3, n4;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+  connect_nodes(ios, n2, n4);
+
+  // Setup routing tables
+  n1.transports[n2.id]->add_target(n3.id);
+  n1.transports[n2.id]->add_target(n4.id);
+
+  size_t counter = 0;
+
+  auto on_recv = [&](auto b) {
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+
+    if (++counter == 2) {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+      n4.transports.clear();
+    }
+  };
+
+  n3.on_recv = on_recv;
+  n4.on_recv = on_recv;
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n4.id});
 
   ios.run();
 }
