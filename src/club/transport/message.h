@@ -23,56 +23,48 @@
 namespace club { namespace transport {
 
 //------------------------------------------------------------------------------
-template<typename UnreliableId>
 struct InMessage {
-  using MessageId = transport::MessageId<UnreliableId>;
-
-  uuid                      source;
-  std::set<uuid>            targets;
-  MessageId                 id;
-  boost::asio::const_buffer payload;
-  boost::asio::const_buffer type_and_payload;
+  const uuid                      source;
+        std::set<uuid>            targets;
+  const bool                      is_reliable;
+  const SequenceNumber            sequence_number;
+  const boost::asio::const_buffer payload;
+  const boost::asio::const_buffer type_and_payload;
 
   InMessage( uuid                      source
            , std::set<uuid>&&          targets
-           , MessageId                 id
+           , bool                      is_reliable
+           , SequenceNumber            sequence_number
            , boost::asio::const_buffer payload
            , boost::asio::const_buffer type_and_payload)
     : source(std::move(source))
     , targets(std::move(targets))
-    , id(std::move(id))
+    , is_reliable(is_reliable)
+    , sequence_number(sequence_number)
     , payload(payload)
     , type_and_payload(type_and_payload)
   {}
-
-  bool is_reliable() const {
-    return boost::get<ReliableMessageId>(&id) != nullptr;
-  }
 };
 
 //------------------------------------------------------------------------------
-template<typename UnreliableId>
 struct OutMessage {
-  using MessageId = transport::MessageId<UnreliableId>;
-
-  uuid                 source;
-  std::set<uuid>       targets;
-  MessageId            id;
-  std::vector<uint8_t> bytes;
+  const uuid                          source;
+        std::set<uuid>                targets;
+  const bool                          is_reliable;
+  const SequenceNumber                sequence_number;
+        std::vector<uint8_t>          bytes;
 
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
-            , MessageId              id
+            , bool                   is_reliable
+            , SequenceNumber         sequence_number
             , std::vector<uint8_t>&& bytes)
     : source(std::move(source))
     , targets(std::move(targets))
-    , id(std::move(id))
+    , is_reliable(is_reliable)
+    , sequence_number(sequence_number)
     , bytes(std::move(bytes))
   {}
-
-  bool is_reliable() const {
-    return boost::get<ReliableMessageId>(&id) != nullptr;
-  }
 };
 
 //------------------------------------------------------------------------------

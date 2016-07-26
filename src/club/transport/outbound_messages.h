@@ -26,14 +26,12 @@ template<typename> class Transport;
 template<typename UnreliableId>
 class OutboundMessages {
 private:
-  using Queue               = TransmitQueue<UnreliableId>;
-  using Message             = transport::OutMessage<UnreliableId>;
-  using MessageId           = transport::MessageId<UnreliableId>;
-  using UnreliableMessageId = transport::UnreliableMessageId<UnreliableId>;
-  using Transport           = ::club::transport::Transport<UnreliableId>;
+  using Queue              = TransmitQueue<UnreliableId>;
+  using Message            = transport::OutMessage;
+  using Transport          = transport::Transport<UnreliableId>;
 
-  using ReliableMessages   = std::map<ReliableMessageId,   std::weak_ptr<Message>>;
-  using UnreliableMessages = std::map<UnreliableMessageId, std::weak_ptr<Message>>;
+  using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
+  using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
 public:
   OutboundMessages(uuid our_id);
@@ -51,14 +49,15 @@ private:
   friend class ::club::transport::Transport<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
-  void release(std::shared_ptr<Message>&&);
+  void release(boost::optional<UnreliableId>, std::shared_ptr<Message>&&);
 
   void register_transport(Transport*);
   void deregister_transport(Transport*);
 
   void forward_message( uuid                      source
                       , std::set<uuid>            targets
-                      , MessageId                 message_id
+                      , bool                      is_reliable
+                      , SequenceNumber            sequence_number
                       , boost::asio::const_buffer buffer);
 
 private:
@@ -130,6 +129,7 @@ OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
 
   auto message = make_shared<Message>( _our_id
                                      , move(targets)
+                                     , true // is_reliable
                                      , sn
                                      , move(data_)
                                      );
@@ -137,7 +137,7 @@ OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
   _reliable_messages.emplace(sn, message);
 
   for (auto t : _transports) {
-    t->insert_message(message);
+    t->insert_message(boost::none, message);
   }
 }
 
@@ -149,7 +149,7 @@ OutboundMessages<Id>::send_unreliable( Id                     id
                                      , std::set<uuid>         targets) {
   using namespace std;
 
-  auto i = _unreliable_messages.find(UnreliableMessageId{id});
+  auto i = _unreliable_messages.find(id);
 
   if (i != _unreliable_messages.end()) {
     if (auto p = i->second.lock()) {
@@ -168,23 +168,24 @@ OutboundMessages<Id>::send_unreliable( Id                     id
 
     binary::encoder encoder(data_.data(), data_.size());
 
+    auto sn = _next_sequence_number++;
+
     encoder.put((uint8_t) 0);
-    encoder.put(id);
+    encoder.put(sn);
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
-    auto uid = UnreliableMessageId{move(id)};
-
     auto message = make_shared<Message>( _our_id
                                        , move(targets)
-                                       , uid
+                                       , false // is_reliable
+                                       , sn
                                        , move(data_)
                                        );
 
-    _unreliable_messages.emplace(move(uid), move(message));
+    _unreliable_messages.emplace(id, move(message));
 
     for (auto t : _transports) {
-      t->insert_message(message);
+      t->insert_message(id, message);
     }
   }
 
@@ -194,7 +195,8 @@ OutboundMessages<Id>::send_unreliable( Id                     id
 template<class Id>
 void OutboundMessages<Id>::forward_message( uuid                      source
                                           , std::set<uuid>            targets
-                                          , MessageId                 message_id
+                                          , bool                      is_reliable
+                                          , SequenceNumber            sequence_number
                                           , boost::asio::const_buffer buffer) {
   using namespace std;
 
@@ -205,7 +207,8 @@ void OutboundMessages<Id>::forward_message( uuid                      source
 
   auto message = make_shared<Message>( move(source)
                                      , move(targets)
-                                     , std::move(message_id)
+                                     , is_reliable
+                                     , sequence_number
                                      , move(data) );
 
   // TODO: Same as with unreliable messages, store the message in a
@@ -213,31 +216,30 @@ void OutboundMessages<Id>::forward_message( uuid                      source
   // (through transports).
 
   for (auto t : _transports) {
-    t->insert_message(message);
+    t->insert_message(boost::none, message);
   }
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::release(std::shared_ptr<Message>&& m) {
+void OutboundMessages<Id>::release( boost::optional<Id> unreliable_id
+                                  , std::shared_ptr<Message>&& m) {
   // TODO: Split these in two functions.
 
-  if (auto p = boost::get<ReliableMessageId>(&m->id)) {
-    auto i = _reliable_messages.find(*p);
+  if (!unreliable_id) {
+    auto i = _reliable_messages.find(m->sequence_number);
     if (i == _reliable_messages.end()) return;
     if (m.use_count() > 1) return; // Someone else still uses this message.
     // TODO: If targets of the message is not empty, we must store it to some
     // other variable (could be called `_orphans`) and remove it from there
     // when we're notified that a node was removed from the network.
     _reliable_messages.erase(i);
-  } else
-  if (auto p = boost::get<UnreliableMessageId>(&m->id)) {
-    auto i = _unreliable_messages.find(*p);
+  } else {
+    auto i = _unreliable_messages.find(*unreliable_id);
     if (i == _unreliable_messages.end()) return;
     if (m.use_count() > 1) return; // Someone else still uses this message.
     _unreliable_messages.erase(i);
   }
-  else { assert(0); }
 }
 
 //------------------------------------------------------------------------------

@@ -47,8 +47,6 @@ public:
   using TransmitQueue    = transport::TransmitQueue<UnreliableId>;
   using OutboundMessages = transport::OutboundMessages<UnreliableId>;
   using InboundMessages  = transport::InboundMessages<UnreliableId>;
-  using MessageReader    = transport::MessageReader<UnreliableId>;
-  using OutMessage       = transport::OutMessage<UnreliableId>;
 
 public:
   Transport( uuid                              id
@@ -68,7 +66,8 @@ public:
 private:
   friend class ::club::transport::OutboundMessages<UnreliableId>;
 
-  void insert_message(std::shared_ptr<OutMessage> m);
+  void insert_message( boost::optional<UnreliableId>
+                     , std::shared_ptr<OutMessage> m);
 
   void start_receiving(std::shared_ptr<SocketState>);
 
@@ -195,7 +194,8 @@ void Transport<Id>::on_receive( boost::system::error_code    error
     if (!targets.empty()) {
       outbound().forward_message( move(msg->source)
                                 , move(targets)
-                                , std::move(msg->id)
+                                , msg->is_reliable
+                                , msg->sequence_number
                                 , msg->type_and_payload);
     }
   }
@@ -258,8 +258,9 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::insert_message(std::shared_ptr<OutMessage> m) {
-  _transmit_queue.insert_message(std::move(m));
+void Transport<Id>::insert_message( boost::optional<Id> unreliable_id
+                                  , std::shared_ptr<OutMessage> m) {
+  _transmit_queue.insert_message(std::move(unreliable_id), std::move(m));
 
   if (!_is_sending) {
     _is_sending = true;

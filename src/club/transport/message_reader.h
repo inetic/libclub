@@ -20,37 +20,29 @@
 
 namespace club { namespace transport {
 
-template<class UnreliableId>
 class MessageReader {
-  using Message             = transport::OutMessage<UnreliableId>;
-  using MessageId           = transport::MessageId<UnreliableId>;
-  using UnreliableMessageId = transport::UnreliableMessageId<UnreliableId>;
-
 public:
   MessageReader();
 
   void set_data(const uint8_t* data, size_t);
 
-  boost::optional<InMessage<UnreliableId>> read_one();
+  boost::optional<InMessage> read_one();
 
 private:
-  binary::decoder                 _decoder;
+  binary::decoder _decoder;
 };
 
 //------------------------------------------------------------------------------
 // Implementation
 //------------------------------------------------------------------------------
-template<class Id>
-MessageReader<Id>::MessageReader()
+MessageReader::MessageReader()
 {}
 
-template<class Id>
-void MessageReader<Id>::set_data(const uint8_t* data, size_t size) {
+void MessageReader::set_data(const uint8_t* data, size_t size) {
   _decoder.reset(data, size);
 }
 
-template<class Id>
-boost::optional<InMessage<Id>> MessageReader<Id>::read_one() {
+boost::optional<InMessage> MessageReader::read_one() {
   using std::move;
 
   // TODO: See if the number of octets can be reduced.
@@ -72,22 +64,11 @@ boost::optional<InMessage<Id>> MessageReader<Id>::read_one() {
     if (_decoder.error()) return boost::none;
   }
 
-  auto type_start = _decoder.current();
+  auto type_start      = _decoder.current();
 
-  auto is_reliable = _decoder.get<uint8_t>();
-
-  MessageId message_id;
-
-  if (is_reliable) {
-    message_id = ReliableMessageId{_decoder.get<SequenceNumber>()};
-  }
-  else {
-    message_id = UnreliableMessageId{_decoder.get<Id>()};
-  }
-
-  if (_decoder.error()) return boost::none;
-
-  auto message_size = _decoder.get<uint16_t>();
+  auto is_reliable     = _decoder.get<uint8_t>();
+  auto sequence_number = _decoder.get<SequenceNumber>();
+  auto message_size    = _decoder.get<uint16_t>();
 
   if (_decoder.error()) return boost::none;
 
@@ -102,11 +83,12 @@ boost::optional<InMessage<Id>> MessageReader<Id>::read_one() {
   auto payload = const_buffer(_decoder.current(), message_size);
   auto payload_with_type = const_buffer(type_start, message_size + header_size);
 
-  return InMessage<Id>( move(source)
-                      , move(targets)
-                      , std::move(message_id)
-                      , payload
-                      , payload_with_type );
+  return InMessage( move(source)
+                  , move(targets)
+                  , is_reliable
+                  , sequence_number
+                  , payload
+                  , payload_with_type );
 }
 
 }} // club::transport namespace

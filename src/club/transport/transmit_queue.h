@@ -35,9 +35,15 @@ private:
   using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
   using uuid = boost::uuids::uuid;
 
-  using Message = transport::OutMessage<UnreliableId>;
+  using Message = transport::OutMessage;
   using MessagePtr = std::shared_ptr<Message>;
-  using Messages = std::list<MessagePtr>;
+
+  struct Entry {
+    boost::optional<UnreliableId> unreliable_id;
+    MessagePtr                    message;
+  };
+
+  using Messages = std::list<Entry>;
 
 public:
   TransmitQueue(std::shared_ptr<OutboundMessages>);
@@ -47,7 +53,8 @@ public:
 private:
   void add_target(const uuid&);
 
-  void insert_message(MessagePtr);
+  void insert_message( boost::optional<UnreliableId>
+                     , MessagePtr);
 
   void circular_increment(typename Messages::iterator& i);
 
@@ -98,8 +105,12 @@ void TransmitQueue<Id>::add_target(const uuid& id) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void TransmitQueue<Id>::insert_message(MessagePtr message) {
-  _messages.insert(_next, std::move(message));
+void TransmitQueue<Id>::insert_message( boost::optional<Id> unreliable_id
+                                      , MessagePtr message) {
+  _messages.insert(_next, Entry{ std::move(unreliable_id)
+                               , std::move(message)
+                               });
+
   if (_next == _messages.end()) _next = _messages.begin();
 }
 
@@ -115,11 +126,11 @@ TransmitQueue<Id>::circular_increment(typename Messages::iterator& i) {
 template<class Id>
 void
 TransmitQueue<Id>::erase(typename Messages::iterator i) {
-  using std::move;
   using std::shared_ptr;
 
   //Tell the _outbound_messages object that we're no longer using this message.
-  _outbound_messages->release(std::move(*i));
+  _outbound_messages->release( std::move(i->unreliable_id)
+                             , std::move(i->message));
 
   if (i == _next) {
     _next = _messages.erase(i);
@@ -150,7 +161,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
 
     is_last = current == last;
 
-    set_intersection((*current)->targets, _targets, _target_intersection);
+    set_intersection(current->message->targets, _targets, _target_intersection);
 
     if (_target_intersection.empty()) {
       erase(current);
@@ -158,7 +169,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
       continue;
     }
 
-    if (!try_encode(encoder, _target_intersection, **current)) {
+    if (!try_encode(encoder, _target_intersection, *current->message)) {
       _next = current;
       break;
     }
@@ -166,8 +177,8 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
     ++count;
 
     // Unreliable entries are sent only once to each target.
-    if (!(*current)->is_reliable()) {
-      auto& m = **current;
+    if (!current->message->is_reliable) {
+      auto& m = *current->message;
 
       for (const auto& target : _targets) {
         m.targets.erase(target);
