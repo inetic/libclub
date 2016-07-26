@@ -30,9 +30,7 @@ template<class> class Transport;
 template<class UnreliableId>
 struct TransmitQueue {
 private:
-  friend class ::club::transport::Transport<UnreliableId>;
-
-  using OutboundMessages = ::club::transport::OutboundMessages<UnreliableId>;
+  using OutboundMessages = transport::OutboundMessages<UnreliableId>;
   using uuid = boost::uuids::uuid;
 
   using Message = transport::OutMessage;
@@ -50,12 +48,14 @@ public:
 
   uint16_t encode_few(binary::encoder&);
 
-private:
   void add_target(const uuid&);
 
   void insert_message( boost::optional<UnreliableId>
                      , MessagePtr);
 
+  OutboundMessages& outbound_messages() { return *_outbound_messages; }
+
+private:
   void circular_increment(typename Messages::iterator& i);
 
   static void set_intersection( const std::set<uuid>&
@@ -73,8 +73,6 @@ private:
              , const Message&) const;
 
   void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
-
-  OutboundMessages& outbound_messages() { return *_outbound_messages; }
 
 private:
   std::shared_ptr<OutboundMessages> _outbound_messages;
