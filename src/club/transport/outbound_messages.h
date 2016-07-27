@@ -53,12 +53,7 @@ private:
 
   void register_transport(Transport*);
   void deregister_transport(Transport*);
-
-  void forward_message( uuid                      source
-                      , std::set<uuid>            targets
-                      , bool                      is_reliable
-                      , SequenceNumber            sequence_number
-                      , boost::asio::const_buffer buffer);
+  void forward_message(InMessage&&);
 
 private:
   uuid                 _our_id;
@@ -193,22 +188,18 @@ OutboundMessages<Id>::send_unreliable( Id                     id
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::forward_message( uuid                      source
-                                          , std::set<uuid>            targets
-                                          , bool                      is_reliable
-                                          , SequenceNumber            sequence_number
-                                          , boost::asio::const_buffer buffer) {
+void OutboundMessages<Id>::forward_message(InMessage&& msg) {
   using namespace std;
 
-  auto begin = boost::asio::buffer_cast<const uint8_t*>(buffer);
+  auto begin = boost::asio::buffer_cast<const uint8_t*>(msg.type_and_payload);
+  auto size  = boost::asio::buffer_size(msg.type_and_payload);
 
-  std::vector<uint8_t> data( begin
-                           , begin + boost::asio::buffer_size(buffer));
+  std::vector<uint8_t> data(begin, begin + size);
 
-  auto message = make_shared<Message>( move(source)
-                                     , move(targets)
-                                     , is_reliable
-                                     , sequence_number
+  auto message = make_shared<Message>( move(msg.source)
+                                     , move(msg.targets)
+                                     , msg.is_reliable
+                                     , msg.sequence_number
                                      , move(data) );
 
   // TODO: Same as with unreliable messages, store the message in a

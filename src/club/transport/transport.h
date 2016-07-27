@@ -175,28 +175,23 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   _message_reader.set_data(state->rx_buffer.data(), size);
 
-  while (auto msg = _message_reader.read_one()) {
-    auto& targets = msg->targets;
+  while (auto opt_msg = _message_reader.read_one()) {
+    auto& msg = *opt_msg;
 
-    if (msg->source == _id) {
+    if (msg.source == _id) {
       assert(0 && "Our message was returned back");
       continue;
     }
 
     // Notify user only if we're one of the targets.
-    if (targets.count(_id)) {
-      targets.erase(_id);
-      _inbound->on_receive(error, msg->payload);
+    if (msg.targets.count(_id)) {
+      msg.targets.erase(_id);
+      _inbound->on_receive(error, msg.payload);
       if (state->was_destroyed) return;
     }
 
-    // Forward the message.
-    if (!targets.empty()) {
-      outbound().forward_message( move(msg->source)
-                                , move(targets)
-                                , msg->is_reliable
-                                , msg->sequence_number
-                                , msg->type_and_payload);
+    if (!msg.targets.empty()) {
+      outbound().forward_message(move(msg));
     }
   }
 
