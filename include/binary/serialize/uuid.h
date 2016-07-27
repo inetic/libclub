@@ -17,6 +17,16 @@
 
 #include <boost/uuid/uuid.hpp>
 #include <binary/decoder.h>
+#include <binary/encoded.h>
+
+namespace binary {
+
+template<>
+struct encoded<boost::uuids::uuid> {
+  static size_t size() { return boost::uuids::uuid::static_size(); }
+};
+
+} // binary namespace
 
 namespace boost { namespace uuids {
 

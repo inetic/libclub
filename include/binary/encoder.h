@@ -31,6 +31,7 @@ public:
   encoder(RandomAccessIterator begin, std::size_t);
 
   std::size_t written() const;
+  std::size_t remaining_size() const;
 
   bool error() const { return _was_error; }
 
@@ -83,6 +84,12 @@ encoder::encoder(RandomAccessIterator begin, std::size_t size)
 inline
 std::size_t encoder::written() const {
   return _current.begin - _current.start;
+}
+
+inline
+std::size_t encoder::remaining_size() const {
+  if (_was_error) return 0;
+  return _current.end - _current.begin;
 }
 
 inline void encode(encoder& e, uint8_t value) {

@@ -19,6 +19,7 @@
 #include <boost/optional.hpp>
 #include <boost/variant.hpp>
 #include "binary/encoder.h"
+#include "binary/serialize/uuid.h"
 #include "transport/message.h"
 #include "transport/outbound_messages.h"
 
@@ -73,6 +74,9 @@ private:
              , const Message&) const;
 
   void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
+
+  size_t encoded_size( const std::vector<uuid>& targets
+                     , const Message& msg) const;
 
 private:
   std::shared_ptr<OutboundMessages> _outbound_messages;
@@ -152,7 +156,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
 
   bool is_last = false;
 
-  while (true) {
+  while (!is_last) {
     auto current = _next;
 
     circular_increment(_next);
@@ -175,6 +179,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
     ++count;
 
     // Unreliable entries are sent only once to each target.
+    // TODO: Also erase the message if _target_intersection is empty.
     if (!current->message->is_reliable) {
       auto& m = *current->message;
 
@@ -187,8 +192,6 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
         if (_messages.empty()) break;
       }
     }
-
-    if (is_last) break;
   }
 
   return count;
@@ -200,16 +203,14 @@ bool
 TransmitQueue<Id>::try_encode( binary::encoder& encoder
                              , const std::vector<uuid>& targets
                              , const Message& msg) const {
-  auto prev_begin = encoder._current.begin;
-  auto prev_error = encoder._was_error;
-  
-  encode(encoder, targets, msg);
-  
-  if (encoder.error()) {
-    encoder._current.begin = prev_begin;
-    encoder._was_error     = prev_error;
+
+  if (encoded_size(targets, msg) > encoder.remaining_size()) {
     return false;
   }
+
+  encode(encoder, targets, msg);
+
+  assert(!encoder.error());
 
   return true;
 }
@@ -223,6 +224,19 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
   encoder.put(msg.source);
   encode_targets(encoder, targets);
   encoder.put_raw(msg.bytes.data(), msg.bytes.size());
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+size_t
+TransmitQueue<Id>::encoded_size( const std::vector<uuid>& targets
+                               , const Message& msg) const {
+  size_t sizeof_uuid = binary::encoded<uuid>::size();
+
+  return sizeof_uuid // msg.source
+       + sizeof(uint8_t) // number of targets
+       + targets.size() * sizeof_uuid
+       + msg.bytes.size();
 }
 
 //------------------------------------------------------------------------------
