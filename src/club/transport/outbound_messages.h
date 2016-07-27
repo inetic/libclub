@@ -17,6 +17,10 @@
 
 #include <map>
 #include "transport/message.h"
+#include "transport/ack_set.h"
+#include "transport/ack_entry.h"
+
+#include <club/debug/ostream_uuid.h>
 
 namespace club { namespace transport {
 
@@ -43,6 +47,7 @@ public:
                       , std::vector<uint8_t>&& data
                       , std::set<uuid>         targets);
 
+  void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, SequenceNumber);
 
 private:
@@ -55,12 +60,20 @@ private:
   void deregister_transport(Transport*);
   void forward_message(InMessage&&);
 
+  void add_ack_entry(AckEntry);
+  uint8_t encode_acks(binary::encoder& encoder);
+
 private:
   uuid                   _our_id;
   SequenceNumber         _next_sequence_number;
   std::set<Transport*>   _transports;
   ReliableMessages       _reliable_messages;
   UnreliableMessages     _unreliable_messages;
+
+  std::map<uuid, std::map<uuid, AckSet>> _acks;
+  //        |              |
+  //        |              +-> from
+  //        +-> to
 };
 
 //------------------------------------------------------------------------------
@@ -86,12 +99,76 @@ template<class Id> void OutboundMessages<Id>::deregister_transport(Transport* t)
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::acknowledge(const uuid& target, SequenceNumber sn) {
-  auto i = _reliable_messages.find(sn);
+void OutboundMessages<Id>::add_ack_entry(AckEntry entry) {
+  _acks[entry.to][entry.from] = entry.acks;
+}
 
-  if (i != _reliable_messages.end()) {
-    if (auto message = i->second.lock()) {
-      message->targets.erase(target);
+//------------------------------------------------------------------------------
+// TODO: This function needs as an argument targets where these acks
+//       are meant to go.
+template<class Id>
+uint8_t OutboundMessages<Id>::encode_acks(binary::encoder& encoder) {
+  // Need to write at least the size.
+  assert(encoder.remaining_size() > 0);
+
+  auto count_encoder = encoder;
+
+  uint8_t count = 0;
+  encoder.put(count); // Shall be rewritten later in this func.
+
+  for (auto i = _acks.begin(); i != _acks.end();) {
+    auto& froms = i->second;
+
+    for (auto j = froms.begin(); j != froms.end();) {
+      auto tmp_encoder = encoder;
+
+      encoder.put(AckEntry{i->first, j->first, j->second});
+
+      if (encoder.error()) {
+        count_encoder.put(count);
+        encoder = tmp_encoder;
+        return count;
+      }
+
+      if (count == std::numeric_limits<decltype(count)>::max()) {
+        count_encoder.put(count);
+        return count;
+      }
+
+      ++count;
+
+      j = froms.erase(j);
+    }
+
+    if (i->second.empty()) {
+      i = _acks.erase(i);
+    }
+    else {
+      ++i;
+    }
+  }
+
+  count_encoder.put(count);
+  return count;
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void OutboundMessages<Id>::acknowledge(const uuid& from, SequenceNumber sn) {
+  _acks[from][_our_id].try_add(sn);
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void OutboundMessages<Id>::on_receive_acks(const uuid& target, AckSet acks) {
+  for (auto sn : acks) {
+
+    auto i = _reliable_messages.find(sn);
+
+    if (i != _reliable_messages.end()) {
+      if (auto message = i->second.lock()) {
+        message->targets.erase(target);
+      }
     }
   }
 }

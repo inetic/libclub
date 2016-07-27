@@ -17,6 +17,8 @@
 
 #include <iostream>
 #include <transport/ack_set.h>
+#include <transport/ack_set_serialize.h>
+#include <debug/string_tools.h>
 
 using AckSet = club::transport::AckSet;
 using std::vector;
@@ -31,46 +33,53 @@ vector<uint32_t> acks_to_vector(const AckSet& acks) {
 }
 
 //------------------------------------------------------------------------------
+namespace std {
+std::ostream& operator<<(std::ostream& os, const vector<uint32_t>& v) {
+  return os << "[" << str(v) << "]";
+}
+} // std namespace
+
+//------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_ack_set) {
   using Vec = vector<uint32_t>;
 
   {
     AckSet acks;
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec());
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec());
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({10}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({10}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({11, 10}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({11, 10}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(20));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({20, 10}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({20, 10}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(0));
     BOOST_REQUIRE(acks.try_add(31));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({31, 0}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({31, 0}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(0));
     BOOST_REQUIRE(acks.try_add(32) == false);
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({0}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({0}));
   }
 
   {
@@ -78,7 +87,7 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
     BOOST_REQUIRE(acks.try_add(0));
     BOOST_REQUIRE(acks.try_add(1));
     BOOST_REQUIRE(acks.try_add(32));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({32, 1}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({32, 1}));
   }
 
   {
@@ -88,7 +97,7 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
     BOOST_REQUIRE(acks.try_add(32));
     BOOST_REQUIRE(acks.try_add(2));
     BOOST_REQUIRE(acks.try_add(33));
-    BOOST_REQUIRE(acks_to_vector(acks) == Vec({33, 32, 2}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({33, 32, 2}));
   }
 
   {
@@ -100,13 +109,13 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
       vec.push_back(31 - i);
     }
 
-    BOOST_REQUIRE(acks_to_vector(acks) == vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
 
     for (auto i = 0; i < 32; ++i) {
       BOOST_REQUIRE(acks.try_add(i));
     }
 
-    BOOST_REQUIRE(acks_to_vector(acks) == vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
 
     vec.clear();
     for (auto i = 32; i < 64; ++i) {
@@ -114,7 +123,45 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
       vec.push_back(63 + 32 - i);
     }
 
-    BOOST_REQUIRE(acks_to_vector(acks) == vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(test_ack_set_serialize) {
+  using Vec = vector<uint32_t>;
+
+  auto encode_decode = [](AckSet acks) {
+    vector<uint8_t> data(binary::encoded<AckSet>::size());
+    binary::encoder encoder(data);
+    encoder.put(acks);
+    binary::decoder decoder(data.data(), data.size());
+    return decoder.get<AckSet>();
+  };
+
+  {
+    AckSet acks;
+    BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec());
+  }
+
+  {
+    AckSet acks;
+    BOOST_REQUIRE(acks.try_add(10));
+    BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({10}));
+  }
+
+  {
+    AckSet acks;
+    BOOST_REQUIRE(acks.try_add(10));
+    BOOST_REQUIRE(acks.try_add(11));
+    BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({11, 10}));
+  }
+
+  {
+    AckSet acks;
+    BOOST_REQUIRE(acks.try_add(10));
+    BOOST_REQUIRE(acks.try_add(11));
+    BOOST_REQUIRE(acks.try_add(11+31));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(encode_decode(acks)), Vec({11+31, 11}));
   }
 }
 

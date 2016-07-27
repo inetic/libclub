@@ -22,6 +22,7 @@
 #include "binary/serialize/uuid.h"
 #include "transport/message.h"
 #include "transport/outbound_messages.h"
+#include "transport/ack_set_serialize.h"
 
 namespace club { namespace transport {
 
@@ -47,7 +48,7 @@ private:
 public:
   TransmitQueue(std::shared_ptr<OutboundMessages>);
 
-  uint16_t encode_few(binary::encoder&);
+  size_t encode_few(binary::encoder&);
 
   void add_target(const uuid&);
 
@@ -62,6 +63,10 @@ private:
   static void set_intersection( const std::set<uuid>&
                               , const std::set<uuid>&
                               , std::vector<uuid>&);
+
+  static void set_difference( const std::vector<uuid>&
+                            , const std::set<uuid>&
+                            , std::vector<uuid>&);
 
   void erase(typename Messages::iterator i);
 
@@ -80,7 +85,7 @@ private:
 
 private:
   std::shared_ptr<OutboundMessages> _outbound_messages;
-  std::set<uuid>                    _targets;
+  std::set<uuid>                    _possible_targets;
 
   // Invariant that must hold: _messages.empty() <=> _next == _messages.end()
   Messages                     _messages;
@@ -94,15 +99,15 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 template<class Id>
-TransmitQueue<Id>::TransmitQueue(std::shared_ptr<OutboundMessages> transmit_set)
-  : _outbound_messages(std::move(transmit_set))
+TransmitQueue<Id>::TransmitQueue(std::shared_ptr<OutboundMessages> outbound)
+  : _outbound_messages(std::move(outbound))
   , _next(_messages.end())
 {}
 
 //------------------------------------------------------------------------------
 template<class Id>
 void TransmitQueue<Id>::add_target(const uuid& id) {
-  _targets.insert(id);
+  _possible_targets.insert(id);
 }
 
 //------------------------------------------------------------------------------
@@ -145,10 +150,11 @@ TransmitQueue<Id>::erase(typename Messages::iterator i) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-uint16_t
+size_t
 TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
-  uint16_t count = 0;
-  if (_messages.empty()) return 0;
+  size_t count = 0;
+
+  if (_messages.empty()) return count;
 
   auto last = _next;
   if (last == _messages.begin()) { last = --_messages.end(); }
@@ -163,7 +169,9 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
 
     is_last = current == last;
 
-    set_intersection(current->message->targets, _targets, _target_intersection);
+    set_intersection( current->message->targets
+                    , _possible_targets
+                    , _target_intersection);
 
     if (_target_intersection.empty()) {
       erase(current);
@@ -183,7 +191,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
     if (!current->message->is_reliable) {
       auto& m = *current->message;
 
-      for (const auto& target : _targets) {
+      for (const auto& target : _target_intersection) {
         m.targets.erase(target);
       }
 
@@ -269,6 +277,16 @@ void TransmitQueue<Id>::set_intersection( const std::set<uuid>& set1
 }
 
 //------------------------------------------------------------------------------
+template<class Id>
+void TransmitQueue<Id>::set_difference( const std::vector<uuid>& set1
+                                      , const std::set<uuid>&    set2
+                                      , std::vector<uuid>&       result) {
+  result.resize(0);
+
+  std::set_difference( set1.begin(), set1.end()
+                     , set2.begin(), set2.end()
+                     , std::back_inserter(result));
+}
 
 }} // club::transport namespace
 

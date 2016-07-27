@@ -15,7 +15,12 @@
 #ifndef CLUB_TRANSPORT_ACK_SET_H
 #define CLUB_TRANSPORT_ACK_SET_H
 
+#include <binary/encoder.h>
+#include <binary/encoded.h>
+
 #include "sequence_number.h"
+
+namespace binary { class decoder; }
 
 namespace club { namespace transport {
 
@@ -66,6 +71,8 @@ public:
 
 private:
   friend std::ostream& operator<<(std::ostream&, const AckSet&);
+  friend void decode(binary::decoder&, AckSet&);
+  template<typename Encoder> friend void encode(Encoder&, const AckSet&);
 
   SequenceNumber highest_sequence_number;
   SequenceNumber lowest_sequence_number;

@@ -21,6 +21,19 @@
 #include <transport/transport.h>
 
 //------------------------------------------------------------------------------
+// The transport tests that have the prefix 'test_transport_reliable*' should
+// be tested with packet dropping enabled (needs root permissions):
+//
+// Insert a packet dropping rule:
+// iptables -I INPUT 1 -m statistic -p udp --mode random --probability 0.5 -j DROP
+//
+// Delete the rule:
+// iptables -D INPUT 1
+//
+// List rules:
+// iptables -L INPUT
+//------------------------------------------------------------------------------
+
 using std::cout;
 using std::endl;
 using std::move;
@@ -72,6 +85,10 @@ struct Node {
                              , move(targets));
   }
 
+  void send_reliable(vector<uint8_t> data, set<uuid> targets) {
+    outbound->send_reliable(move(data), move(targets));
+  }
+
   Node()
     : id(boost::uuids::random_generator()())
     , outbound(make_shared<OutboundMessages>(id))
@@ -93,7 +110,7 @@ void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
   asio::io_service ios;
 
   Node n1, n2;
@@ -113,7 +130,7 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
   asio::io_service ios;
 
   Node n1, n2;
@@ -142,7 +159,7 @@ BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages_causal) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
   asio::io_service ios;
 
   Node n1, n2;
@@ -171,7 +188,7 @@ BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages_causal) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_exchange) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
   asio::io_service ios;
 
   Node n1, n2;
@@ -207,7 +224,7 @@ BOOST_AUTO_TEST_CASE(test_transport_exchange) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_forward_one_hop) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
   asio::io_service ios;
 
   Node n1, n2, n3;
@@ -232,7 +249,7 @@ BOOST_AUTO_TEST_CASE(test_transport_forward_one_hop) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_forward_two_hops) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_two_hops) {
   asio::io_service ios;
 
   Node n1, n2, n3, n4;
@@ -262,7 +279,7 @@ BOOST_AUTO_TEST_CASE(test_transport_forward_two_hops) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_two_targets) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   asio::io_service ios;
 
   Node n1, n2, n3;
@@ -292,7 +309,7 @@ BOOST_AUTO_TEST_CASE(test_transport_two_targets) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_one_hop_two_targets) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   asio::io_service ios;
 
   Node n1, n2, n3, n4;
@@ -323,6 +340,26 @@ BOOST_AUTO_TEST_CASE(test_transport_one_hop_two_targets) {
   n4.on_recv = on_recv;
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n4.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+    n1.transports.clear();
+    n2.transports.clear();
+  };
+
+  connect_nodes(ios, n1, n2);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
 
   ios.run();
 }

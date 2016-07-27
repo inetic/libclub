@@ -18,6 +18,8 @@
 #include <binary/decoder.h>
 #include <binary/serialize/uuid.h>
 
+#include "ack_entry.h"
+
 namespace club { namespace transport {
 
 class MessageReader {
@@ -26,10 +28,12 @@ public:
 
   void set_data(const uint8_t* data, size_t);
 
-  boost::optional<InMessage> read_one();
+  boost::optional<InMessage> read_one_message();
+  boost::optional<AckEntry>  read_one_ack_entry();
 
 private:
   binary::decoder _decoder;
+  binary::decoder _ack_decoder;
 };
 
 //------------------------------------------------------------------------------
@@ -38,11 +42,38 @@ private:
 MessageReader::MessageReader()
 {}
 
+//------------------------------------------------------------------------------
 void MessageReader::set_data(const uint8_t* data, size_t size) {
-  _decoder.reset(data, size);
+  if (size < 1) {
+    _decoder.set_error();
+    _ack_decoder.set_error();
+    return;
+  }
+
+  auto ack_set_count = *data;
+
+  size_t acks_data_size = binary::encoded<AckEntry>::size()
+                        * ack_set_count;
+
+  if (size - 1 < acks_data_size) {
+    _decoder.set_error();
+    _ack_decoder.set_error();
+    return;
+  }
+
+  _ack_decoder.reset(data + 1, acks_data_size);
+  _decoder.reset(data + 1 + acks_data_size, size - acks_data_size - 1);
 }
 
-boost::optional<InMessage> MessageReader::read_one() {
+//------------------------------------------------------------------------------
+boost::optional<AckEntry> MessageReader::read_one_ack_entry() {
+  auto entry = _ack_decoder.get<AckEntry>();
+  if (_ack_decoder.error()) return boost::none;
+  return std::move(entry);
+}
+
+//------------------------------------------------------------------------------
+boost::optional<InMessage> MessageReader::read_one_message() {
   using std::move;
 
   // TODO: See if the number of octets can be reduced.

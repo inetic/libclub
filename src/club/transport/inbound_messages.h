@@ -16,6 +16,7 @@
 #define CLUB_TRANSPORT_INBOUND_MESSAGES_H
 
 #include "ack_set.h"
+#include "ack_entry.h"
 
 namespace club { namespace transport {
 
@@ -29,6 +30,7 @@ public:
 
 private:
   friend class transport::Transport<UnreliableId>;
+  friend class transport::TransmitQueue<UnreliableId>;
 
   void register_transport(Transport*);
   void deregister_transport(Transport*);
@@ -73,7 +75,7 @@ void InboundMessages<Id>::on_receive( const boost::system::error_code& error
 
   assert(msg);
 
-  if (msg.is_reliable) {
+  if (msg->is_reliable) {
     // If the remote peer is sending too fast we refuse to receive
     // and acknowledge the message.
     //

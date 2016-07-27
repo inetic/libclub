@@ -21,6 +21,14 @@ class encoder {
 public:
   using iterator = std::uint8_t*;
 
+  struct state {
+    iterator start, begin, end;
+    bool was_error;
+  };
+
+  encoder(const encoder&);
+  encoder(encoder&);
+
   template<typename RandomAccessSequence>
   encoder(RandomAccessSequence&);
 
@@ -40,6 +48,17 @@ public:
 
   void set_error() { _was_error = true; }
 
+  state store_state() const {
+    return state{_current.start, _current.begin, _current.end, _was_error};
+  }
+
+  void restore(const state& s) {
+    _current.start = s.start;
+    _current.begin = s.begin;
+    _current.end   = s.end;
+    _was_error     = s.was_error;
+  }
+
 private:
 // TODO
 public:
@@ -57,12 +76,27 @@ public:
 
 namespace binary {
 
+inline
+encoder::encoder(const encoder& other)
+  : _current{other._current.begin, other._current.begin, other._current.end}
+  , _was_error(other._was_error)
+{
+}
+
+inline
+encoder::encoder(encoder& other)
+  : _current{other._current.begin, other._current.begin, other._current.end}
+  , _was_error(other._was_error)
+{
+}
+
 template<typename RandomAccessSequence>
 encoder::encoder(RandomAccessSequence& sequence)
 : _was_error(false) {
-  _current.start = reinterpret_cast<iterator>(sequence.begin());
+  _current.start = sequence.data();
   _current.begin = _current.start;
-  _current.end   = reinterpret_cast<iterator>(sequence.end());
+  auto value_size = sizeof(typename RandomAccessSequence::value_type);
+  _current.end   = _current.start + (sequence.size() * value_size);
 }
 
 template<typename RandomAccessIterator>
