@@ -163,7 +163,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   if (state->was_destroyed) return;
 
   if (error) {
-    return _inbound->on_receive(error, asio::const_buffer(0, 0));
+    return _inbound->on_receive(error, nullptr);
   }
 
   // Ignore packets from unknown sources.
@@ -186,7 +186,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
     // Notify user only if we're one of the targets.
     if (msg.targets.count(_id)) {
       msg.targets.erase(_id);
-      _inbound->on_receive(error, msg.payload);
+      _inbound->on_receive(error, &msg);
       if (state->was_destroyed) return;
     }
 

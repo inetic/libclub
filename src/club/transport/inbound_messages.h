@@ -15,11 +15,13 @@
 #ifndef CLUB_TRANSPORT_INBOUND_MESSAGES_H
 #define CLUB_TRANSPORT_INBOUND_MESSAGES_H
 
+#include "ack_set.h"
+
 namespace club { namespace transport {
 
 template<typename UnreliableId>
 class InboundMessages {
-  using OnReceive = std::function<void(boost::asio::const_buffer)>;
+  using OnReceive = std::function<void(uuid, boost::asio::const_buffer)>;
   using Transport = transport::Transport<UnreliableId>;
 
 public:
@@ -32,11 +34,12 @@ private:
   void deregister_transport(Transport*);
 
   void on_receive( const boost::system::error_code&
-                 , boost::asio::const_buffer);
+                 , const InMessage*);
 
 private:
   OnReceive _on_recv;
   std::set<Transport*> _transports;
+  std::map<uuid, AckSet> _ack_map;
 };
 
 //------------------------------------------------------------------------------
@@ -61,9 +64,29 @@ template<class Id> void InboundMessages<Id>::deregister_transport(Transport* t)
 
 //------------------------------------------------------------------------------
 template<class Id>
-void InboundMessages<Id>::on_receive( const boost::system::error_code&
-                                    , boost::asio::const_buffer buffer) {
-  _on_recv(buffer);
+void InboundMessages<Id>::on_receive( const boost::system::error_code& error
+                                    , const InMessage* msg) {
+  if (error) {
+    assert(0 && "TODO: Handle error");
+    return;
+  }
+
+  assert(msg);
+
+  if (msg.is_reliable) {
+    // If the remote peer is sending too fast we refuse to receive
+    // and acknowledge the message.
+    //
+    // TODO: Operator map::operator[] creates an entry in the map,
+    //       we should only create the entry once a Syn packet is
+    //       exchanged (sockets connect).
+    if (_ack_map[msg->source].try_add(msg->sequence_number)) {
+      _on_recv(msg->source, msg->payload);
+    }
+  }
+  else {
+    _on_recv(msg->source, msg->payload);
+  }
 }
 
 }} // club::transport namespace

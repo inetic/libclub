@@ -52,11 +52,11 @@ vector<uint8_t> buf_to_vector(const_buffer buf) {
 
 //------------------------------------------------------------------------------
 struct Node {
-  uuid                              id;
-  std::map<uuid, TransportPtr>      transports;
-  shared_ptr<OutboundMessages>      outbound;
-  shared_ptr<InboundMessages>       inbound;
-  std::function<void(const_buffer)> on_recv;
+  uuid                                    id;
+  std::map<uuid, TransportPtr>            transports;
+  shared_ptr<OutboundMessages>            outbound;
+  shared_ptr<InboundMessages>             inbound;
+  std::function<void(uuid, const_buffer)> on_recv;
 
   void add_transport(uuid other_id, udp::socket s, udp::endpoint e) {
     auto t = std::make_unique<Transport>(id, move(s), e, outbound, inbound);
@@ -76,7 +76,7 @@ struct Node {
     : id(boost::uuids::random_generator()())
     , outbound(make_shared<OutboundMessages>(id))
     , inbound(make_shared<InboundMessages>
-        ([this](auto b) { this->on_recv(b); }))
+        ([this](auto s, auto b) { this->on_recv(s, b); }))
   {}
 };
 
@@ -98,7 +98,8 @@ BOOST_AUTO_TEST_CASE(test_transport_one_unreliable_message) {
 
   Node n1, n2;
 
-  n2.on_recv = [&](auto b) {
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
     n1.transports.clear();
     n2.transports.clear();
@@ -119,7 +120,9 @@ BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto b) {
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
     if (counter++ == 0) {
       BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
     }
@@ -146,7 +149,9 @@ BOOST_AUTO_TEST_CASE(test_transport_two_unreliable_messages_causal) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto b) {
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
     if (counter++ == 0) {
       BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
       n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
@@ -175,7 +180,8 @@ BOOST_AUTO_TEST_CASE(test_transport_exchange) {
 
   size_t counter = 0;
 
-  n1.on_recv = [&](auto b) {
+  n1.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n2.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({2,3,4,5}));
 
     if (counter++ == 1) {
@@ -184,7 +190,8 @@ BOOST_AUTO_TEST_CASE(test_transport_exchange) {
     }
   };
 
-  n2.on_recv = [&](auto b) {
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
 
     if (counter++ == 1) {
@@ -211,7 +218,7 @@ BOOST_AUTO_TEST_CASE(test_transport_forward_one_hop) {
   // Tell n1 that it can reach n3 through n2.
   n1.transports[n2.id]->add_target(n3.id);
 
-  n3.on_recv = [&](auto b) {
+  n3.on_recv = [&](auto, auto b) {
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
 
     n1.transports.clear();
@@ -239,7 +246,8 @@ BOOST_AUTO_TEST_CASE(test_transport_forward_two_hops) {
   n1.transports[n2.id]->add_target(n4.id);
   n2.transports[n3.id]->add_target(n4.id);
 
-  n4.on_recv = [&](auto b) {
+  n4.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
 
     n1.transports.clear();
@@ -264,7 +272,8 @@ BOOST_AUTO_TEST_CASE(test_transport_two_targets) {
 
   size_t counter = 0;
 
-  auto on_recv = [&](auto b) {
+  auto on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
 
     if (++counter == 2) {
@@ -298,7 +307,8 @@ BOOST_AUTO_TEST_CASE(test_transport_one_hop_two_targets) {
 
   size_t counter = 0;
 
-  auto on_recv = [&](auto b) {
+  auto on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
 
     if (++counter == 2) {

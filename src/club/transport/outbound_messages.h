@@ -56,11 +56,11 @@ private:
   void forward_message(InMessage&&);
 
 private:
-  uuid                 _our_id;
-  SequenceNumber       _next_sequence_number;
-  std::set<Transport*> _transports;
-  ReliableMessages     _reliable_messages;
-  UnreliableMessages   _unreliable_messages;
+  uuid                   _our_id;
+  SequenceNumber         _next_sequence_number;
+  std::set<Transport*>   _transports;
+  ReliableMessages       _reliable_messages;
+  UnreliableMessages     _unreliable_messages;
 };
 
 //------------------------------------------------------------------------------
