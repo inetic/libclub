@@ -57,6 +57,18 @@ using TransportPtr = std::unique_ptr<Transport>;
 namespace asio = boost::asio;
 
 //------------------------------------------------------------------------------
+namespace std {
+std::ostream& operator<<(std::ostream& os, const vector<uint8_t>& v) {
+  os << "[";
+  for (auto i = v.begin(); i != v.end(); ++i) {
+    os << ((int) *i);
+    if (i != --v.end()) os << ", ";
+  }
+  return os << "]";
+}
+} // std namespace
+
+//------------------------------------------------------------------------------
 vector<uint8_t> buf_to_vector(const_buffer buf) {
   auto p = boost::asio::buffer_cast<const uint8_t*>(buf);
   auto s = boost::asio::buffer_size(buf);
@@ -360,6 +372,35 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
   connect_nodes(ios, n1, n2);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t counter = 0;
+
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
+    if (counter++ == 0) {
+      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    }
+    else {
+      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  connect_nodes(ios, n1, n2);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
 
   ios.run();
 }
