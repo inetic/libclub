@@ -88,6 +88,9 @@ private:
   InboundMessages&  inbound()  { return *_inbound; }
   OutboundMessages& outbound() { return _transmit_queue.outbound_messages(); }
 
+  void handle_ack_entry(AckEntry);
+  void handle_message(std::shared_ptr<SocketState>&, InMessage);
+
 private:
   uuid                             _id;
   bool                             _is_sending;
@@ -185,42 +188,55 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   // Parse Acks
   while (auto opt_ack_entry = _message_reader.read_one_ack_entry()) {
-    auto& entry = *opt_ack_entry;
-
-    if (entry.to == _id) {
-      assert(entry.from != _id);
-      outbound().on_receive_acks(entry.from, entry.acks);
-    }
-    else {
-      outbound().add_ack_entry(move(entry));
-    }
+    handle_ack_entry(std::move(*opt_ack_entry));
   }
 
   // Parse messages
   while (auto opt_msg = _message_reader.read_one_message()) {
-    auto& msg = *opt_msg;
-
-    if (msg.source == _id) {
-      assert(0 && "Our message was returned back");
-      continue;
-    }
-
-    // Notify user only if we're one of the targets.
-    if (msg.targets.count(_id)) {
-      msg.targets.erase(_id);
-      outbound().acknowledge(msg.source, msg.sequence_number);
-      inbound().on_receive(error, &msg);
-      if (state->was_destroyed) return;
-
-      start_sending(_socket_state);
-    }
-
-    if (!msg.targets.empty()) {
-      outbound().forward_message(move(msg));
-    }
+    handle_message(state, std::move(*opt_msg));
+    if (state->was_destroyed) return;
   }
 
   start_receiving(move(state));
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Transport<Id>::handle_ack_entry(AckEntry entry) {
+  if (entry.to == _id) {
+    assert(entry.from != _id);
+    outbound().on_receive_acks(entry.from, entry.acks);
+  }
+  else {
+    outbound().add_ack_entry(std::move(entry));
+  }
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
+                                  , InMessage msg) {
+  if (msg.source == _id) {
+    assert(0 && "Our message was returned back");
+    return;
+  }
+
+  // Notify user only if we're one of the targets.
+  if (msg.targets.count(_id)) {
+    msg.targets.erase(_id);
+
+    outbound().acknowledge(msg.source, msg.sequence_number);
+
+    inbound().on_receive(boost::system::error_code(), &msg);
+
+    if (state->was_destroyed) return;
+
+    start_sending(_socket_state);
+  }
+
+  if (!msg.targets.empty()) {
+    outbound().forward_message(std::move(msg));
+  }
 }
 
 //------------------------------------------------------------------------------
