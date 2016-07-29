@@ -23,6 +23,7 @@
 #include "transport/message.h"
 #include "transport/outbound_messages.h"
 #include "transport/ack_set_serialize.h"
+#include "debug/string_tools.h"
 
 namespace club { namespace transport {
 
@@ -58,8 +59,6 @@ public:
   OutboundMessages& outbound_messages() { return *_outbound_messages; }
 
 private:
-  void circular_increment(typename Messages::iterator& i);
-
   static void set_intersection( const std::set<uuid>&
                               , const std::set<uuid>&
                               , std::vector<uuid>&);
@@ -87,7 +86,6 @@ private:
   std::shared_ptr<OutboundMessages> _outbound_messages;
   std::set<uuid>                    _possible_targets;
 
-  // Invariant that must hold: _messages.empty() <=> _next == _messages.end()
   Messages                     _messages;
   typename Messages::iterator  _next;
 
@@ -114,19 +112,19 @@ void TransmitQueue<Id>::add_target(const uuid& id) {
 template<class Id>
 void TransmitQueue<Id>::insert_message( boost::optional<Id> unreliable_id
                                       , MessagePtr message) {
-  _messages.insert(_next, Entry{ std::move(unreliable_id)
-                               , std::move(message)
-                               });
-
-  if (_next == _messages.end()) _next = _messages.begin();
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
-void
-TransmitQueue<Id>::circular_increment(typename Messages::iterator& i) {
-  assert(!_messages.empty() && i != _messages.end());
-  if (++i == _messages.end()) i = _messages.begin();
+  if (_next != _messages.end() || _messages.empty()) {
+    _messages.insert(_next, Entry{ std::move(unreliable_id)
+                          , std::move(message)
+                          });
+  }
+  else {
+    // If we're at the end of the queue and it isn't empty, that means we've
+    // just sent everything in it. So the new messages shall be
+    // sent next.
+    _messages.insert(_messages.begin(), Entry{ std::move(unreliable_id)
+                                      , std::move(message)
+                                      });
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -135,13 +133,14 @@ void
 TransmitQueue<Id>::erase(typename Messages::iterator i) {
   using std::shared_ptr;
 
-  //Tell the _outbound_messages object that we're no longer using this message.
+  assert(i != _messages.end());
+
+  // Tell the _outbound_messages object that we're no longer using this message.
   _outbound_messages->release( std::move(i->unreliable_id)
                              , std::move(i->message));
 
   if (i == _next) {
     _next = _messages.erase(i);
-    if (_next == _messages.end()) _next = _messages.begin();
   }
   else {
     _messages.erase(i);
@@ -154,20 +153,22 @@ size_t
 TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
   size_t count = 0;
 
+  using namespace std;
+
   if (_messages.empty()) return count;
 
-  auto last = _next;
+  auto current = _next;
+
+  if (current == _messages.end()) {
+    current = _messages.begin();
+  }
+
+  auto last = current;
   if (last == _messages.begin()) { last = --_messages.end(); }
   else --last;
 
-  bool is_last = false;
-
-  while (!is_last) {
-    auto current = _next;
-
-    circular_increment(_next);
-
-    is_last = current == last;
+  while (true) {
+    _next = std::next(current);
 
     set_intersection( current->message->targets
                     , _possible_targets
@@ -200,6 +201,11 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
         if (_messages.empty()) break;
       }
     }
+
+    if (current == last) break;
+
+    current = _next;
+    if (current == _messages.end()) current = _messages.begin();
   }
 
   return count;
