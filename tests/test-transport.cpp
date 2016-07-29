@@ -235,6 +235,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
   asio::io_service ios;
 
+  // n1 -> n2 -> n3
   Node n1, n2, n3;
 
   connect_nodes(ios, n1, n2);
@@ -260,6 +261,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_two_hops) {
   asio::io_service ios;
 
+  // n1 -> n2 -> n3 -> n4
   Node n1, n2, n3, n4;
 
   connect_nodes(ios, n1, n2);
@@ -290,6 +292,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_two_hops) {
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   asio::io_service ios;
 
+  // n1 -> n2 -> n3
   Node n1, n2, n3;
 
   connect_nodes(ios, n1, n2);
@@ -320,6 +323,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   asio::io_service ios;
 
+  //        n3
+  //        ^
+  //        |
+  //  n1 -> n2 -> n4
   Node n1, n2, n3, n4;
 
   connect_nodes(ios, n1, n2);
@@ -435,6 +442,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
 BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
   asio::io_service ios;
 
+  // n1 -> n2 -> n3
   Node n1, n2, n3;
 
   n3.on_recv = [&](auto s, auto b) {
@@ -452,6 +460,48 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
   n1.transports[n2.id]->add_target(n3.id);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast) {
+  asio::io_service ios;
+
+  //        n3
+  //        ^
+  //        |
+  //  n1 -> n2 -> n4
+
+  Node n1, n2, n3, n4;
+
+  size_t count = 0;
+
+  auto on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+
+    if (++count == 3) {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+      n4.transports.clear();
+    }
+  };
+
+  n2.on_recv = on_recv;
+  n3.on_recv = on_recv;
+  n4.on_recv = on_recv;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+  connect_nodes(ios, n2, n4);
+
+  n1.transports[n2.id]->add_target(n3.id);
+  n1.transports[n2.id]->add_target(n4.id);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id, n4.id});
 
   ios.run();
 }
