@@ -77,17 +77,30 @@ std::string str_from_range(const R& range) {
 template<typename T, size_t N>
 std::string str(const std::array<T, N>& a) { return str_from_range(a); }
 
+// Convert std::vector<uint8_t> to string
+inline
+std::string str(const std::vector<uint8_t>& a) {
+  std::ostringstream s;
+  s << "[";
+  for (auto i = a.begin(); i != a.end(); ++i) {
+    s << (unsigned int) *i;
+    if (i != --a.end()) s << ", ";
+  }
+  s << "]";
+  return s.str();
+}
+
 // Convert std::vector to string
 template<typename T>
-std::string str(const std::vector<T>& a) { return str_from_range(a); }
+std::string str(const std::vector<T>& a) { return "[" + str_from_range(a) + "]"; }
 
 // Convert std::set to string
 template<typename T>
-std::string str(const std::set<T>& a) { return str_from_range(a); }
+std::string str(const std::set<T>& a) { return "{" + str_from_range(a) + "}"; }
 
 // Convert std::map to string
 template<typename T1, typename T2>
-std::string str(const std::map<T1,T2>& a) { return str_from_range(a); }
+std::string str(const std::map<T1,T2>& a) { return "{" + str_from_range(a) + "}"; }
 
 // Convert boost::optional to string
 template<typename T>

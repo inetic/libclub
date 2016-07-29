@@ -19,6 +19,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/functional/hash.hpp>
 #include <transport/transport.h>
+#include <debug/string_tools.h>
 
 //------------------------------------------------------------------------------
 // The transport tests that have the prefix 'test_transport_reliable*' should
@@ -59,12 +60,7 @@ namespace asio = boost::asio;
 //------------------------------------------------------------------------------
 namespace std {
 std::ostream& operator<<(std::ostream& os, const vector<uint8_t>& v) {
-  os << "[";
-  for (auto i = v.begin(); i != v.end(); ++i) {
-    os << ((int) *i);
-    if (i != --v.end()) os << ", ";
-  }
-  return os << "]";
+  return os << str(v);
 }
 } // std namespace
 
