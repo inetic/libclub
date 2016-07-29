@@ -402,3 +402,58 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
 }
 
 //------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t counter = 0;
+
+  n2.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
+    if (counter++ == 0) {
+      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+
+      n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+    }
+    else {
+      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
+      n1.transports.clear();
+      n2.transports.clear();
+    }
+  };
+
+  connect_nodes(ios, n1, n2);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
+  asio::io_service ios;
+
+  Node n1, n2, n3;
+
+  n3.on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    n1.transports.clear();
+    n2.transports.clear();
+    n3.transports.clear();
+  };
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+
+  n1.transports[n2.id]->add_target(n3.id);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
