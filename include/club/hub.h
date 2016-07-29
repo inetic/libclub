@@ -44,8 +44,7 @@ class Log;
 class SeenMessages;
 
 namespace transport {
-  template<typename> class InboundMessages;
-  template<typename> class OutboundMessages;
+  template<typename> class Core;
 }
 
 class hub {
@@ -56,8 +55,7 @@ private:
   using ID = club::uuid;
   using Bytes = std::vector<char>;
   using Address = boost::asio::ip::address;
-  using InboundMessages  = transport::InboundMessages<uint64_t>;
-  using OutboundMessages = transport::OutboundMessages<uint64_t>;
+  using TransportCore = transport::Core<uint64_t>;
 
   typedef boost::asio::io_service::work    Work;
   typedef boost::container::flat_map<uuid, std::unique_ptr<Node>> Nodes;
@@ -156,8 +154,7 @@ private:
   TimeStamp                              _time_stamp;
   std::unique_ptr<BroadcastRoutingTable> _broadcast_routing_table;
   std::shared_ptr<bool>                  _was_destroyed;
-  std::shared_ptr<InboundMessages>       _inbound_messages;
-  std::shared_ptr<OutboundMessages>      _outbound_messages;
+  std::shared_ptr<TransportCore>         _transport_core;
 
   // TODO: This must be refactored, otherwise the memory will grow indefinitely.
   //       Luckily reconfiguration doesn't happen too often, so for apps that

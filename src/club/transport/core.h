@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CLUB_OUTBOUND_MESSAGES_H
-#define CLUB_OUTBOUND_MESSAGES_H
+#ifndef CLUB_TRANSPORT_CORE_H
+#define CLUB_TRANSPORT_CORE_H
 
 #include <map>
 #include "transport/message.h"
@@ -28,8 +28,9 @@ template<typename> class TransmitQueue;
 template<typename> class Transport;
 
 template<typename UnreliableId>
-class OutboundMessages {
+class Core {
 private:
+  using OnReceive          = std::function<void(uuid, boost::asio::const_buffer)>;
   using Queue              = TransmitQueue<UnreliableId>;
   using Message            = transport::OutMessage;
   using Transport          = transport::Transport<UnreliableId>;
@@ -38,7 +39,7 @@ private:
   using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
 public:
-  OutboundMessages(uuid our_id);
+  Core(uuid our_id, OnReceive);
 
   void send_reliable( std::vector<uint8_t>&& data
                     , std::set<uuid>         targets);
@@ -57,20 +58,27 @@ private:
   void release(boost::optional<UnreliableId>, std::shared_ptr<Message>&&);
 
   void register_transport(Transport*);
-  void deregister_transport(Transport*);
+  void unregister_transport(Transport*);
   void forward_message(InMessage&&);
 
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder);
 
+  void add_target(std::set<uuid>);
+
+  void on_receive( const boost::system::error_code&
+                 , const InMessage*);
+
 private:
   uuid                   _our_id;
+  OnReceive              _on_recv;
   SequenceNumber         _next_sequence_number;
   std::set<Transport*>   _transports;
   ReliableMessages       _reliable_messages;
   UnreliableMessages     _unreliable_messages;
 
-  std::map<uuid, std::map<uuid, AckSet>> _acks;
+  std::map<uuid, AckSet>                 _inbound_acks;
+  std::map<uuid, std::map<uuid, AckSet>> _outbound_acks;
   //        |              |
   //        |              +-> from
   //        +-> to
@@ -79,35 +87,30 @@ private:
 //------------------------------------------------------------------------------
 // Implementation
 //------------------------------------------------------------------------------
-template<class Id> OutboundMessages<Id>::OutboundMessages(uuid our_id)
+template<class Id> Core<Id>::Core(uuid our_id, OnReceive on_recv)
   : _our_id(std::move(our_id))
+  , _on_recv(std::move(on_recv))
   , _next_sequence_number(0) // TODO: Should this be initialized to a random number?
 {
 }
 
 //------------------------------------------------------------------------------
-template<class Id> void OutboundMessages<Id>::register_transport(Transport* t)
+template<class Id> void Core<Id>::register_transport(Transport* t)
 {
   _transports.insert(t);
 }
 
 //------------------------------------------------------------------------------
-template<class Id> void OutboundMessages<Id>::deregister_transport(Transport* t)
+template<class Id> void Core<Id>::unregister_transport(Transport* t)
 {
   _transports.erase(t);
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
-void OutboundMessages<Id>::add_ack_entry(AckEntry entry) {
-  _acks[entry.to][entry.from] = entry.acks;
 }
 
 //------------------------------------------------------------------------------
 // TODO: This function needs as an argument targets where these acks
 //       are meant to go.
 template<class Id>
-uint8_t OutboundMessages<Id>::encode_acks(binary::encoder& encoder) {
+uint8_t Core<Id>::encode_acks(binary::encoder& encoder) {
   // Need to write at least the size.
   assert(encoder.remaining_size() > 0);
 
@@ -116,7 +119,7 @@ uint8_t OutboundMessages<Id>::encode_acks(binary::encoder& encoder) {
   uint8_t count = 0;
   encoder.put(count); // Shall be rewritten later in this func.
 
-  for (auto i = _acks.begin(); i != _acks.end();) {
+  for (auto i = _outbound_acks.begin(); i != _outbound_acks.end();) {
     auto& froms = i->second;
 
     for (auto j = froms.begin(); j != froms.end();) {
@@ -141,7 +144,7 @@ uint8_t OutboundMessages<Id>::encode_acks(binary::encoder& encoder) {
     }
 
     if (i->second.empty()) {
-      i = _acks.erase(i);
+      i = _outbound_acks.erase(i);
     }
     else {
       ++i;
@@ -154,13 +157,19 @@ uint8_t OutboundMessages<Id>::encode_acks(binary::encoder& encoder) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::acknowledge(const uuid& from, SequenceNumber sn) {
-  _acks[from][_our_id].try_add(sn);
+void Core<Id>::add_ack_entry(AckEntry entry) {
+  _outbound_acks[entry.to][entry.from] = entry.acks;
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::on_receive_acks(const uuid& target, AckSet acks) {
+void Core<Id>::acknowledge(const uuid& from, SequenceNumber sn) {
+  _outbound_acks[from][_our_id].try_add(sn);
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
   for (auto sn : acks) {
 
     auto i = _reliable_messages.find(sn);
@@ -176,8 +185,8 @@ void OutboundMessages<Id>::on_receive_acks(const uuid& target, AckSet acks) {
 //------------------------------------------------------------------------------
 template<class Id>
 void
-OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
-                                   , std::set<uuid>         targets) {
+Core<Id>::send_reliable( std::vector<uint8_t>&& data
+                       , std::set<uuid>         targets) {
   using namespace std;
 
   auto sn = _next_sequence_number++;
@@ -215,10 +224,9 @@ OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
 
 //------------------------------------------------------------------------------
 template<class Id>
-void
-OutboundMessages<Id>::send_unreliable( Id                     id
-                                     , std::vector<uint8_t>&& data
-                                     , std::set<uuid>         targets) {
+void Core<Id>::send_unreliable( Id                     id
+                              , std::vector<uint8_t>&& data
+                              , std::set<uuid>         targets) {
   using namespace std;
 
   auto i = _unreliable_messages.find(id);
@@ -265,7 +273,7 @@ OutboundMessages<Id>::send_unreliable( Id                     id
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::forward_message(InMessage&& msg) {
+void Core<Id>::forward_message(InMessage&& msg) {
   using namespace std;
 
   auto begin = boost::asio::buffer_cast<const uint8_t*>(msg.type_and_payload);
@@ -290,8 +298,38 @@ void OutboundMessages<Id>::forward_message(InMessage&& msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void OutboundMessages<Id>::release( boost::optional<Id> unreliable_id
-                                  , std::shared_ptr<Message>&& m) {
+void Core<Id>::on_receive( const boost::system::error_code& error
+                         , const InMessage* msg) {
+  if (error) {
+    assert(0 && "TODO: Handle error");
+    return;
+  }
+
+  assert(msg);
+
+  if (msg->type == MessageType::reliable) {
+    // If the remote peer is sending too fast we refuse to receive
+    // and acknowledge the message.
+    //
+    // TODO: Operator map::operator[] creates an entry in the map,
+    //       we should only create the entry once a Syn packet is
+    //       exchanged (sockets connect).
+    if (_inbound_acks[msg->source].try_add(msg->sequence_number)) {
+      _on_recv(msg->source, msg->payload);
+    }
+  }
+  else if (msg->type == MessageType::unreliable) {
+    _on_recv(msg->source, msg->payload);
+  }
+  else {
+    assert(0 && "TODO: More msg types will come");
+  }
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::release( boost::optional<Id> unreliable_id
+                      , std::shared_ptr<Message>&& m) {
   // TODO: Split these in two functions.
 
   if (!unreliable_id) {
@@ -314,4 +352,4 @@ void OutboundMessages<Id>::release( boost::optional<Id> unreliable_id
 
 }} // club::transport namespace
 
-#endif // ifndef CLUB_OUTBOUND_MESSAGES_H
+#endif // ifndef CLUB_TRANSPORT_CORE_H

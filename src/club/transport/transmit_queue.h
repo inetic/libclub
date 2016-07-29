@@ -21,19 +21,19 @@
 #include "binary/encoder.h"
 #include "binary/serialize/uuid.h"
 #include "transport/message.h"
-#include "transport/outbound_messages.h"
+#include "transport/core.h"
 #include "transport/ack_set_serialize.h"
 #include "debug/string_tools.h"
 
 namespace club { namespace transport {
 
-template<class> class OutboundMessages;
+template<class> class Core;
 template<class> class Transport;
 
 template<class UnreliableId>
 struct TransmitQueue {
 private:
-  using OutboundMessages = transport::OutboundMessages<UnreliableId>;
+  using Core = transport::Core<UnreliableId>;
   using uuid = boost::uuids::uuid;
 
   using Message = transport::OutMessage;
@@ -47,7 +47,7 @@ private:
   using Messages = std::list<Entry>;
 
 public:
-  TransmitQueue(std::shared_ptr<OutboundMessages>);
+  TransmitQueue(std::shared_ptr<Core>);
 
   size_t encode_few(binary::encoder&);
 
@@ -56,7 +56,7 @@ public:
   void insert_message( boost::optional<UnreliableId>
                      , MessagePtr);
 
-  OutboundMessages& outbound_messages() { return *_outbound_messages; }
+  Core& core() { return *_core; }
 
 private:
   static void set_intersection( const std::set<uuid>&
@@ -83,8 +83,8 @@ private:
                      , const Message& msg) const;
 
 private:
-  std::shared_ptr<OutboundMessages> _outbound_messages;
-  std::set<uuid>                    _possible_targets;
+  std::shared_ptr<Core> _core;
+  std::set<uuid>        _possible_targets;
 
   Messages                     _messages;
   typename Messages::iterator  _next;
@@ -97,8 +97,8 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 template<class Id>
-TransmitQueue<Id>::TransmitQueue(std::shared_ptr<OutboundMessages> outbound)
-  : _outbound_messages(std::move(outbound))
+TransmitQueue<Id>::TransmitQueue(std::shared_ptr<Core> core)
+  : _core(std::move(core))
   , _next(_messages.end())
 {}
 
@@ -135,9 +135,9 @@ TransmitQueue<Id>::erase(typename Messages::iterator i) {
 
   assert(i != _messages.end());
 
-  // Tell the _outbound_messages object that we're no longer using this message.
-  _outbound_messages->release( std::move(i->unreliable_id)
-                             , std::move(i->message));
+  // Tell the _core object that we're no longer using this message.
+  _core->release( std::move(i->unreliable_id)
+                , std::move(i->message));
 
   if (i == _next) {
     _next = _messages.erase(i);

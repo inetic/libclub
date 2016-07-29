@@ -19,7 +19,6 @@
 #include <array>
 #include <boost/asio/steady_timer.hpp>
 #include <transport/transmit_queue.h>
-#include <transport/inbound_messages.h>
 #include <transport/message_reader.h>
 #include <club/debug/ostream_uuid.h>
 
@@ -49,16 +48,14 @@ private:
   };
 
 public:
-  using TransmitQueue    = transport::TransmitQueue<UnreliableId>;
-  using OutboundMessages = transport::OutboundMessages<UnreliableId>;
-  using InboundMessages  = transport::InboundMessages<UnreliableId>;
+  using TransmitQueue = transport::TransmitQueue<UnreliableId>;
+  using Core          = transport::Core<UnreliableId>;
 
 public:
-  Transport( uuid                              id
-           , udp::socket                       socket
-           , udp::endpoint                     remote_endpoint
-           , std::shared_ptr<OutboundMessages> outbound
-           , std::shared_ptr<InboundMessages>  inbound);
+  Transport( uuid                  id
+           , udp::socket           socket
+           , udp::endpoint         remote_endpoint
+           , std::shared_ptr<Core> core);
 
 
   Transport(Transport&&) = delete;
@@ -69,7 +66,7 @@ public:
   ~Transport();
 
 private:
-  friend class ::club::transport::OutboundMessages<UnreliableId>;
+  friend class ::club::transport::Core<UnreliableId>;
 
   void insert_message( boost::optional<UnreliableId>
                      , std::shared_ptr<OutMessage> m);
@@ -85,8 +82,7 @@ private:
   void on_send( const boost::system::error_code&
               , std::shared_ptr<SocketState>);
 
-  InboundMessages&  inbound()  { return *_inbound; }
-  OutboundMessages& outbound() { return _transmit_queue.outbound_messages(); }
+  Core& core() { return _transmit_queue.core(); }
 
   void handle_ack_entry(AckEntry);
   void handle_message(std::shared_ptr<SocketState>&, InMessage);
@@ -97,11 +93,9 @@ private:
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
   TransmitQueue                    _transmit_queue;
-  std::shared_ptr<InboundMessages> _inbound;
   MessageReader                    _message_reader;
   boost::asio::steady_timer        _timer;
   std::shared_ptr<SocketState>     _socket_state;
-
 };
 
 //------------------------------------------------------------------------------
@@ -109,22 +103,19 @@ private:
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
 Transport<UnreliableId>
-::Transport( uuid                              id
-           , udp::socket                       socket
-           , udp::endpoint                     remote_endpoint
-           , std::shared_ptr<OutboundMessages> outbound
-           , std::shared_ptr<InboundMessages>  inbound)
+::Transport( uuid                  id
+           , udp::socket           socket
+           , udp::endpoint         remote_endpoint
+           , std::shared_ptr<Core> core)
   : _id(std::move(id))
   , _is_sending(false)
   , _socket(std::move(socket))
   , _remote_endpoint(std::move(remote_endpoint))
-  , _transmit_queue(std::move(outbound))
-  , _inbound(std::move(inbound))
+  , _transmit_queue(std::move(core))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
 {
-  this->inbound().register_transport(this);
-  this->outbound().register_transport(this);
+  this->core().register_transport(this);
 
   start_receiving(_socket_state);
 }
@@ -132,8 +123,7 @@ Transport<UnreliableId>
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
 Transport<UnreliableId>::~Transport() {
-  inbound().deregister_transport(this);
-  outbound().deregister_transport(this);
+  core().unregister_transport(this);
   _socket_state->was_destroyed = true;
 }
 
@@ -174,7 +164,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   if (state->was_destroyed) return;
 
   if (error) {
-    return inbound().on_receive(error, nullptr);
+    return core().on_receive(error, nullptr);
   }
 
   // Ignore packets from unknown sources.
@@ -205,10 +195,10 @@ template<class Id>
 void Transport<Id>::handle_ack_entry(AckEntry entry) {
   if (entry.to == _id) {
     assert(entry.from != _id);
-    outbound().on_receive_acks(entry.from, entry.acks);
+    core().on_receive_acks(entry.from, entry.acks);
   }
   else {
-    outbound().add_ack_entry(std::move(entry));
+    core().add_ack_entry(std::move(entry));
   }
 }
 
@@ -225,9 +215,9 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
   if (msg.targets.count(_id)) {
     msg.targets.erase(_id);
 
-    outbound().acknowledge(msg.source, msg.sequence_number);
+    core().acknowledge(msg.source, msg.sequence_number);
 
-    inbound().on_receive(boost::system::error_code(), &msg);
+    core().on_receive(boost::system::error_code(), &msg);
 
     if (state->was_destroyed) return;
 
@@ -235,7 +225,7 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
   }
 
   if (!msg.targets.empty()) {
-    outbound().forward_message(std::move(msg));
+    core().forward_message(std::move(msg));
   }
 }
 
@@ -254,7 +244,7 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
 
   // TODO: Should we limit the number of acks we encode here to guarantee
   //       some space for messages?
-  count += outbound().encode_acks(encoder);
+  count += core().encode_acks(encoder);
   count += _transmit_queue.encode_few(encoder);
 
   if (count == 0) {

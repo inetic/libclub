@@ -48,8 +48,7 @@ using boost::asio::const_buffer;
 using uuid             = club::uuid;
 using UnreliableId     = uint32_t;
 using TransmitQueue    = club::transport::TransmitQueue<UnreliableId>;
-using OutboundMessages = club::transport::OutboundMessages<UnreliableId>;
-using InboundMessages  = club::transport::InboundMessages<UnreliableId>;
+using Core             = club::transport::Core<UnreliableId>;
 using Transport        = club::transport::Transport<UnreliableId>;
 using udp              = boost::asio::ip::udp;
 
@@ -75,12 +74,11 @@ vector<uint8_t> buf_to_vector(const_buffer buf) {
 struct Node {
   uuid                                    id;
   std::map<uuid, TransportPtr>            transports;
-  shared_ptr<OutboundMessages>            outbound;
-  shared_ptr<InboundMessages>             inbound;
+  shared_ptr<Core>                        transport_core;
   std::function<void(uuid, const_buffer)> on_recv;
 
   void add_transport(uuid other_id, udp::socket s, udp::endpoint e) {
-    auto t = std::make_unique<Transport>(id, move(s), e, outbound, inbound);
+    auto t = std::make_unique<Transport>(id, move(s), e, transport_core);
     transports.emplace(std::make_pair(other_id, move(t)));
     transports[other_id]->add_target(other_id);
   }
@@ -88,20 +86,21 @@ struct Node {
   void send_unreliable(vector<uint8_t> data, set<uuid> targets) {
     auto data_id = boost::hash_value(data);
 
-    outbound->send_unreliable( data_id
-                             , move(data)
-                             , move(targets));
+    transport_core->send_unreliable( data_id
+                                   , move(data)
+                                   , move(targets));
   }
 
   void send_reliable(vector<uint8_t> data, set<uuid> targets) {
-    outbound->send_reliable(move(data), move(targets));
+    transport_core->send_reliable(move(data), move(targets));
   }
 
   Node()
     : id(boost::uuids::random_generator()())
-    , outbound(make_shared<OutboundMessages>(id))
-    , inbound(make_shared<InboundMessages>
-        ([this](auto s, auto b) { this->on_recv(s, b); }))
+    , transport_core(make_shared<Core>( id
+                                      , [this](auto s, auto b) {
+                                          this->on_recv(s,b);
+                                        }))
   {}
 };
 

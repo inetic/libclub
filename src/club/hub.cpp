@@ -35,7 +35,6 @@
 #include "seen_messages.h"
 
 #include "transport/transmit_queue.h"
-#include "transport/inbound_messages.h"
 
 using namespace club;
 
@@ -102,8 +101,7 @@ hub::hub(boost::asio::io_service& ios)
   , _time_stamp(0)
   , _broadcast_routing_table(new BroadcastRoutingTable(_id))
   , _was_destroyed(make_shared<bool>(false))
-  , _inbound_messages(new InboundMessages([](auto, auto) { assert(0 && "TODO"); }))
-  , _outbound_messages(new OutboundMessages(_id))
+  , _transport_core(new TransportCore(_id, [](auto, auto) {assert(0&&"TODO");}))
   , _seen(new SeenMessages())
 {
   LOG("Created");
