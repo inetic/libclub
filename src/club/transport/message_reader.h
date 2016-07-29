@@ -97,7 +97,7 @@ boost::optional<InMessage> MessageReader::read_one_message() {
 
   auto type_start      = _decoder.current();
 
-  auto is_reliable     = _decoder.get<uint8_t>();
+  auto message_type    = _decoder.get<MessageType>();
   auto sequence_number = _decoder.get<SequenceNumber>();
   auto message_size    = _decoder.get<uint16_t>();
 
@@ -116,7 +116,7 @@ boost::optional<InMessage> MessageReader::read_one_message() {
 
   return InMessage( move(source)
                   , move(targets)
-                  , is_reliable
+                  , message_type
                   , sequence_number
                   , payload
                   , payload_with_type );

@@ -17,8 +17,8 @@
 
 #include <set>
 #include <club/uuid.h>
-#include "sequence_number.h"
-#include "message_id.h"
+#include "transport/sequence_number.h"
+#include "transport/message_type.h"
 
 namespace club { namespace transport {
 
@@ -26,20 +26,20 @@ namespace club { namespace transport {
 struct InMessage {
   const uuid                      source;
         std::set<uuid>            targets;
-  const bool                      is_reliable;
+  const MessageType               type;
   const SequenceNumber            sequence_number;
   const boost::asio::const_buffer payload;
   const boost::asio::const_buffer type_and_payload;
 
   InMessage( uuid                      source
            , std::set<uuid>&&          targets
-           , bool                      is_reliable
+           , MessageType               type
            , SequenceNumber            sequence_number
            , boost::asio::const_buffer payload
            , boost::asio::const_buffer type_and_payload)
     : source(std::move(source))
     , targets(std::move(targets))
-    , is_reliable(is_reliable)
+    , type(type)
     , sequence_number(sequence_number)
     , payload(payload)
     , type_and_payload(type_and_payload)
@@ -50,18 +50,18 @@ struct InMessage {
 struct OutMessage {
   const uuid                          source;
         std::set<uuid>                targets;
-  const bool                          is_reliable;
+  const MessageType                   type;
   const SequenceNumber                sequence_number;
         std::vector<uint8_t>          bytes;
 
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
-            , bool                   is_reliable
+            , MessageType            type
             , SequenceNumber         sequence_number
             , std::vector<uint8_t>&& bytes)
     : source(std::move(source))
     , targets(std::move(targets))
-    , is_reliable(is_reliable)
+    , type(type)
     , sequence_number(sequence_number)
     , bytes(std::move(bytes))
   {}

@@ -201,7 +201,7 @@ OutboundMessages<Id>::send_reliable( std::vector<uint8_t>&& data
 
   auto message = make_shared<Message>( _our_id
                                      , move(targets)
-                                     , true // is_reliable
+                                     , MessageType::reliable
                                      , sn
                                      , move(data_)
                                      );
@@ -249,7 +249,7 @@ OutboundMessages<Id>::send_unreliable( Id                     id
 
     auto message = make_shared<Message>( _our_id
                                        , move(targets)
-                                       , false // is_reliable
+                                       , MessageType::unreliable
                                        , sn
                                        , move(data_)
                                        );
@@ -275,7 +275,7 @@ void OutboundMessages<Id>::forward_message(InMessage&& msg) {
 
   auto message = make_shared<Message>( move(msg.source)
                                      , move(msg.targets)
-                                     , msg.is_reliable
+                                     , msg.type
                                      , msg.sequence_number
                                      , move(data) );
 

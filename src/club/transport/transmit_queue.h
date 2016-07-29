@@ -189,7 +189,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (!current->message->is_reliable) {
+    if (current->message->type == MessageType::unreliable) {
       auto& m = *current->message;
 
       for (const auto& target : _target_intersection) {

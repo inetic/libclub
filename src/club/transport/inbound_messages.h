@@ -75,7 +75,7 @@ void InboundMessages<Id>::on_receive( const boost::system::error_code& error
 
   assert(msg);
 
-  if (msg->is_reliable) {
+  if (msg->type == MessageType::reliable) {
     // If the remote peer is sending too fast we refuse to receive
     // and acknowledge the message.
     //
@@ -86,8 +86,11 @@ void InboundMessages<Id>::on_receive( const boost::system::error_code& error
       _on_recv(msg->source, msg->payload);
     }
   }
-  else {
+  else if (msg->type == MessageType::unreliable) {
     _on_recv(msg->source, msg->payload);
+  }
+  else {
+    assert(0 && "TODO: More msg types will come");
   }
 }
 
