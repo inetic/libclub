@@ -49,14 +49,14 @@ private:
 public:
   TransmitQueue(std::shared_ptr<Core>);
 
-  size_t encode_few(binary::encoder&);
-
-  void add_target(const uuid&);
+  size_t encode_few( binary::encoder&
+                   , const std::set<uuid>& targets);
 
   void insert_message( boost::optional<UnreliableId>
                      , MessagePtr);
 
   Core& core() { return *_core; }
+  const Core& core() const { return *_core; }
 
 private:
   static void set_intersection( const std::set<uuid>&
@@ -83,11 +83,9 @@ private:
                      , const Message& msg) const;
 
 private:
-  std::shared_ptr<Core> _core;
-  std::set<uuid>        _possible_targets;
-
-  Messages                     _messages;
-  typename Messages::iterator  _next;
+  std::shared_ptr<Core>       _core;
+  Messages                    _messages;
+  typename Messages::iterator _next;
 
   // A cache vector so we don't have to reallocate it each time.
   std::vector<uuid> _target_intersection;
@@ -104,12 +102,6 @@ TransmitQueue<Id>::TransmitQueue(std::shared_ptr<Core> core)
 
 //------------------------------------------------------------------------------
 template<class Id>
-void TransmitQueue<Id>::add_target(const uuid& id) {
-  _possible_targets.insert(id);
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
 void TransmitQueue<Id>::insert_message( boost::optional<Id> unreliable_id
                                       , MessagePtr message) {
   if (_next != _messages.end() || _messages.empty()) {
@@ -121,7 +113,7 @@ void TransmitQueue<Id>::insert_message( boost::optional<Id> unreliable_id
     // If we're at the end of the queue and it isn't empty, that means we've
     // just sent everything in it. So the new messages shall be
     // sent next.
-    _messages.insert(_messages.begin(), Entry{ std::move(unreliable_id)
+    _next = _messages.insert(_messages.begin(), Entry{ std::move(unreliable_id)
                                       , std::move(message)
                                       });
   }
@@ -150,7 +142,8 @@ TransmitQueue<Id>::erase(typename Messages::iterator i) {
 //------------------------------------------------------------------------------
 template<class Id>
 size_t
-TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
+TransmitQueue<Id>::encode_few( binary::encoder& encoder
+                             , const std::set<uuid>& targets) {
   size_t count = 0;
 
   using namespace std;
@@ -170,12 +163,17 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
   while (true) {
     _next = std::next(current);
 
+    bool is_last = current == last;
+
     set_intersection( current->message->targets
-                    , _possible_targets
+                    , targets
                     , _target_intersection);
 
     if (_target_intersection.empty()) {
       erase(current);
+      if (is_last) break;
+      current = _next;
+      if (current == _messages.end()) current = _messages.begin();
       if (_messages.empty()) break;
       continue;
     }
@@ -202,8 +200,7 @@ TransmitQueue<Id>::encode_few(binary::encoder& encoder) {
       }
     }
 
-    if (current == last) break;
-
+    if (is_last) break;
     current = _next;
     if (current == _messages.end()) current = _messages.begin();
   }

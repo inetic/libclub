@@ -41,6 +41,13 @@ inline void decode(binary::decoder& d, AckEntry& ack_entry) {
   ack_entry.acks = d.get<AckSet>();
 }
 
+//------------------------------------------------------------------------------
+inline
+std::ostream& operator<<(std::ostream& os, const AckEntry& e) {
+  return os << "(AckEntry to:" << e.to << " from:" << e.from
+            << " " << e.acks << ")";
+}
+
 }} // club::transport namespace
 
 //------------------------------------------------------------------------------

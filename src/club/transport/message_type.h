@@ -19,6 +19,7 @@ namespace club { namespace transport {
 
 enum class MessageType { unreliable = 0
                        , reliable   = 1
+                       , syn        = 2
                        };
 
 //------------------------------------------------------------------------------

@@ -20,6 +20,9 @@
 #include "transport/sequence_number.h"
 #include "transport/message_type.h"
 
+#include <club/debug/ostream_uuid.h>
+#include "debug/string_tools.h"
+
 namespace club { namespace transport {
 
 //------------------------------------------------------------------------------
@@ -68,6 +71,20 @@ struct OutMessage {
 };
 
 //------------------------------------------------------------------------------
+
+inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
+  return os << "(OutMessage src:" << m.source
+            << " targets: " << str(m.targets)
+            << " " << str(m.bytes)
+            << ")";
+}
+
+inline std::ostream& operator<<(std::ostream& os, const InMessage& m) {
+  return os << "(InMessage src:" << m.source
+            << " targets: " << str(m.targets)
+            << " " << str(m.type_and_payload)
+            << ")";
+}
 
 }} // club::transport namespace
 

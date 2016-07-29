@@ -20,6 +20,7 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <boost/asio/buffer.hpp>
 #include <boost/optional.hpp>
 
 // Convert (almost) anything to string.
@@ -87,6 +88,24 @@ std::string str(const std::vector<uint8_t>& a) {
     if (i != --a.end()) s << ", ";
   }
   s << "]";
+  return s.str();
+}
+
+// Convert std::vector<uint8_t> to string
+inline
+std::string str(boost::asio::const_buffer b) {
+  std::ostringstream s;
+
+  auto ptr    = boost::asio::buffer_cast<const uint8_t*>(b);
+  size_t size = boost::asio::buffer_size(b);
+
+  s << "[";
+  for (size_t i = 0; i < size; ++i) {
+    s << (unsigned int) ptr[i];
+    if (i != size - 1) s << ", ";
+  }
+  s << "]";
+
   return s.str();
 }
 

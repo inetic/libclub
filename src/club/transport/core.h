@@ -21,6 +21,7 @@
 #include "transport/ack_entry.h"
 
 #include <club/debug/ostream_uuid.h>
+#include "debug/string_tools.h"
 
 namespace club { namespace transport {
 
@@ -51,6 +52,10 @@ public:
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, SequenceNumber);
 
+  const uuid& id() const { return _our_id; }
+
+  ~Core();
+
 private:
   friend class ::club::transport::Transport<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
@@ -62,12 +67,26 @@ private:
   void forward_message(InMessage&&);
 
   void add_ack_entry(AckEntry);
-  uint8_t encode_acks(binary::encoder& encoder);
+  uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
-  void add_target(std::set<uuid>);
+  void add_target(uuid);
 
   void on_receive( const boost::system::error_code&
                  , const InMessage*);
+
+private:
+  struct Inbound {
+    SequenceNumber                                 last_message;
+    AckSet                                         acks;
+    std::map<SequenceNumber, std::vector<uint8_t>> pending;
+
+    Inbound() {}
+
+    Inbound(SequenceNumber first, AckSet acks)
+      : last_message(first)
+      , acks(acks)
+    {}
+  };
 
 private:
   uuid                   _our_id;
@@ -77,11 +96,15 @@ private:
   ReliableMessages       _reliable_messages;
   UnreliableMessages     _unreliable_messages;
 
-  std::map<uuid, AckSet>                 _inbound_acks;
+  std::set<uuid>         _all_targets;
+
+  std::map<uuid, Inbound>                _inbound;
   std::map<uuid, std::map<uuid, AckSet>> _outbound_acks;
   //        |              |
   //        |              +-> from
   //        +-> to
+
+  std::shared_ptr<bool> _was_destroyed;
 };
 
 //------------------------------------------------------------------------------
@@ -91,9 +114,14 @@ template<class Id> Core<Id>::Core(uuid our_id, OnReceive on_recv)
   : _our_id(std::move(our_id))
   , _on_recv(std::move(on_recv))
   , _next_sequence_number(0) // TODO: Should this be initialized to a random number?
+  , _was_destroyed(std::make_shared<bool>(false))
 {
 }
 
+//------------------------------------------------------------------------------
+template<class Id> Core<Id>::~Core() {
+  *_was_destroyed = true;
+}
 //------------------------------------------------------------------------------
 template<class Id> void Core<Id>::register_transport(Transport* t)
 {
@@ -107,10 +135,9 @@ template<class Id> void Core<Id>::unregister_transport(Transport* t)
 }
 
 //------------------------------------------------------------------------------
-// TODO: This function needs as an argument targets where these acks
-//       are meant to go.
 template<class Id>
-uint8_t Core<Id>::encode_acks(binary::encoder& encoder) {
+uint8_t Core<Id>::encode_acks( binary::encoder& encoder
+                             , const std::set<uuid>& targets) {
   // Need to write at least the size.
   assert(encoder.remaining_size() > 0);
 
@@ -122,10 +149,17 @@ uint8_t Core<Id>::encode_acks(binary::encoder& encoder) {
   for (auto i = _outbound_acks.begin(); i != _outbound_acks.end();) {
     auto& froms = i->second;
 
+    // TODO: Optimize this set intersection of targets with _outbound_acks.
+    if (targets.count(i->first) == 0) {
+      ++i;
+      continue;
+    }
+
     for (auto j = froms.begin(); j != froms.end();) {
       auto tmp_encoder = encoder;
 
-      encoder.put(AckEntry{i->first, j->first, j->second});
+      auto ack_entry = AckEntry{i->first, j->first, j->second};
+      encoder.put(ack_entry);
 
       if (encoder.error()) {
         count_encoder.put(count);
@@ -193,7 +227,7 @@ Core<Id>::send_reliable( std::vector<uint8_t>&& data
 
   // TODO: It is inefficient to *copy* the data into the new vector just to
   //       prepend a small header (same below).
-  std::vector<uint8_t> data_( 1 // Is reliable flag
+  std::vector<uint8_t> data_( binary::encoded<MessageType>::size()
                             + sizeof(SequenceNumber)
                             + sizeof(uint16_t) // Size of data
                             + data.size()
@@ -203,7 +237,7 @@ Core<Id>::send_reliable( std::vector<uint8_t>&& data
 
   assert(data.size() <= std::numeric_limits<uint16_t>::max());
 
-  encoder.put((uint8_t) 1);
+  encoder.put(MessageType::reliable);
   encoder.put(sn);
   encoder.put((uint16_t) data.size());
   encoder.put_raw(data.data(), data.size());
@@ -219,6 +253,41 @@ Core<Id>::send_reliable( std::vector<uint8_t>&& data
 
   for (auto t : _transports) {
     t->insert_message(boost::none, message);
+  }
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::add_target(uuid new_target) {
+  using namespace std;
+
+  auto inserted = _all_targets.insert(std::move(new_target)).second;
+
+  if (inserted) {
+    auto sn = _next_sequence_number++;
+
+    std::vector<uint8_t> data( binary::encoded<MessageType>::size()
+                             + sizeof(SequenceNumber)
+                             + sizeof(uint16_t) // zero
+                             );
+
+    binary::encoder encoder(data);
+
+    encoder.put(MessageType::syn);
+    encoder.put(sn);
+    encoder.put((uint16_t) 0);
+
+    auto message = make_shared<Message>( _our_id
+                                       , set<uuid>(_all_targets)
+                                       , MessageType::syn
+                                       , sn
+                                       , move(data));
+
+    _reliable_messages.emplace(sn, message);
+
+    for (auto t : _transports) {
+      t->insert_message(boost::none, message);
+    }
   }
 }
 
@@ -240,7 +309,7 @@ void Core<Id>::send_unreliable( Id                     id
   else {
     // TODO: Same as above, it is inefficient to *copy* the data
     //       just to prepend a small header.
-    std::vector<uint8_t> data_( 1 // Is unreliable flag
+    std::vector<uint8_t> data_( binary::encoded<MessageType>::size()
                               + sizeof(Id)
                               + sizeof(uint16_t) // Size of data
                               + data.size()
@@ -250,7 +319,7 @@ void Core<Id>::send_unreliable( Id                     id
 
     auto sn = _next_sequence_number++;
 
-    encoder.put((uint8_t) 0);
+    encoder.put(MessageType::unreliable);
     encoder.put(sn);
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
@@ -283,7 +352,7 @@ void Core<Id>::forward_message(InMessage&& msg) {
 
   auto message = make_shared<Message>( move(msg.source)
                                      , move(msg.targets)
-                                     , msg.type
+                                     , MessageType::unreliable
                                      , msg.sequence_number
                                      , move(data) );
 
@@ -308,21 +377,73 @@ void Core<Id>::on_receive( const boost::system::error_code& error
   assert(msg);
 
   if (msg->type == MessageType::reliable) {
-    // If the remote peer is sending too fast we refuse to receive
-    // and acknowledge the message.
-    //
-    // TODO: Operator map::operator[] creates an entry in the map,
-    //       we should only create the entry once a Syn packet is
-    //       exchanged (sockets connect).
-    if (_inbound_acks[msg->source].try_add(msg->sequence_number)) {
-      _on_recv(msg->source, msg->payload);
+    auto i = _inbound.find(msg->source);
+
+    // If there is no AckSet for this source we haven't received Syn packet
+    // yet.
+    if (i != _inbound.end()) {
+      // If the remote peer is sending too fast we refuse to receive
+      // and acknowledge the message.
+      auto& inbound = i->second;
+
+      if (inbound.acks.try_add(msg->sequence_number)) {
+        if (msg->sequence_number == inbound.last_message + 1) {
+          auto was_destroyed = _was_destroyed;
+
+          auto sn = msg->sequence_number;
+
+          inbound.last_message = sn;
+          _on_recv(msg->source, msg->payload);
+          if (*was_destroyed) return;
+
+          auto& pending = inbound.pending;
+
+          for (auto i = pending.begin(); i != pending.end();) {
+            if (i->first != ++sn) {
+              break;
+            }
+
+            inbound.last_message = sn;
+            _on_recv(msg->source, msg->payload);
+            if (*was_destroyed) return;
+
+            i = pending.erase(i);
+          }
+        }
+        else if (msg->sequence_number > inbound.last_message + 1) {
+          auto start = boost::asio::buffer_cast<const uint8_t*>(msg->payload);
+          auto size  = boost::asio::buffer_size(msg->payload);
+
+          std::vector<uint8_t> data(start, start + size);
+
+          inbound.pending.emplace(msg->sequence_number, std::move(data));
+        }
+      }
     }
   }
   else if (msg->type == MessageType::unreliable) {
     _on_recv(msg->source, msg->payload);
   }
+  else if (msg->type == MessageType::syn) {
+    auto i = _inbound.find(msg->source);
+
+    if (i == _inbound.end()) {
+      AckSet acks;
+      acks.try_add(msg->sequence_number);
+      _inbound[msg->source] = Inbound(msg->sequence_number, acks);
+    }
+    else {
+      auto& inbound = i->second;
+
+      if (msg->sequence_number == inbound.last_message + 1) {
+        inbound.last_message = msg->sequence_number;
+      }
+
+      inbound.acks.try_add(msg->sequence_number);
+    }
+  }
   else {
-    assert(0 && "TODO: More msg types will come");
+    assert(0);
   }
 }
 
@@ -332,7 +453,14 @@ void Core<Id>::release( boost::optional<Id> unreliable_id
                       , std::shared_ptr<Message>&& m) {
   // TODO: Split these in two functions.
 
+  // For reliable messages, we only treat as reliable those that originated
+  // here. Also, we don't store unreliable messages that did not originate
+  // here in _unreliable_messages because we don't want this user to change
+  // them anyway.
+  if (m->source != _our_id) return;
+
   if (!unreliable_id) {
+    assert(m->source == _our_id);
     auto i = _reliable_messages.find(m->sequence_number);
     if (i == _reliable_messages.end()) return;
     if (m.use_count() > 1) return; // Someone else still uses this message.

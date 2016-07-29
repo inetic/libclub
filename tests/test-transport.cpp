@@ -56,6 +56,19 @@ using TransportPtr = std::unique_ptr<Transport>;
 
 namespace asio = boost::asio;
 
+// -------------------------------------------------------------------
+class Debugger {
+public:
+  Debugger() : next_map_id(0) {}
+
+  void map(const uuid& id) {
+    cout << "Map(" << id << ")-><" << next_map_id++ << ">" << endl;
+  }
+
+private:
+  size_t next_map_id;
+};
+
 //------------------------------------------------------------------------------
 namespace std {
 std::ostream& operator<<(std::ostream& os, const vector<uint8_t>& v) {
@@ -147,7 +160,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
   n2.on_recv = [&](auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
-    if (counter++ == 0) {
+    if (++counter == 1) {
       BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
     }
     else {
@@ -464,7 +477,43 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast) {
+BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
+  asio::io_service ios;
+
+  //  n1 -> n2 -> n3
+
+  Node n1, n2, n3;
+
+  size_t count = 0;
+
+  auto on_recv = [&](auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+
+    if (++count == 2) {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    }
+  };
+
+  n2.on_recv = on_recv;
+  n3.on_recv = on_recv;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+
+  n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
+
+  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n2.id});
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
   asio::io_service ios;
 
   //        n3
@@ -499,6 +548,12 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast) {
 
   n1.transports[n2.id]->add_target(n3.id);
   n1.transports[n2.id]->add_target(n4.id);
+
+  n4.transports[n2.id]->add_target(n1.id);
+  n4.transports[n2.id]->add_target(n3.id);
+
+  n3.transports[n2.id]->add_target(n1.id);
+  n3.transports[n2.id]->add_target(n4.id);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id, n4.id});
 

@@ -12,7 +12,7 @@ find_package(Threads)
 # TODO: I added the -fno-stack-protector flag there because I was getting
 #       crashes in TimeoutSocket (in the space invaders game). Find out
 #       why it was happening and remove the flag.
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -Wall -fno-stack-protector")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -Wall -ggdb -fno-stack-protector")
 
 include_directories(
   "${Boost_INCLUDE_DIR}"
@@ -31,7 +31,7 @@ project (club-tests)
 find_package(Boost ${BOOST_VERSION} COMPONENTS system unit_test_framework REQUIRED)
 find_package(Threads)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -ggdb")
 
 include_directories(
   "${Boost_INCLUDE_DIR}"

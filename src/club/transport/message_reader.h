@@ -114,6 +114,8 @@ boost::optional<InMessage> MessageReader::read_one_message() {
   auto payload = const_buffer(_decoder.current(), message_size);
   auto payload_with_type = const_buffer(type_start, message_size + header_size);
 
+  _decoder.skip(message_size);
+
   return InMessage( move(source)
                   , move(targets)
                   , message_type

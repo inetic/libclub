@@ -19,6 +19,7 @@
 #include <binary/encoded.h>
 
 #include "sequence_number.h"
+#include "club/debug/ostream_uuid.h"
 
 namespace binary { class decoder; }
 
@@ -140,23 +141,25 @@ inline
 std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
   os << "(AckSet ";
 
-  if (!acks.is_empty) {
-    os << acks.highest_sequence_number << " ";
-  }
-  else {
-    os << "none ";
-  }
+  //if (!acks.is_empty) {
+  //  os << acks.highest_sequence_number << " ";
+  //}
+  //else {
+  //  os << "none ";
+  //}
 
-  os << (acks.is_empty ? "empty " : "not-empty ");
+  //os << (acks.is_empty ? "empty " : "not-empty ");
 
-  for (int i = 0; i < 31; ++i) {
-    os << ((acks.predecessors & (1 << i)) ? "1" : "0");
-  }
+  //for (int i = 0; i < 31; ++i) {
+  //  os << ((acks.predecessors & (1 << i)) ? "1" : "0");
+  //}
 
-  os << " {";
+  os << "{";
 
+  auto cnt = 0;
   for (auto i = acks.begin(); i != acks.end(); ++i) {
-    os << *i << " ";
+    if (cnt++) { os << ", "; }
+    os << *i;
   }
 
   return os << "})";

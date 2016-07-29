@@ -61,7 +61,13 @@ public:
   Transport(Transport&&) = delete;
   Transport& operator=(Transport&&) = delete;
 
+  const uuid& id() const { return core()._our_id; }
+
   void add_target(const uuid&);
+
+  bool has_message(SequenceNumber sn) {
+    return _transmit_queue.has_message(sn);
+  }
 
   ~Transport();
 
@@ -83,6 +89,7 @@ private:
               , std::shared_ptr<SocketState>);
 
   Core& core() { return _transmit_queue.core(); }
+  const Core& core() const { return _transmit_queue.core(); }
 
   void handle_ack_entry(AckEntry);
   void handle_message(std::shared_ptr<SocketState>&, InMessage);
@@ -90,6 +97,7 @@ private:
 private:
   uuid                             _id;
   bool                             _is_sending;
+  std::set<uuid>                   _targets;
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
   TransmitQueue                    _transmit_queue;
@@ -131,7 +139,9 @@ Transport<UnreliableId>::~Transport() {
 template<class Id>
 void Transport<Id>::add_target(const uuid& id)
 {
-  _transmit_queue.add_target(id);
+  if (_targets.insert(id).second) {
+    core().add_target(id);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -178,6 +188,8 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   // Parse Acks
   while (auto opt_ack_entry = _message_reader.read_one_ack_entry()) {
+    assert(opt_ack_entry->from != id());
+    if (opt_ack_entry->from == id()) continue;
     handle_ack_entry(std::move(*opt_ack_entry));
   }
 
@@ -237,6 +249,7 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
   using boost::asio::buffer;
 
   if (_is_sending) return;
+  _is_sending = true;
 
   binary::encoder encoder(state->tx_buffer);
 
@@ -244,13 +257,14 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
 
   // TODO: Should we limit the number of acks we encode here to guarantee
   //       some space for messages?
-  count += core().encode_acks(encoder);
-  count += _transmit_queue.encode_few(encoder);
+  count += core().encode_acks(encoder, _targets);
+  count += _transmit_queue.encode_few(encoder, _targets);
 
   if (count == 0) {
     _is_sending = false;
     return;
   }
+
 
   // Get the pointer here because `state` is moved from in arguments below
   // (and order of argument evaluation is undefined).
@@ -286,6 +300,7 @@ void Transport<Id>::on_send( const boost::system::error_code& error
   _timer.async_wait([this, state = move(state)]
                     (const error_code error) {
                       if (state->was_destroyed) return;
+                      _is_sending = false;
                       if (error) return;
                       start_sending(move(state));
                     });
