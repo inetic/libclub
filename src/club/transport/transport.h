@@ -27,6 +27,8 @@ namespace club { namespace transport {
 template<typename UnreliableId>
 class Transport {
 private:
+  enum class SendState { sending, waiting, pending };
+
   static const size_t max_message_size = 65536;
 
   using udp = boost::asio::ip::udp;
@@ -69,6 +71,11 @@ public:
     return _transmit_queue.has_message(sn);
   }
 
+  bool is_sending() const {
+    return _send_state == SendState::sending
+        || _send_state == SendState::waiting;
+  }
+
   ~Transport();
 
 private:
@@ -96,7 +103,7 @@ private:
 
 private:
   uuid                             _id;
-  bool                             _is_sending;
+  SendState                        _send_state;
   std::set<uuid>                   _targets;
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
@@ -116,7 +123,7 @@ Transport<UnreliableId>
            , udp::endpoint         remote_endpoint
            , std::shared_ptr<Core> core)
   : _id(std::move(id))
-  , _is_sending(false)
+  , _send_state(SendState::pending)
   , _socket(std::move(socket))
   , _remote_endpoint(std::move(remote_endpoint))
   , _transmit_queue(std::move(core))
@@ -191,6 +198,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
     assert(opt_ack_entry->from != id());
     if (opt_ack_entry->from == id()) continue;
     handle_ack_entry(std::move(*opt_ack_entry));
+    if (state->was_destroyed) return;
   }
 
   // Parse messages
@@ -248,8 +256,7 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
   using std::move;
   using boost::asio::buffer;
 
-  if (_is_sending) return;
-  _is_sending = true;
+  if (_send_state != SendState::pending) return;
 
   binary::encoder encoder(state->tx_buffer);
 
@@ -261,10 +268,11 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
   count += _transmit_queue.encode_few(encoder, _targets);
 
   if (count == 0) {
-    _is_sending = false;
+    core().try_flush();
     return;
   }
 
+  _send_state = SendState::sending;
 
   // Get the pointer here because `state` is moved from in arguments below
   // (and order of argument evaluation is undefined).
@@ -288,6 +296,12 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
   if (state->was_destroyed) return;
 
+  _send_state = SendState::pending;
+
+  if (core().try_flush()) {
+    return;
+  }
+
   if (error) {
     if (error == boost::asio::error::operation_aborted) {
       return;
@@ -295,12 +309,14 @@ void Transport<Id>::on_send( const boost::system::error_code& error
     assert(0);
   }
 
+  _send_state = SendState::waiting;
+
   // TODO: Proper congestion control
   _timer.expires_from_now(std::chrono::milliseconds(100));
   _timer.async_wait([this, state = move(state)]
                     (const error_code error) {
                       if (state->was_destroyed) return;
-                      _is_sending = false;
+                      _send_state = SendState::pending;
                       if (error) return;
                       start_sending(move(state));
                     });

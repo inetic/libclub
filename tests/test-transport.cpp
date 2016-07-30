@@ -20,6 +20,7 @@
 #include <boost/functional/hash.hpp>
 #include <transport/transport.h>
 #include <debug/string_tools.h>
+#include "when_all.h"
 
 //------------------------------------------------------------------------------
 // The transport tests that have the prefix 'test_transport_reliable*' should
@@ -108,6 +109,10 @@ struct Node {
     transport_core->send_reliable(move(data), move(targets));
   }
 
+  template<class OnFlush> void flush(OnFlush on_flush) {
+    transport_core->flush(move(on_flush));
+  }
+
   Node()
     : id(boost::uuids::random_generator()())
     , transport_core(make_shared<Core>( id
@@ -135,16 +140,25 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
 
   Node n1, n2;
 
+  WhenAll when_all;
+  auto when_recv = when_all.make_continuation();
+
   n2.on_recv = [&](auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-    n1.transports.clear();
-    n2.transports.clear();
+    when_recv();
   };
 
   connect_nodes(ios, n1, n2);
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }

@@ -32,6 +32,7 @@ template<typename UnreliableId>
 class Core {
 private:
   using OnReceive          = std::function<void(uuid, boost::asio::const_buffer)>;
+  using OnFlush            = std::function<void()>;
   using Queue              = TransmitQueue<UnreliableId>;
   using Message            = transport::OutMessage;
   using Transport          = transport::Transport<UnreliableId>;
@@ -49,10 +50,9 @@ public:
                       , std::vector<uint8_t>&& data
                       , std::set<uuid>         targets);
 
-  void on_receive_acks(const uuid&, AckSet);
-  void acknowledge(const uuid&, SequenceNumber);
-
   const uuid& id() const { return _our_id; }
+
+  void flush(OnFlush);
 
   ~Core();
 
@@ -73,6 +73,11 @@ private:
 
   void on_receive( const boost::system::error_code&
                  , const InMessage*);
+
+  void on_receive_acks(const uuid&, AckSet);
+  void acknowledge(const uuid&, SequenceNumber);
+
+  bool try_flush();
 
 private:
   struct Inbound {
@@ -97,6 +102,7 @@ private:
   UnreliableMessages     _unreliable_messages;
 
   std::set<uuid>         _all_targets;
+  OnFlush                _on_flush;
 
   std::map<uuid, Inbound>                _inbound;
   std::map<uuid, std::map<uuid, AckSet>> _outbound_acks;
@@ -204,15 +210,26 @@ void Core<Id>::acknowledge(const uuid& from, SequenceNumber sn) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
-  for (auto sn : acks) {
+  bool acked_some = false;
 
+  for (auto sn : acks) {
     auto i = _reliable_messages.find(sn);
 
     if (i != _reliable_messages.end()) {
       if (auto message = i->second.lock()) {
         message->targets.erase(target);
+
+        if (message->targets.empty()) {
+          _reliable_messages.erase(i);
+        }
+
+        acked_some = true;
       }
     }
+  }
+
+  if (acked_some) {
+    try_flush();
   }
 }
 
@@ -477,7 +494,38 @@ void Core<Id>::release( boost::optional<Id> unreliable_id
 }
 
 //------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::flush(OnFlush on_flush) {
+  _on_flush = std::move(on_flush);
+}
 
+//------------------------------------------------------------------------------
+template<class Id>
+bool Core<Id>::try_flush() {
+  if (!_on_flush) return false;
+
+  // TODO: We should probably also check that all acks has been sent.
+
+  if (!_reliable_messages.empty() || !_unreliable_messages.empty()) {
+    return false;
+  }
+
+  // TODO: Transports could increment and decrement some counter when sending
+  // and finishing sending so that we wouldn't have to iterate here through
+  // the transports.
+  for (auto t : _transports) {
+    if (t->is_sending()) {
+      return false;
+    }
+  }
+
+  auto on_flush = std::move(_on_flush);
+  on_flush();
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
 }} // club::transport namespace
 
 #endif // ifndef CLUB_TRANSPORT_CORE_H
