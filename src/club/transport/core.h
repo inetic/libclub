@@ -96,6 +96,10 @@ private:
 private:
   uuid                   _our_id;
   OnReceive              _on_recv;
+  // TODO: This sequence number needs to be split into two, one for
+  // reliable messages only, and one for both: reliable and unreliable.
+  // The latter shall be used to count dropped packets (so even a particular
+  // message shall have different such number each time it is sent).
   SequenceNumber         _next_sequence_number;
   std::set<Transport*>   _transports;
   ReliableMessages       _reliable_messages;
