@@ -77,7 +77,7 @@ private:
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, SequenceNumber);
 
-  bool try_flush();
+  void try_flush();
 
 private:
   struct Inbound {
@@ -500,29 +500,26 @@ void Core<Id>::flush(OnFlush on_flush) {
 }
 
 //------------------------------------------------------------------------------
-template<class Id>
-bool Core<Id>::try_flush() {
-  if (!_on_flush) return false;
+template<class Id> void Core<Id>::try_flush() {
+  if (!_on_flush) return;
 
-  // TODO: We should probably also check that all acks has been sent.
+  // TODO: We should probably also check that all acks have been sent.
 
   if (!_reliable_messages.empty() || !_unreliable_messages.empty()) {
-    return false;
+    return;
   }
 
   // TODO: Transports could increment and decrement some counter when sending
   // and finishing sending so that we wouldn't have to iterate here through
   // the transports.
   for (auto t : _transports) {
-    if (t->is_sending()) {
-      return false;
-    }
+    if (t->is_sending()) return;
   }
 
   auto on_flush = std::move(_on_flush);
   on_flush();
 
-  return true;
+  return;
 }
 
 //------------------------------------------------------------------------------

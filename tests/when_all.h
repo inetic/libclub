@@ -45,6 +45,12 @@ public:
     };
   }
 
+  template<class F> auto make_continuation(F f) {
+    using std::move;
+    auto c = make_continuation();
+    return [c = move(c), f = move(f)](auto ...args) { f(c, args...); };
+  }
+
   template<class F> void on_complete(F on_complete) {
     *_handler = std::move(on_complete);
   }

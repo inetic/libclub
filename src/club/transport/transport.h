@@ -298,9 +298,7 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
   _send_state = SendState::pending;
 
-  if (core().try_flush()) {
-    return;
-  }
+  core().try_flush();
 
   if (error) {
     if (error == boost::asio::error::operation_aborted) {

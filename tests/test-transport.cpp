@@ -141,13 +141,12 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
   Node n1, n2;
 
   WhenAll when_all;
-  auto when_recv = when_all.make_continuation();
 
-  n2.on_recv = [&](auto s, auto b) {
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-    when_recv();
-  };
+    c();
+  });
 
   connect_nodes(ios, n1, n2);
 
@@ -171,7 +170,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
     if (++counter == 1) {
@@ -179,15 +180,21 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
     }
     else {
       BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({4,5,6,7}));
-      n1.transports.clear();
-      n2.transports.clear();
+      c();
     }
-  };
+  });
 
   connect_nodes(ios, n1, n2);
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
   n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -200,7 +207,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
     if (counter++ == 0) {
@@ -209,14 +218,20 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
     }
     else {
       BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({4,5,6,7}));
-      n1.transports.clear();
-      n2.transports.clear();
+      c();
     }
-  };
+  });
 
   connect_nodes(ios, n1, n2);
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -229,30 +244,30 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
 
   connect_nodes(ios, n1, n2);
 
-  size_t counter = 0;
+  WhenAll when_all;
 
-  n1.on_recv = [&](auto s, auto b) {
+  n1.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n2.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({2,3,4,5}));
+    c();
+  });
 
-    if (counter++ == 1) {
-      n1.transports.clear();
-      n2.transports.clear();
-    }
-  };
-
-  n2.on_recv = [&](auto s, auto b) {
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-
-    if (counter++ == 1) {
-      n1.transports.clear();
-      n2.transports.clear();
-    }
-  };
+    c();
+  });
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
   n2.send_unreliable(std::vector<uint8_t>{2,3,4,5}, set<uuid>{n1.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -267,18 +282,28 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
-  // Tell n1 that it can reach n3 through n2.
+  // Setup routing tables
   n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
 
-  n3.on_recv = [&](auto, auto b) {
+  WhenAll when_all;
+
+  n3.on_recv = when_all.make_continuation([&](auto c, auto, auto b) {
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-
-    n1.transports.clear();
-    n2.transports.clear();
-    n3.transports.clear();
-  };
+    c();
+  });
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    });
 
   ios.run();
 }
@@ -298,18 +323,31 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_two_hops) {
   n1.transports[n2.id]->add_target(n3.id);
   n1.transports[n2.id]->add_target(n4.id);
   n2.transports[n3.id]->add_target(n4.id);
+  n3.transports[n2.id]->add_target(n1.id);
+  n4.transports[n3.id]->add_target(n1.id);
+  n4.transports[n3.id]->add_target(n2.id);
 
-  n4.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n4.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-
-    n1.transports.clear();
-    n2.transports.clear();
-    n3.transports.clear();
-    n4.transports.clear();
-  };
+    c();
+  });
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n4.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+  n4.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+      n4.transports.clear();
+    });
 
   ios.run();
 }
@@ -324,23 +362,31 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n1, n3);
 
-  size_t counter = 0;
+  WhenAll when_all;
 
-  auto on_recv = [&](auto s, auto b) {
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+    c();
+  });
 
-    if (++counter == 2) {
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
+    BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
+    c();
+  });
+
+  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
       n1.transports.clear();
       n2.transports.clear();
       n3.transports.clear();
-    }
-  };
-
-  n2.on_recv = on_recv;
-  n3.on_recv = on_recv;
-
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id});
+    });
 
   ios.run();
 }
@@ -362,25 +408,37 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   // Setup routing tables
   n1.transports[n2.id]->add_target(n3.id);
   n1.transports[n2.id]->add_target(n4.id);
+  n3.transports[n2.id]->add_target(n1.id);
+  n3.transports[n2.id]->add_target(n4.id);
+  n4.transports[n2.id]->add_target(n1.id);
+  n4.transports[n2.id]->add_target(n3.id);
 
   size_t counter = 0;
 
-  auto on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-
-    if (++counter == 2) {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-      n4.transports.clear();
-    }
-  };
+    if (++counter == 2) c();
+  });
 
   n3.on_recv = on_recv;
   n4.on_recv = on_recv;
 
   n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n4.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+  n4.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+      n4.transports.clear();
+    });
 
   ios.run();
 }
@@ -391,16 +449,25 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
 
   Node n1, n2;
 
-  n2.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
-    n1.transports.clear();
-    n2.transports.clear();
-  };
+    c();
+  });
 
   connect_nodes(ios, n1, n2);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -413,7 +480,9 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
     if (counter++ == 0) {
@@ -421,15 +490,22 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
     }
     else {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
-      n1.transports.clear();
-      n2.transports.clear();
+      c();
     }
-  };
+  });
 
   connect_nodes(ios, n1, n2);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
   n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -442,24 +518,33 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
 
   size_t counter = 0;
 
-  n2.on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
     if (counter++ == 0) {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
 
       n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+      n1.flush(when_all.make_continuation());
     }
     else {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
-      n1.transports.clear();
-      n2.transports.clear();
+      c();
     }
-  };
+  });
 
   connect_nodes(ios, n1, n2);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
 
   ios.run();
 }
@@ -471,21 +556,32 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
   // n1 -> n2 -> n3
   Node n1, n2, n3;
 
-  n3.on_recv = [&](auto s, auto b) {
-    BOOST_REQUIRE(s == n1.id);
+  WhenAll when_all;
 
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE(s == n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    n1.transports.clear();
-    n2.transports.clear();
-    n3.transports.clear();
-  };
+    c();
+  });
 
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
+  // Setup routing tables
   n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    });
 
   ios.run();
 }
@@ -495,22 +591,17 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   asio::io_service ios;
 
   //  n1 -> n2 -> n3
-
   Node n1, n2, n3;
 
   size_t count = 0;
 
-  auto on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
-
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-
-    if (++count == 2) {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-    }
-  };
+    if (++count == 2) c();
+  });
 
   n2.on_recv = on_recv;
   n3.on_recv = on_recv;
@@ -518,10 +609,21 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
+  // Setup routing tables
   n1.transports[n2.id]->add_target(n3.id);
   n3.transports[n2.id]->add_target(n1.id);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n2.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    });
 
   ios.run();
 }
@@ -539,18 +641,15 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
 
   size_t count = 0;
 
-  auto on_recv = [&](auto s, auto b) {
+  WhenAll when_all;
+
+  auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(s == n1.id);
 
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
 
-    if (++count == 3) {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-      n4.transports.clear();
-    }
-  };
+    if (++count == 3) c();
+  });
 
   n2.on_recv = on_recv;
   n3.on_recv = on_recv;
@@ -560,16 +659,27 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
   connect_nodes(ios, n2, n3);
   connect_nodes(ios, n2, n4);
 
+  // Setup routing tables
   n1.transports[n2.id]->add_target(n3.id);
   n1.transports[n2.id]->add_target(n4.id);
-
   n4.transports[n2.id]->add_target(n1.id);
   n4.transports[n2.id]->add_target(n3.id);
-
   n3.transports[n2.id]->add_target(n1.id);
   n3.transports[n2.id]->add_target(n4.id);
 
   n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id, n4.id});
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+  n4.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+      n4.transports.clear();
+    });
 
   ios.run();
 }
