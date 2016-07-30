@@ -182,7 +182,8 @@ void Transport<Id>::on_receive( boost::system::error_code    error
   if (state->was_destroyed) return;
 
   if (error) {
-    return core().on_receive(error, nullptr);
+    //core().handle_send_error(error);
+    assert(0 && "TODO: Handle send error");
   }
 
   // Ignore packets from unknown sources.
@@ -238,7 +239,7 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
 
     core().acknowledge(msg.source, msg.sequence_number);
 
-    core().on_receive(boost::system::error_code(), &msg);
+    core().on_receive(std::move(msg));
 
     if (state->was_destroyed) return;
 

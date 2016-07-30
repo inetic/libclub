@@ -40,8 +40,6 @@ private:
   using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
   using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
-  using PendingMessages = std::map<SequenceNumber, std::vector<uint8_t>>;
-
 public:
   Core(uuid our_id, OnReceive);
 
@@ -73,8 +71,7 @@ private:
 
   void add_target(uuid);
 
-  void on_receive( const boost::system::error_code&
-                 , const InMessage*);
+  void on_receive(InMessage);
 
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, SequenceNumber);
@@ -82,6 +79,34 @@ private:
   void try_flush();
 
 private:
+  struct PendingEntry {
+    InMessage            message;
+    std::vector<uint8_t> data;
+
+    PendingEntry(PendingEntry&&)                 = default;
+    PendingEntry(const PendingEntry&)            = delete;
+    PendingEntry& operator=(const PendingEntry&) = delete;
+
+    PendingEntry(InMessage m)
+      : message(std::move(m))
+      , data( boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
+            , boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
+              + boost::asio::buffer_size(message.type_and_payload) )
+    {
+      using boost::asio::const_buffer;
+      using boost::asio::buffer_size;
+
+      size_t type_size = buffer_size(message.type_and_payload)
+                       - buffer_size(message.payload);
+
+      message.type_and_payload = const_buffer(data.data(), data.size());
+      message.payload          = const_buffer( data.data() + type_size
+                                             , data.size() - type_size);
+    }
+  };
+
+  using PendingMessages = std::map<SequenceNumber, PendingEntry>;
+
   struct Inbound {
     SequenceNumber  last_executed_message;
     AckSet          acks;
@@ -390,17 +415,9 @@ void Core<Id>::forward_message(InMessage&& msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::on_receive( const boost::system::error_code& error
-                         , const InMessage* msg) {
-  if (error) {
-    assert(0 && "TODO: Handle error");
-    return;
-  }
-
-  assert(msg);
-
-  if (msg->type == MessageType::reliable) {
-    auto i = _inbound.find(msg->source);
+void Core<Id>::on_receive(InMessage msg) {
+  if (msg.type == MessageType::reliable) {
+    auto i = _inbound.find(msg.source);
 
     // If there is no AckSet for this source we haven't received Syn packet
     // yet.
@@ -409,14 +426,14 @@ void Core<Id>::on_receive( const boost::system::error_code& error
       // and acknowledge the message.
       auto& inbound = i->second;
 
-      if (inbound.acks.try_add(msg->sequence_number)) {
-        if (msg->sequence_number == inbound.last_executed_message + 1) {
+      if (inbound.acks.try_add(msg.sequence_number)) {
+        if (msg.sequence_number == inbound.last_executed_message + 1) {
           auto was_destroyed = _was_destroyed;
 
-          auto sn = msg->sequence_number;
+          auto sn = msg.sequence_number;
 
           inbound.last_executed_message = sn;
-          _on_recv(msg->source, msg->payload);
+          _on_recv(msg.source, msg.payload);
           if (*was_destroyed) return;
 
           auto& pending = inbound.pending;
@@ -427,42 +444,40 @@ void Core<Id>::on_receive( const boost::system::error_code& error
             }
 
             inbound.last_executed_message = sn;
-            _on_recv(msg->source, msg->payload);
+
+            _on_recv( i->second.message.source
+                    , i->second.message.payload);
+
             if (*was_destroyed) return;
 
             i = pending.erase(i);
           }
         }
-        else if (msg->sequence_number > inbound.last_executed_message + 1) {
-          auto start = boost::asio::buffer_cast<const uint8_t*>(msg->payload);
-          auto size  = boost::asio::buffer_size(msg->payload);
-
-          std::vector<uint8_t> data(start, start + size);
-
-          inbound.pending.emplace(msg->sequence_number, std::move(data));
+        else if (msg.sequence_number > inbound.last_executed_message + 1) {
+          inbound.pending.emplace(msg.sequence_number, PendingEntry(std::move(msg)));
         }
       }
     }
   }
-  else if (msg->type == MessageType::unreliable) {
-    _on_recv(msg->source, msg->payload);
+  else if (msg.type == MessageType::unreliable) {
+    _on_recv(msg.source, msg.payload);
   }
-  else if (msg->type == MessageType::syn) {
-    auto i = _inbound.find(msg->source);
+  else if (msg.type == MessageType::syn) {
+    auto i = _inbound.find(msg.source);
 
     if (i == _inbound.end()) {
       AckSet acks;
-      acks.try_add(msg->sequence_number);
-      _inbound[msg->source] = Inbound(msg->sequence_number, acks);
+      acks.try_add(msg.sequence_number);
+      _inbound[msg.source] = Inbound(msg.sequence_number, acks);
     }
     else {
       auto& inbound = i->second;
 
-      if (msg->sequence_number == inbound.last_executed_message + 1) {
-        inbound.last_executed_message = msg->sequence_number;
+      if (msg.sequence_number == inbound.last_executed_message + 1) {
+        inbound.last_executed_message = msg.sequence_number;
       }
 
-      inbound.acks.try_add(msg->sequence_number);
+      inbound.acks.try_add(msg.sequence_number);
     }
   }
   else {

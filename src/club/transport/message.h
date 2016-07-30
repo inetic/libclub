@@ -31,8 +31,8 @@ struct InMessage {
         std::set<uuid>            targets;
   const MessageType               type;
   const SequenceNumber            sequence_number;
-  const boost::asio::const_buffer payload;
-  const boost::asio::const_buffer type_and_payload;
+        boost::asio::const_buffer payload;
+        boost::asio::const_buffer type_and_payload;
 
   InMessage( uuid                      source
            , std::set<uuid>&&          targets

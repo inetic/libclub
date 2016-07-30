@@ -31,7 +31,10 @@ project (club-tests)
 find_package(Boost ${BOOST_VERSION} COMPONENTS system unit_test_framework REQUIRED)
 find_package(Threads)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -ggdb")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 \
+                                        -pthread \
+                                        -ggdb \
+                                        -ftemplate-backtrace-limit=0")
 
 include_directories(
   "${Boost_INCLUDE_DIR}"
