@@ -518,8 +518,6 @@ template<class Id> void Core<Id>::try_flush() {
 
   auto on_flush = std::move(_on_flush);
   on_flush();
-
-  return;
 }
 
 //------------------------------------------------------------------------------

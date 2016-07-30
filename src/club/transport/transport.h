@@ -93,6 +93,7 @@ private:
   void start_sending(std::shared_ptr<SocketState>);
 
   void on_send( const boost::system::error_code&
+              , size_t
               , std::shared_ptr<SocketState>);
 
   Core& core() { return _transmit_queue.core(); }
@@ -281,14 +282,15 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
   _socket.async_send_to( buffer(s->tx_buffer.data(), encoder.written())
                        , _remote_endpoint
                        , [this, state = move(state)]
-                         (const error_code& error, std::size_t) {
-                           on_send(error, move(state));
+                         (const error_code& error, std::size_t size) {
+                           on_send(error, size, move(state));
                          });
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
 void Transport<Id>::on_send( const boost::system::error_code& error
+                           , size_t                           size
                            , std::shared_ptr<SocketState>     state)
 {
   using std::move;
@@ -309,8 +311,18 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
   _send_state = SendState::waiting;
 
-  // TODO: Proper congestion control
-  _timer.expires_from_now(std::chrono::milliseconds(100));
+  /*
+   * Wikipedia says [1] that in practice 2G/GPRS capacity is 40kbit/s.
+   * [1] https://en.wikipedia.org/wiki/2G
+   *
+   * We calculate delay:
+   *   delay_s  = size / (400000/8)
+   *   delay_us = 1000000 * size / (400000/8)
+   *   delay_us = 20 * size
+   *
+   * TODO: Proper congestion control
+   */
+  _timer.expires_from_now(std::chrono::microseconds(20*size));
   _timer.async_wait([this, state = move(state)]
                     (const error_code error) {
                       if (state->was_destroyed) return;
