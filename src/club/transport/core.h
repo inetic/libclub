@@ -40,6 +40,8 @@ private:
   using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
   using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
+  using PendingMessages = std::map<SequenceNumber, std::vector<uint8_t>>;
+
 public:
   Core(uuid our_id, OnReceive);
 
@@ -81,14 +83,14 @@ private:
 
 private:
   struct Inbound {
-    SequenceNumber                                 last_message;
-    AckSet                                         acks;
-    std::map<SequenceNumber, std::vector<uint8_t>> pending;
+    SequenceNumber  last_executed_message;
+    AckSet          acks;
+    PendingMessages pending;
 
     Inbound() {}
 
     Inbound(SequenceNumber first, AckSet acks)
-      : last_message(first)
+      : last_executed_message(first)
       , acks(acks)
     {}
   };
@@ -408,12 +410,12 @@ void Core<Id>::on_receive( const boost::system::error_code& error
       auto& inbound = i->second;
 
       if (inbound.acks.try_add(msg->sequence_number)) {
-        if (msg->sequence_number == inbound.last_message + 1) {
+        if (msg->sequence_number == inbound.last_executed_message + 1) {
           auto was_destroyed = _was_destroyed;
 
           auto sn = msg->sequence_number;
 
-          inbound.last_message = sn;
+          inbound.last_executed_message = sn;
           _on_recv(msg->source, msg->payload);
           if (*was_destroyed) return;
 
@@ -424,14 +426,14 @@ void Core<Id>::on_receive( const boost::system::error_code& error
               break;
             }
 
-            inbound.last_message = sn;
+            inbound.last_executed_message = sn;
             _on_recv(msg->source, msg->payload);
             if (*was_destroyed) return;
 
             i = pending.erase(i);
           }
         }
-        else if (msg->sequence_number > inbound.last_message + 1) {
+        else if (msg->sequence_number > inbound.last_executed_message + 1) {
           auto start = boost::asio::buffer_cast<const uint8_t*>(msg->payload);
           auto size  = boost::asio::buffer_size(msg->payload);
 
@@ -456,8 +458,8 @@ void Core<Id>::on_receive( const boost::system::error_code& error
     else {
       auto& inbound = i->second;
 
-      if (msg->sequence_number == inbound.last_message + 1) {
-        inbound.last_message = msg->sequence_number;
+      if (msg->sequence_number == inbound.last_executed_message + 1) {
+        inbound.last_executed_message = msg->sequence_number;
       }
 
       inbound.acks.try_add(msg->sequence_number);
