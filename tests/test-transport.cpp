@@ -58,12 +58,23 @@ using TransportPtr = std::unique_ptr<Transport>;
 namespace asio = boost::asio;
 
 // -------------------------------------------------------------------
-class Debugger {
+class Debug {
 public:
-  Debugger() : next_map_id(0) {}
+  Debug() : next_map_id(0) {}
 
-  void map(const uuid& id) {
-    cout << "Map(" << id << ")-><" << next_map_id++ << ">" << endl;
+  template<class... Nodes> Debug(const Nodes&... nodes)
+    : next_map_id(0) {
+    map(nodes...);
+  }
+
+  template<class Node> void map(const Node& n) {
+    cout << "Map(" << n.id << ")-><" << next_map_id++ << ">" << endl;
+  }
+
+  template<class Node, class... Nodes>
+  void map(const Node& n, const Nodes&... rest) {
+    map(n);
+    map(rest...);
   }
 
 private:
@@ -200,6 +211,40 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
 }
 
 //------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_many_messages) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t counter = 0;
+
+  WhenAll when_all;
+
+  const uint8_t N = 64;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({counter++}));
+    if (counter == N) c();
+  });
+
+  connect_nodes(ios, n1, n2);
+
+  for (uint8_t i = 0; i < N; ++i) {
+    n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+  }
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
   asio::io_service ios;
 
@@ -273,7 +318,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop) {
   asio::io_service ios;
 
   // n1 -> n2 -> n3
@@ -309,7 +354,48 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
 }
 
 //------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_two_hops) {
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_many_messages) {
+  asio::io_service ios;
+
+  // n1 -> n2 -> n3
+  Node n1, n2, n3;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+
+  // Setup routing tables
+  n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
+
+  WhenAll when_all;
+
+  const uint8_t N = 64;
+  size_t counter = 0;
+
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({counter++}));
+    if (counter == N) c();
+  });
+
+  for (uint8_t i = 0; i < N; ++i) {
+    n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n3.id});
+  }
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+  n3.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+      n3.transports.clear();
+    });
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_hops) {
   asio::io_service ios;
 
   // n1 -> n2 -> n3 -> n4
@@ -681,5 +767,100 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
 
   ios.run();
 }
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
+  asio::io_service ios;
+
+  std::srand(std::time(0));
+
+  //  n1 -> n2
+
+  Node n1, n2;
+
+  size_t count = 0;
+
+  const uint8_t N = 64;
+
+  WhenAll when_all;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({count++}));
+    if (count == N) c();
+  });
+
+  connect_nodes(ios, n1, n2);
+
+  for (uint8_t i = 0; i < N; ++i) {
+    if (std::rand() % 2) {
+      n1.send_reliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+    }
+    else {
+      n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+    }
+  }
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
+//// TODO: Currently failing: the unreliable packets arrive out of order
+#if 0
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable_one_hop) {
+  asio::io_service ios;
+
+  std::srand(std::time(0));
+
+  //  n1 -> n2 -> n3
+
+  Node n1, n2, n3;
+
+  size_t count = 0;
+
+  const uint8_t N = 64;
+
+  WhenAll when_all;
+
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    cout << ">>>>>>>> " << buf_to_vector(b) << endl;
+    //BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({count++}));
+    if (count == N) c();
+  });
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+
+  n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
+
+  for (uint8_t i = 0; i < N; ++i) {
+    if (std::rand() % 2) {
+      n1.send_reliable(std::vector<uint8_t>{i}, set<uuid>{n3.id});
+    }
+    else {
+      n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n3.id});
+    }
+  }
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
+
+  ios.run();
+}
+#endif // if 0
 
 //------------------------------------------------------------------------------
