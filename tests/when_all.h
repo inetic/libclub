@@ -48,7 +48,9 @@ public:
   template<class F> auto make_continuation(F f) {
     using std::move;
     auto c = make_continuation();
-    return [c = move(c), f = move(f)](auto ...args) { f(c, args...); };
+    return [c = move(c), f = move(f)](auto ...args) {
+             f(c, std::forward<decltype(args)>(args)...);
+           };
   }
 
   template<class F> void on_complete(F on_complete) {

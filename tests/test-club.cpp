@@ -87,21 +87,21 @@ BOOST_AUTO_TEST_CASE(club_one_fusion) {
   bool hubs_fused = false;
 
   make_connected_sockets(ios, [&](SocketPtr s1, SocketPtr s2) {
-      WhenAll on_fuse;
+      WhenAll when_all;
 
-      auto on_fuse1 = on_fuse.make_continuation();
-      r1->fuse(move(*s1), [=](error_code e, uuid) {
-          BOOST_REQUIRE(!e);
-          on_fuse1();
-          });
+      r1->fuse(move(*s1), when_all.make_continuation(
+            [=](auto c, error_code e, uuid) {
+              BOOST_REQUIRE(!e);
+              c();
+            }));
 
-      auto on_fuse2 = on_fuse.make_continuation();
-      r2->fuse(move(*s2), [=](error_code e, uuid) {
-          BOOST_REQUIRE(!e);
-          on_fuse2();
-          });
+      r2->fuse(move(*s2), when_all.make_continuation(
+          [=](auto c, error_code e, uuid) {
+            BOOST_REQUIRE(!e);
+            c();
+          }));
 
-      on_fuse.on_complete([&]() {
+      when_all.on_complete([&]() {
           hubs_fused = true;
           r1.reset();
           r2.reset();
@@ -127,26 +127,25 @@ BOOST_AUTO_TEST_CASE(club_leave_and_remove) {
   //d.map(r1, r2);
 
   make_connected_sockets(ios, [&](SocketPtr s1, SocketPtr s2) {
-      WhenAll all_inserts;
+      WhenAll when_all;
 
       for (auto pair : {make_pair(&r1, s1), make_pair(&r2, s2) }) {
         auto& r = *pair.first;
         auto& s = pair.second;
 
-        auto on_insert = all_inserts.make_continuation();
-        auto on_fuse   = all_inserts.make_continuation();
+        r->on_insert.connect(when_all.make_continuation(
+              [](auto c, set<club::hub::node>) {
+                c();
+              }));
 
-        r->on_insert.connect([&r, on_insert](set<club::hub::node>) {
-            on_insert();
-            });
-
-        r->fuse(move(*s), [&r, on_fuse](error_code e, uuid) {
-            BOOST_CHECK_MESSAGE(!e, e.message());
-            on_fuse();
-            });
+        r->fuse(move(*s), when_all.make_continuation(
+            [](auto c, error_code e, uuid) {
+              BOOST_CHECK_MESSAGE(!e, e.message());
+              c();
+            }));
       }
 
-      all_inserts.on_complete([&]() {
+      when_all.on_complete([&]() {
           hubs_fused = true;
 
           r1.reset();
@@ -183,38 +182,37 @@ BOOST_AUTO_TEST_CASE(club_two_consecutive_fusions) {
   make_connected_sockets(ios, [&](SocketPtr s11, SocketPtr s12) {
     make_connected_sockets(ios, [&, s11, s12](SocketPtr s21, SocketPtr s22) {
 
-      auto on_fuse11 = when_all1.make_continuation();
-      r1->fuse(move(*s11), [=](error_code e, uuid) {
-          BOOST_CHECK(!e);
-          on_fuse11();
-          });
+      r1->fuse(move(*s11), when_all1.make_continuation(
+            [](auto c, error_code e, uuid) {
+              BOOST_CHECK(!e);
+              c();
+            }));
 
-      auto on_fuse12 = when_all1.make_continuation();
-      r2->fuse(move(*s12), [=](error_code e, uuid) {
-          BOOST_CHECK(!e);
-          on_fuse12();
-          });
+      r2->fuse(move(*s12), when_all1.make_continuation(
+            [](auto c, error_code e, uuid) {
+              BOOST_CHECK(!e);
+              c();
+            }));
 
       when_all1.on_complete([&, s21, s22]() mutable {
+          r1->fuse(move(*s21), when_all2.make_continuation(
+                [](auto c, error_code e, uuid) {
+                  BOOST_CHECK(!e);
+                  c();
+                }));
 
-          auto on_fuse23 = when_all2.make_continuation();
-          r1->fuse(move(*s21), [=](error_code e, uuid) {
-              BOOST_CHECK(!e);
-              on_fuse23();
-              });
+          r3->fuse(move(*s22), when_all2.make_continuation(
+                [](auto c, error_code e, uuid) {
+                  BOOST_CHECK(!e);
+                  c();
+                }));
 
-          auto on_fuse24 = when_all2.make_continuation();
-          r3->fuse(move(*s22), [=](error_code e, uuid) {
-              BOOST_CHECK(!e);
-              on_fuse24();
-              });
-        });
-
-      when_all2.on_complete([&]() {
-          hubs_fused = true;
-          r1.reset();
-          r2.reset();
-          r3.reset();
+          when_all2.on_complete([&]() {
+                  hubs_fused = true;
+                  r1.reset();
+                  r2.reset();
+                  r3.reset();
+                });
         });
     });
   });
@@ -284,28 +282,23 @@ void consecutive_fusions(const size_t N) {
     make_connected_sockets(ios, [&, i, cont]
                                 (SocketPtr s1, SocketPtr s2) {
 
-        WhenAll when_both_fuse;
-
-        auto on_fuse1 = when_both_fuse.make_continuation();
-        auto on_fuse2 = when_both_fuse.make_continuation();
+        WhenAll when_all;
 
         size_t j = std::rand() % i;
 
-        //cout << "fusing i:" << i << " j:" << j << endl;
-
-        hubs[j]->fuse(move(*s1), [=](error_code e, uuid) {
+        hubs[j]->fuse(move(*s1), when_all.make_continuation(
+          [](auto c, error_code e, uuid) {
             BOOST_CHECK_MESSAGE(!e, e.message());
-            on_fuse1();
-            });
+            c();
+          }));
 
-        hubs[i]->fuse(move(*s2), [=](error_code e, uuid) {
+        hubs[i]->fuse(move(*s2), when_all.make_continuation(
+          [](auto c, error_code e, uuid) {
             BOOST_CHECK_MESSAGE(!e, e.message());
-            on_fuse2();
-            });
+            c();
+          }));
 
-        when_both_fuse.on_complete([cont]() {
-            cont();
-            });
+        when_all.on_complete(cont);
       });
     });
 
@@ -379,22 +372,21 @@ void fuse_n_hubs( boost::asio::io_service& ios
 
     make_connected_sockets(ios, [i, cont, &hubs] (SocketPtr s1, SocketPtr s2) {
 
-        WhenAll when_both_fuse;
+        WhenAll when_all;
 
-        auto on_fuse1 = when_both_fuse.make_continuation();
-        auto on_fuse2 = when_both_fuse.make_continuation();
+        hubs[0]->fuse(move(*s1), when_all.make_continuation(
+            [](auto c, error_code e, uuid) {
+              BOOST_CHECK_MESSAGE(!e, e.message());
+              c();
+            }));
 
-        hubs[0]->fuse(move(*s1), [=](error_code e, uuid) {
-            BOOST_CHECK_MESSAGE(!e, e.message());
-            on_fuse1();
-            });
+        hubs[i]->fuse(move(*s2), when_all.make_continuation(
+            [](auto c, error_code e, uuid) {
+              BOOST_CHECK_MESSAGE(!e, e.message());
+              c();
+            }));
 
-        hubs[i]->fuse(move(*s2), [=](error_code e, uuid) {
-            BOOST_CHECK_MESSAGE(!e, e.message());
-            on_fuse2();
-            });
-
-        when_both_fuse.on_complete([cont]() { cont(); });
+        when_all.on_complete(cont);
       });
     });
 }
@@ -512,26 +504,25 @@ void construct_network( io_service& ios
       make_connected_sockets(ios, [=](SocketPtr s1, SocketPtr s2) {
           WhenAll when_all;
 
-          auto on_fuse1 = when_all.make_continuation();
-          auto on_fuse2 = when_all.make_continuation();
-
           auto k = state->edge_i.from();
           auto l = state->edge_i.to();
 
           ASSERT(k < state->hubs.size());
           ASSERT(l < state->hubs.size());
 
-          state->hubs[k]->fuse(move(*s1), [=](error_code e, uuid) {
-              BOOST_CHECK_MESSAGE(!e, e.message());
-              --state->fuse_countdown;
-              on_fuse1();
-            });
+          state->hubs[k]->fuse(move(*s1), when_all.make_continuation(
+              [state](auto c, error_code e, uuid) {
+                BOOST_CHECK_MESSAGE(!e, e.message());
+                --state->fuse_countdown;
+                c();
+            }));
 
-          state->hubs[l]->fuse(move(*s2), [=](error_code e, uuid) {
-              BOOST_CHECK_MESSAGE(!e, e.message());
-              --state->fuse_countdown;
-              on_fuse2();
-            });
+          state->hubs[l]->fuse(move(*s2), when_all.make_continuation(
+              [state](auto c, error_code e, uuid) {
+                BOOST_CHECK_MESSAGE(!e, e.message());
+                --state->fuse_countdown;
+                c();
+            }));
 
           when_all.on_complete([=]() {
               ++state->edge_i;
@@ -1264,9 +1255,6 @@ BOOST_AUTO_TEST_CASE(club_stress_fuse) {
 
           WhenAll when_all;
 
-          auto on_drop = when_all.make_continuation();
-          auto on_fuse = when_all.make_continuation();
-
           size_t drop_count = 1 + std::rand() % (hubs1.size() - 1);
           size_t exp_size = hubs1.size() - drop_count;
 
@@ -1274,18 +1262,20 @@ BOOST_AUTO_TEST_CASE(club_stress_fuse) {
             ( ios
             , drop_count
             , move(hubs1)
-            , [&hubs1, exp_size, on_drop](vector<HubPtr>&& hubs) {
+            , when_all.make_continuation(
+              [&hubs1, exp_size](auto c, vector<HubPtr>&& hubs) {
                 BOOST_REQUIRE_EQUAL(hubs.size(), exp_size);
                 hubs1 = move(hubs);
-                on_drop();
-              });
+                c();
+              }));
 
           construct_network( ios
                            , clique_graph(hub_size_2)
-                           , [&, on_fuse](vector<HubPtr> hs) {
-              hubs2 = move(hs);
-              on_fuse();
-            });
+                           , when_all.make_continuation(
+                             [&](auto c, vector<HubPtr> hs) {
+                               hubs2 = move(hs);
+                               c();
+                             }));
 
           when_all.on_complete([&, cont]() {
               size_t exp_size = hubs1.size() + hubs2.size();
