@@ -237,8 +237,6 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
   if (msg.targets.count(_id)) {
     msg.targets.erase(_id);
 
-    core().acknowledge(msg.source, msg.sequence_number);
-
     core().on_receive(std::move(msg));
 
     if (state->was_destroyed) return;

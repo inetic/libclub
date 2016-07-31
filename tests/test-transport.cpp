@@ -279,6 +279,11 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
   // n1 -> n2 -> n3
   Node n1, n2, n3;
 
+  //Debugger d;
+  //d.map(n1.id);
+  //d.map(n2.id);
+  //d.map(n3.id);
+
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
@@ -288,7 +293,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_forward_one_hop) {
 
   WhenAll when_all;
 
-  n3.on_recv = when_all.make_continuation([&](auto c, auto, auto b) {
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE(buf_to_vector(b) == vector<uint8_t>({0,1,2,3}));
     c();
   });
@@ -449,6 +454,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
 
   Node n1, n2;
 
+  //Debugger d;
+  //d.map(n1.id);
+  //d.map(n2.id);
+
   WhenAll when_all;
 
   n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
@@ -555,6 +564,11 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
 
   // n1 -> n2 -> n3
   Node n1, n2, n3;
+
+  //Debugger d;
+  //d.map(n1.id);
+  //d.map(n2.id);
+  //d.map(n3.id);
 
   WhenAll when_all;
 

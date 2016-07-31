@@ -107,6 +107,8 @@ private:
 
   using PendingMessages = std::map<SequenceNumber, PendingEntry>;
 
+  void recursively_apply(SequenceNumber, PendingMessages&);
+
   struct Inbound {
     SequenceNumber  last_executed_message;
     AckSet          acks;
@@ -415,46 +417,54 @@ void Core<Id>::forward_message(InMessage&& msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
+void
+Core<Id>::recursively_apply(SequenceNumber next_sn, PendingMessages& pending) {
+  if (pending.empty()) return;
+  auto i = pending.begin();
+  if (i->first != next_sn) return;
+
+  // Move the entry to this local variable to extend its lifetime beyond the
+  // following erase.
+  auto pending_entry = std::move(i->second);
+  i = pending.erase(i);
+
+  on_receive(std::move(pending_entry.message));
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
 void Core<Id>::on_receive(InMessage msg) {
+  using std::move;
+
   if (msg.type == MessageType::reliable) {
     auto i = _inbound.find(msg.source);
 
     // If there is no AckSet for this source we haven't received Syn packet
     // yet.
     if (i != _inbound.end()) {
-      // If the remote peer is sending too fast we refuse to receive
+      // If the remote peer is sending too quickly we refuse to receive
       // and acknowledge the message.
       auto& inbound = i->second;
 
       if (inbound.acks.try_add(msg.sequence_number)) {
+        acknowledge(msg.source, msg.sequence_number);
+
         if (msg.sequence_number == inbound.last_executed_message + 1) {
           auto was_destroyed = _was_destroyed;
 
           auto sn = msg.sequence_number;
 
+          // TODO: Is OK for invokation of _on_recv to destroy _on_recv?
           inbound.last_executed_message = sn;
           _on_recv(msg.source, msg.payload);
           if (*was_destroyed) return;
 
-          auto& pending = inbound.pending;
-
-          for (auto i = pending.begin(); i != pending.end();) {
-            if (i->first != ++sn) {
-              break;
-            }
-
-            inbound.last_executed_message = sn;
-
-            _on_recv( i->second.message.source
-                    , i->second.message.payload);
-
-            if (*was_destroyed) return;
-
-            i = pending.erase(i);
-          }
+          // This should be the last thing this function does (or you need
+          // to check the was_destroyed flag again).
+          recursively_apply(++sn, inbound.pending);
         }
         else if (msg.sequence_number > inbound.last_executed_message + 1) {
-          inbound.pending.emplace(msg.sequence_number, PendingEntry(std::move(msg)));
+          inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
         }
       }
     }
@@ -463,6 +473,8 @@ void Core<Id>::on_receive(InMessage msg) {
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
+    acknowledge(msg.source, msg.sequence_number);
+
     auto i = _inbound.find(msg.source);
 
     if (i == _inbound.end()) {
@@ -473,14 +485,19 @@ void Core<Id>::on_receive(InMessage msg) {
     else {
       auto& inbound = i->second;
 
+      inbound.acks.try_add(msg.sequence_number);
+
       if (msg.sequence_number == inbound.last_executed_message + 1) {
         inbound.last_executed_message = msg.sequence_number;
+        recursively_apply(msg.sequence_number + 1, inbound.pending);
       }
-
-      inbound.acks.try_add(msg.sequence_number);
+      else if (msg.sequence_number > inbound.last_executed_message + 1) {
+        inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
+      }
     }
   }
   else {
+    // TODO: Disconnect from the sender.
     assert(0);
   }
 }

@@ -160,6 +160,12 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
   if (last == _messages.begin()) { last = --_messages.end(); }
   else --last;
 
+  //for (auto i = _messages.begin(); i != _messages.end();++i) {
+  //  cout << core().id() << " >>>> " << *i->message;
+  //  if (i == current) cout << " *";
+  //  cout << endl;
+  //}
+
   while (true) {
     _next = std::next(current);
 
