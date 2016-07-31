@@ -125,11 +125,12 @@ private:
 private:
   uuid                   _our_id;
   OnReceive              _on_recv;
-  // TODO: This sequence number needs to be split into two, one for
-  // reliable messages only, and one for both: reliable and unreliable.
-  // The latter shall be used to count dropped packets (so even a particular
-  // message shall have different such number each time it is sent).
-  SequenceNumber         _next_sequence_number;
+  SequenceNumber         _next_reliable_broadcast_number;
+  // This number should be unique for each packet sent, i.e. even
+  // a particular message - if sent multiple times - should always
+  // have this number incremented.
+  // TODO: The above currently doesn't hold.
+  SequenceNumber         _next_message_number;
   std::set<Transport*>   _transports;
   ReliableMessages       _reliable_messages;
   UnreliableMessages     _unreliable_messages;
@@ -152,7 +153,8 @@ private:
 template<class Id> Core<Id>::Core(uuid our_id, OnReceive on_recv)
   : _our_id(std::move(our_id))
   , _on_recv(std::move(on_recv))
-  , _next_sequence_number(0) // TODO: Should this be initialized to a random number?
+  , _next_reliable_broadcast_number(0) // TODO: Should this be initialized to a random number?
+  , _next_message_number(0)
   , _was_destroyed(std::make_shared<bool>(false))
 {
 }
@@ -273,7 +275,7 @@ Core<Id>::send_reliable( std::vector<uint8_t>&& data
                        , std::set<uuid>         targets) {
   using namespace std;
 
-  auto sn = _next_sequence_number++;
+  auto sn = _next_reliable_broadcast_number++;
 
   // TODO: It is inefficient to *copy* the data into the new vector just to
   //       prepend a small header (same below).
@@ -314,7 +316,7 @@ void Core<Id>::add_target(uuid new_target) {
   auto inserted = _all_targets.insert(std::move(new_target)).second;
 
   if (inserted) {
-    auto sn = _next_sequence_number++;
+    auto sn = _next_reliable_broadcast_number++;
 
     std::vector<uint8_t> data( binary::encoded<MessageType>::size()
                              + sizeof(SequenceNumber)
@@ -367,7 +369,7 @@ void Core<Id>::send_unreliable( Id                     id
 
     binary::encoder encoder(data_.data(), data_.size());
 
-    auto sn = _next_sequence_number++;
+    auto sn = _next_message_number++;
 
     encoder.put(MessageType::unreliable);
     encoder.put(sn);
