@@ -79,7 +79,7 @@ private:
   void on_receive(InMessage);
 
   void on_receive_acks(const uuid&, AckSet);
-  void acknowledge(const uuid&, SequenceNumber);
+  void acknowledge(const uuid&, AckSet::Type, SequenceNumber);
 
   void try_flush();
 
@@ -122,9 +122,16 @@ private:
 
     boost::optional<Recv> recv;
     PendingMessages       pending;
-    SequenceNumber        next_reliable_message_number;
+  };
 
-    Inbound() : next_reliable_message_number(0) {}
+  struct AckSetId {
+    AckSet::Type ack_type;
+    uuid         source;
+
+    bool operator < (const AckSetId& other) const {
+      return std::tie(ack_type, source)
+           < std::tie(other.ack_type, other.source);
+    }
   };
 
 private:
@@ -142,8 +149,8 @@ private:
   std::set<uuid>         _all_targets;
   OnFlush                _on_flush;
 
-  std::map<uuid, Inbound>                _inbound;
-  std::map<uuid, std::map<uuid, AckSet>> _outbound_acks;
+  std::map<uuid, Inbound>                    _inbound;
+  std::map<uuid, std::map<AckSetId, AckSet>> _outbound_acks;
   //        |              |
   //        |              +-> from
   //        +-> to
@@ -203,7 +210,7 @@ uint8_t Core<Id>::encode_acks( binary::encoder& encoder
     for (auto j = froms.begin(); j != froms.end();) {
       auto tmp_encoder = encoder;
 
-      auto ack_entry = AckEntry{i->first, j->first, j->second};
+      auto ack_entry = AckEntry{i->first, j->first.source, j->second};
       encoder.put(ack_entry);
 
       if (encoder.error()) {
@@ -217,6 +224,7 @@ uint8_t Core<Id>::encode_acks( binary::encoder& encoder
         return count;
       }
 
+      //std::cout << _our_id << " >>> " << ack_entry << std::endl;
       ++count;
 
       j = froms.erase(j);
@@ -237,13 +245,32 @@ uint8_t Core<Id>::encode_acks( binary::encoder& encoder
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::add_ack_entry(AckEntry entry) {
-  _outbound_acks[entry.to][entry.from] = entry.acks;
+  // TODO: Union with the existing AckSet?
+  AckSetId ack_set_id{entry.acks.type(), entry.from};
+  _outbound_acks[entry.to][ack_set_id] = entry.acks;
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::acknowledge(const uuid& from, SequenceNumber sn) {
-  _outbound_acks[from][_our_id].try_add(sn);
+void Core<Id>::acknowledge(const uuid& from
+                          , AckSet::Type type
+                          , SequenceNumber sn) {
+  AckSetId ack_set_id{type, _our_id};
+
+  auto i = _outbound_acks.find(from);
+
+  if (i == _outbound_acks.end()) {
+    _outbound_acks[from].emplace(ack_set_id, AckSet(type, sn));
+  }
+  else {
+    auto j = i->second.find(ack_set_id);
+    if (j == i->second.end()) {
+      _outbound_acks[from].emplace(ack_set_id, AckSet(type, sn));
+    }
+    else {
+      j->second.try_add(sn);
+    }
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -252,7 +279,13 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
   bool acked_some = false;
 
   for (auto sn : acks) {
-    auto i = _messages.find(ReliableBroadcastId{sn});
+    typename Messages::iterator i;
+
+    switch (acks.type()) {
+      case AckSet::Type::directed: i = _messages.find(ReliableDirectedId{target, sn}); break;
+      case AckSet::Type::broadcast: i = _messages.find(ReliableBroadcastId{sn}); break;
+      default: assert(0); return;
+    }
 
     if (i != _messages.end()) {
       if (auto message = i->second.lock()) {
@@ -325,7 +358,7 @@ void Core<Id>::add_target(uuid new_target) {
   if (inserted) {
     _inbound.emplace(new_target, Inbound());
 
-    auto sn = _next_reliable_broadcast_number++;
+    auto sn = _next_reliable_broadcast_number;
 
     std::vector<uint8_t> data( binary::encoded<MessageType>::size()
                              + sizeof(SequenceNumber)
@@ -339,12 +372,12 @@ void Core<Id>::add_target(uuid new_target) {
     encoder.put((uint16_t) 0);
 
     auto message = make_shared<Message>( _our_id
-                                       , set<uuid>(_all_targets)
+                                       , set<uuid>{new_target}
                                        , MessageType::syn
                                        , sn
                                        , move(data));
 
-    ReliableBroadcastId id{sn};
+    ReliableDirectedId id{std::move(new_target), sn};
 
     _messages.emplace(id, message);
 
@@ -472,7 +505,7 @@ void Core<Id>::on_receive(InMessage msg) {
     // If the remote peer is sending too quickly we refuse to receive
     // and acknowledge the message.
     if (inbound.recv->acks.try_add(msg.sequence_number)) {
-      acknowledge(msg.source, msg.sequence_number);
+      acknowledge(msg.source, AckSet::Type::broadcast, msg.sequence_number);
 
       if (msg.sequence_number == inbound.recv->last_executed_message + 1) {
         auto was_destroyed = _was_destroyed;
@@ -497,23 +530,12 @@ void Core<Id>::on_receive(InMessage msg) {
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
-    acknowledge(msg.source, msg.sequence_number);
+    acknowledge(msg.source, AckSet::Type::directed, msg.sequence_number);
 
     if (!inbound.recv) {
       AckSet acks;
-      acks.try_add(msg.sequence_number);
-      inbound.recv = typename Inbound::Recv{msg.sequence_number, acks};
-    }
-    else {
-      inbound.recv->acks.try_add(msg.sequence_number);
-
-      if (msg.sequence_number == inbound.recv->last_executed_message + 1) {
-        inbound.recv->last_executed_message = msg.sequence_number;
-        recursively_apply(msg.sequence_number + 1, inbound.pending);
-      }
-      else if (msg.sequence_number > inbound.recv->last_executed_message + 1) {
-        inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
-      }
+      //acks.try_add(msg.sequence_number);
+      inbound.recv = typename Inbound::Recv{msg.sequence_number-1, acks};
     }
   }
   else {

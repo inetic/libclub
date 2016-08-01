@@ -217,6 +217,8 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 //------------------------------------------------------------------------------
 template<class Id>
 void Transport<Id>::handle_ack_entry(AckEntry entry) {
+  //std::cout << _id << " <<< " << entry << std::endl;
+
   if (entry.to == _id) {
     assert(entry.from != _id);
     core().on_receive_acks(entry.from, entry.acks);
@@ -242,6 +244,8 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
     if (!msg.targets.empty()) {
       core().forward_message(msg);
     }
+
+    //std::cout << _id << " <<< " << msg << std::endl;
 
     core().on_receive(std::move(msg));
 

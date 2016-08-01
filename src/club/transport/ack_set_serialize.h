@@ -23,7 +23,8 @@
 namespace binary {
   template<> struct encoded<::club::transport::AckSet> {
     static size_t size() {
-      return sizeof(::club::transport::SequenceNumber)
+      return sizeof(uint8_t) // type
+           + sizeof(::club::transport::SequenceNumber)
            + sizeof(uint32_t);
     }
   };
@@ -34,6 +35,10 @@ namespace club { namespace transport {
 //------------------------------------------------------------------------------
 template<typename Encoder>
 inline void encode( Encoder& e, const AckSet& ack_set) {
+  assert(ack_set._type == AckSet::Type::broadcast
+      || ack_set._type == AckSet::Type::directed);
+
+  e.put((uint8_t) ack_set._type);
   e.put((SequenceNumber) ack_set.highest_sequence_number);
 
   uint32_t mixed = ack_set.predecessors
@@ -44,6 +49,14 @@ inline void encode( Encoder& e, const AckSet& ack_set) {
 
 //------------------------------------------------------------------------------
 inline void decode(binary::decoder& d, AckSet& ack_set) {
+  ack_set._type = static_cast<AckSet::Type>(d.get<uint8_t>());
+
+  if (ack_set._type != AckSet::Type::broadcast
+      && ack_set._type != AckSet::Type::directed) {
+    assert(0);
+    return d.set_error();
+  }
+
   if (d.error()) return;
 
   ack_set.highest_sequence_number = d.get<SequenceNumber>();

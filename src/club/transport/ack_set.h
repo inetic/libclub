@@ -27,7 +27,12 @@ namespace club { namespace transport {
 
 class AckSet {
 public:
+  enum class Type { broadcast, directed, unset };
+
+public:
   AckSet();
+  AckSet(Type);
+  AckSet(Type, SequenceNumber);
 
   bool try_add(SequenceNumber new_sn);
 
@@ -70,11 +75,14 @@ public:
 
   iterator end() const { return iterator(*this, 32); }
 
+  Type type() const { return _type; }
+
 private:
   friend std::ostream& operator<<(std::ostream&, const AckSet&);
   friend void decode(binary::decoder&, AckSet&);
   template<typename Encoder> friend void encode(Encoder&, const AckSet&);
 
+  Type           _type;
   SequenceNumber highest_sequence_number;
   SequenceNumber lowest_sequence_number;
 
@@ -86,9 +94,25 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 inline AckSet::AckSet()
-  : predecessors(0)
+  : _type(Type::unset)
+  , predecessors(0)
   , is_empty(true)
 {}
+
+inline AckSet::AckSet(Type type)
+  : _type(type)
+  , predecessors(0)
+  , is_empty(true)
+{}
+
+inline AckSet::AckSet(Type type, SequenceNumber sn)
+  : _type(type)
+  , predecessors(0)
+  , is_empty(false)
+{
+  highest_sequence_number = sn;
+  lowest_sequence_number  = sn;
+}
 
 inline bool AckSet::try_add(SequenceNumber new_sn) {
   if (is_empty) {
@@ -140,6 +164,12 @@ inline bool AckSet::try_add(SequenceNumber new_sn) {
 inline
 std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
   os << "(AckSet ";
+
+  switch (acks._type) {
+    case AckSet::Type::broadcast: os << "broadcast "; break;
+    case AckSet::Type::directed:  os << "directed "; break;
+    case AckSet::Type::unset:     os << "unset "; break;
+  }
 
   //if (!acks.is_empty) {
   //  os << acks.highest_sequence_number << " ";

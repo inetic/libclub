@@ -29,6 +29,7 @@ struct AckEntry {
 //------------------------------------------------------------------------------
 template<typename Encoder>
 inline void encode(Encoder& e, const AckEntry& ack_entry) {
+  assert(ack_entry.acks.type() != AckSet::Type::unset);
   e.put(ack_entry.to);
   e.put(ack_entry.from);
   e.put(ack_entry.acks);
@@ -39,6 +40,7 @@ inline void decode(binary::decoder& d, AckEntry& ack_entry) {
   ack_entry.to   = d.get<uuid>();
   ack_entry.from = d.get<uuid>();
   ack_entry.acks = d.get<AckSet>();
+  assert(d.error() || ack_entry.acks.type() != AckSet::Type::unset);
 }
 
 //------------------------------------------------------------------------------

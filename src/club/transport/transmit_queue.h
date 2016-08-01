@@ -198,7 +198,7 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     ++count;
 
-    //cout << core().id() << " sending " << *current->message << endl;
+    //cout << core().id() << " >>> " << *current->message << endl;
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.

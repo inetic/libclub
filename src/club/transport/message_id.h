@@ -34,6 +34,16 @@ struct UnreliableBroadcastId {
   }
 };
 
+struct ReliableDirectedId {
+  uuid           target;
+  SequenceNumber number;
+
+  bool operator < (ReliableDirectedId other) const {
+    return std::tie(number, target)
+         < std::tie(other.number, other.target);
+  }
+};
+
 struct ForwardId {
   bool operator < (ForwardId other) const {
     // Currently we're not storing this in outgoing messages.
@@ -46,6 +56,7 @@ struct ForwardId {
 template<class UnreliableId>
 using MessageId = boost::variant< ReliableBroadcastId
                                 , UnreliableBroadcastId<UnreliableId>
+                                , ReliableDirectedId
                                 , ForwardId
                                 >;
 

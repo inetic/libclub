@@ -69,6 +69,7 @@ void MessageReader::set_data(const uint8_t* data, size_t size) {
 boost::optional<AckEntry> MessageReader::read_one_ack_entry() {
   auto entry = _ack_decoder.get<AckEntry>();
   if (_ack_decoder.error()) return boost::none;
+  assert(entry.acks.type() != AckSet::Type::unset);
   return std::move(entry);
 }
 
