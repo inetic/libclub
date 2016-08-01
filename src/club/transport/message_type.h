@@ -17,9 +17,9 @@
 
 namespace club { namespace transport {
 
-enum class MessageType { unreliable = 0
-                       , reliable   = 1
-                       , syn        = 2
+enum class MessageType { unreliable_broadcast = 0
+                       , reliable_broadcast   = 1
+                       , syn                  = 3
                        };
 
 //------------------------------------------------------------------------------
@@ -31,6 +31,11 @@ inline void encode( Encoder& e, const MessageType& t) {
 //------------------------------------------------------------------------------
 inline void decode(binary::decoder& d, MessageType& t) {
   t = static_cast<MessageType>(d.get<uint8_t>());
+
+  if (t < MessageType::unreliable_broadcast || t > MessageType::syn) {
+    assert(0);
+    d.set_error();
+  }
 }
 
 //------------------------------------------------------------------------------

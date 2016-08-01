@@ -22,6 +22,7 @@
 
 #include <club/debug/ostream_uuid.h>
 #include "debug/string_tools.h"
+#include "message_id.h"
 
 namespace club { namespace transport {
 
@@ -31,24 +32,28 @@ template<typename> class Transport;
 template<typename UnreliableId>
 class Core {
 private:
-  using OnReceive          = std::function<void(uuid, boost::asio::const_buffer)>;
-  using OnFlush            = std::function<void()>;
-  using Queue              = TransmitQueue<UnreliableId>;
-  using Message            = transport::OutMessage;
-  using Transport          = transport::Transport<UnreliableId>;
+  using OnReceive  = std::function<void(uuid, boost::asio::const_buffer)>;
+  using OnFlush    = std::function<void()>;
+  using Queue      = TransmitQueue<UnreliableId>;
+  using Message    = transport::OutMessage;
+  using Transport  = transport::Transport<UnreliableId>;
+  using MessageId  = transport::MessageId<UnreliableId>;
 
-  using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
-  using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
+  using UnreliableBroadcastId = transport::UnreliableBroadcastId<UnreliableId>;
+
+  using Messages = std::map<MessageId, std::weak_ptr<Message>>;
+  //using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
+  //using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
 public:
   Core(uuid our_id, OnReceive);
 
-  void send_reliable( std::vector<uint8_t>&& data
-                    , std::set<uuid>         targets);
+  void broadcast_reliable( std::vector<uint8_t>&& data
+                         , std::set<uuid>         targets);
 
-  void send_unreliable( UnreliableId           id
-                      , std::vector<uint8_t>&& data
-                      , std::set<uuid>         targets);
+  void broadcast_unreliable( UnreliableId           id
+                           , std::vector<uint8_t>&& data
+                           , std::set<uuid>         targets);
 
   const uuid& id() const { return _our_id; }
 
@@ -60,7 +65,7 @@ private:
   friend class ::club::transport::Transport<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
-  void release(boost::optional<UnreliableId>, std::shared_ptr<Message>&&);
+  void release(MessageId, std::shared_ptr<Message>&&);
 
   void register_transport(Transport*);
   void unregister_transport(Transport*);
@@ -110,16 +115,16 @@ private:
   void recursively_apply(SequenceNumber, PendingMessages&);
 
   struct Inbound {
-    SequenceNumber  last_executed_message;
-    AckSet          acks;
-    PendingMessages pending;
+    struct Recv {
+      SequenceNumber last_executed_message;
+      AckSet         acks;
+    };
 
-    Inbound() {}
+    boost::optional<Recv> recv;
+    PendingMessages       pending;
+    SequenceNumber        next_reliable_message_number;
 
-    Inbound(SequenceNumber first, AckSet acks)
-      : last_executed_message(first)
-      , acks(acks)
-    {}
+    Inbound() : next_reliable_message_number(0) {}
   };
 
 private:
@@ -132,8 +137,7 @@ private:
   // TODO: The above currently doesn't hold.
   SequenceNumber         _next_message_number;
   std::set<Transport*>   _transports;
-  ReliableMessages       _reliable_messages;
-  UnreliableMessages     _unreliable_messages;
+  Messages               _messages;
 
   std::set<uuid>         _all_targets;
   OnFlush                _on_flush;
@@ -248,14 +252,14 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
   bool acked_some = false;
 
   for (auto sn : acks) {
-    auto i = _reliable_messages.find(sn);
+    auto i = _messages.find(ReliableBroadcastId{sn});
 
-    if (i != _reliable_messages.end()) {
+    if (i != _messages.end()) {
       if (auto message = i->second.lock()) {
         message->targets.erase(target);
 
         if (message->targets.empty()) {
-          _reliable_messages.erase(i);
+          _messages.erase(i);
         }
 
         acked_some = true;
@@ -271,8 +275,8 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
 //------------------------------------------------------------------------------
 template<class Id>
 void
-Core<Id>::send_reliable( std::vector<uint8_t>&& data
-                       , std::set<uuid>         targets) {
+Core<Id>::broadcast_reliable( std::vector<uint8_t>&& data
+                            , std::set<uuid>         targets) {
   using namespace std;
 
   auto sn = _next_reliable_broadcast_number++;
@@ -289,22 +293,26 @@ Core<Id>::send_reliable( std::vector<uint8_t>&& data
 
   assert(data.size() <= std::numeric_limits<uint16_t>::max());
 
-  encoder.put(MessageType::reliable);
+  auto type = MessageType::reliable_broadcast;
+
+  encoder.put(type);
   encoder.put(sn);
   encoder.put((uint16_t) data.size());
   encoder.put_raw(data.data(), data.size());
 
   auto message = make_shared<Message>( _our_id
                                      , move(targets)
-                                     , MessageType::reliable
+                                     , type
                                      , sn
                                      , move(data_)
                                      );
 
-  _reliable_messages.emplace(sn, message);
+  ReliableBroadcastId id{sn}; 
+
+  _messages.emplace(id, message);
 
   for (auto t : _transports) {
-    t->insert_message(boost::none, message);
+    t->insert_message(id, true, message);
   }
 }
 
@@ -313,9 +321,11 @@ template<class Id>
 void Core<Id>::add_target(uuid new_target) {
   using namespace std;
 
-  auto inserted = _all_targets.insert(std::move(new_target)).second;
+  auto inserted = _all_targets.insert(new_target).second;
 
   if (inserted) {
+    _inbound.emplace(new_target, Inbound());
+
     auto sn = _next_reliable_broadcast_number++;
 
     std::vector<uint8_t> data( binary::encoded<MessageType>::size()
@@ -335,24 +345,26 @@ void Core<Id>::add_target(uuid new_target) {
                                        , sn
                                        , move(data));
 
-    _reliable_messages.emplace(sn, message);
+    ReliableBroadcastId id{sn};
+
+    _messages.emplace(id, message);
 
     for (auto t : _transports) {
-      t->insert_message(boost::none, message);
+      t->insert_message(id, true, message);
     }
   }
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::send_unreliable( Id                     id
-                              , std::vector<uint8_t>&& data
-                              , std::set<uuid>         targets) {
+void Core<Id>::broadcast_unreliable( Id                     id
+                                   , std::vector<uint8_t>&& data
+                                   , std::set<uuid>         targets) {
   using namespace std;
 
-  auto i = _unreliable_messages.find(id);
+  auto i = _messages.find(UnreliableBroadcastId{id});
 
-  if (i != _unreliable_messages.end()) {
+  if (i != _messages.end()) {
     if (auto p = i->second.lock()) {
       p->bytes = std::move(data);
     }
@@ -369,24 +381,27 @@ void Core<Id>::send_unreliable( Id                     id
 
     binary::encoder encoder(data_.data(), data_.size());
 
-    auto sn = _next_message_number++;
+    auto sn   = _next_message_number++;
+    auto type = MessageType::unreliable_broadcast;
 
-    encoder.put(MessageType::unreliable);
+    encoder.put(type);
     encoder.put(sn);
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
     auto message = make_shared<Message>( _our_id
                                        , move(targets)
-                                       , MessageType::unreliable
+                                       , type
                                        , sn
                                        , move(data_)
                                        );
 
-    _unreliable_messages.emplace(id, move(message));
+    UnreliableBroadcastId mid{id};
+
+    _messages.emplace(mid, move(message));
 
     for (auto t : _transports) {
-      t->insert_message(id, message);
+      t->insert_message(mid, false, message);
     }
   }
 
@@ -404,16 +419,18 @@ void Core<Id>::forward_message(InMessage&& msg) {
 
   auto message = make_shared<Message>( move(msg.source)
                                      , move(msg.targets)
-                                     , MessageType::unreliable
+                                     , msg.type
                                      , msg.sequence_number
                                      , move(data) );
 
   // TODO: Same as with unreliable messages, store the message in a
   // std::map so that we don't put identical messages to message queues
-  // (through transports).
+  // more than once.
+
+  ForwardId id;
 
   for (auto t : _transports) {
-    t->insert_message(boost::none, message);
+    t->insert_message(id, false, message);
   }
 }
 
@@ -438,62 +455,65 @@ template<class Id>
 void Core<Id>::on_receive(InMessage msg) {
   using std::move;
 
-  if (msg.type == MessageType::reliable) {
-    auto i = _inbound.find(msg.source);
+  auto i = _inbound.find(msg.source);
 
-    // If there is no AckSet for this source we haven't received Syn packet
-    // yet.
-    if (i != _inbound.end()) {
-      // If the remote peer is sending too quickly we refuse to receive
-      // and acknowledge the message.
-      auto& inbound = i->second;
+  // If there is no AckSet for this source we attempted to establish
+  // connection with it.
+  if (i == _inbound.end()) {
+    return;
+  }
 
-      if (inbound.acks.try_add(msg.sequence_number)) {
-        acknowledge(msg.source, msg.sequence_number);
+  auto &inbound = i->second;
 
-        if (msg.sequence_number == inbound.last_executed_message + 1) {
-          auto was_destroyed = _was_destroyed;
+  if (msg.type == MessageType::reliable_broadcast) {
+    // Have we received syn packet yet?
+    if (!inbound.recv) {
+      return;
+    }
 
-          auto sn = msg.sequence_number;
+    // If the remote peer is sending too quickly we refuse to receive
+    // and acknowledge the message.
+    if (inbound.recv->acks.try_add(msg.sequence_number)) {
+      acknowledge(msg.source, msg.sequence_number);
 
-          // TODO: Is OK for invokation of _on_recv to destroy _on_recv?
-          inbound.last_executed_message = sn;
-          _on_recv(msg.source, msg.payload);
-          if (*was_destroyed) return;
+      if (msg.sequence_number == inbound.recv->last_executed_message + 1) {
+        auto was_destroyed = _was_destroyed;
 
-          // This should be the last thing this function does (or you need
-          // to check the was_destroyed flag again).
-          recursively_apply(++sn, inbound.pending);
-        }
-        else if (msg.sequence_number > inbound.last_executed_message + 1) {
-          inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
-        }
+        auto sn = msg.sequence_number;
+
+        // TODO: Is OK for invokation of _on_recv to destroy _on_recv?
+        inbound.recv->last_executed_message = sn;
+        _on_recv(msg.source, msg.payload);
+        if (*was_destroyed) return;
+
+        // This should be the last thing this function does (or you need
+        // to check the was_destroyed flag again).
+        recursively_apply(++sn, inbound.pending);
+      }
+      else if (msg.sequence_number > inbound.recv->last_executed_message + 1) {
+        inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
       }
     }
   }
-  else if (msg.type == MessageType::unreliable) {
+  else if (msg.type == MessageType::unreliable_broadcast) {
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
     acknowledge(msg.source, msg.sequence_number);
 
-    auto i = _inbound.find(msg.source);
-
-    if (i == _inbound.end()) {
+    if (!inbound.recv) {
       AckSet acks;
       acks.try_add(msg.sequence_number);
-      _inbound[msg.source] = Inbound(msg.sequence_number, acks);
+      inbound.recv = typename Inbound::Recv{msg.sequence_number, acks};
     }
     else {
-      auto& inbound = i->second;
+      inbound.recv->acks.try_add(msg.sequence_number);
 
-      inbound.acks.try_add(msg.sequence_number);
-
-      if (msg.sequence_number == inbound.last_executed_message + 1) {
-        inbound.last_executed_message = msg.sequence_number;
+      if (msg.sequence_number == inbound.recv->last_executed_message + 1) {
+        inbound.recv->last_executed_message = msg.sequence_number;
         recursively_apply(msg.sequence_number + 1, inbound.pending);
       }
-      else if (msg.sequence_number > inbound.last_executed_message + 1) {
+      else if (msg.sequence_number > inbound.recv->last_executed_message + 1) {
         inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
       }
     }
@@ -506,31 +526,24 @@ void Core<Id>::on_receive(InMessage msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::release( boost::optional<Id> unreliable_id
+void Core<Id>::release( MessageId message_id
                       , std::shared_ptr<Message>&& m) {
-  // TODO: Split these in two functions.
-
   // For reliable messages, we only treat as reliable those that originated
   // here. Also, we don't store unreliable messages that did not originate
-  // here in _unreliable_messages because we don't want this user to change
+  // here in _messages because we don't want this user to change
   // them anyway.
   if (m->source != _our_id) return;
 
-  if (!unreliable_id) {
-    assert(m->source == _our_id);
-    auto i = _reliable_messages.find(m->sequence_number);
-    if (i == _reliable_messages.end()) return;
-    if (m.use_count() > 1) return; // Someone else still uses this message.
-    // TODO: If targets of the message is not empty, we must store it to some
-    // other variable (could be called `_orphans`) and remove it from there
-    // when we're notified that a node was removed from the network.
-    _reliable_messages.erase(i);
-  } else {
-    auto i = _unreliable_messages.find(*unreliable_id);
-    if (i == _unreliable_messages.end()) return;
-    if (m.use_count() > 1) return; // Someone else still uses this message.
-    _unreliable_messages.erase(i);
-  }
+  auto i = _messages.find(message_id);
+  if (i == _messages.end()) return;
+  if (m.use_count() > 1) return; // Someone else still uses this message.
+
+  // TODO: In case of reliable messages, if the `targets` variable of the
+  // message is not empty, we must store it to some other collection (could be
+  // called `_orphans`) and remove it from there when we're notified that a
+  // node was removed from the network.
+
+  _messages.erase(i);
 }
 
 //------------------------------------------------------------------------------
@@ -545,7 +558,7 @@ template<class Id> void Core<Id>::try_flush() {
 
   // TODO: We should probably also check that all acks have been sent.
 
-  if (!_reliable_messages.empty() || !_unreliable_messages.empty()) {
+  if (!_messages.empty()) {
     return;
   }
 

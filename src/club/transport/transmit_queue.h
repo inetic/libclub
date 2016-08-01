@@ -36,12 +36,14 @@ private:
   using Core = transport::Core<UnreliableId>;
   using uuid = boost::uuids::uuid;
 
-  using Message = transport::OutMessage;
+  using Message    = transport::OutMessage;
+  using MessageId  = transport::MessageId<UnreliableId>;
   using MessagePtr = std::shared_ptr<Message>;
 
   struct Entry {
-    boost::optional<UnreliableId> unreliable_id;
-    MessagePtr                    message;
+    MessageId  message_id;
+    bool       resend_until_acked;
+    MessagePtr message;
   };
 
   using Messages = std::list<Entry>;
@@ -52,7 +54,8 @@ public:
   size_t encode_few( binary::encoder&
                    , const std::set<uuid>& targets);
 
-  void insert_message( boost::optional<UnreliableId>
+  void insert_message( MessageId
+                     , bool resend_until_acked
                      , MessagePtr);
 
   Core& core() { return *_core; }
@@ -102,20 +105,24 @@ TransmitQueue<Id>::TransmitQueue(std::shared_ptr<Core> core)
 
 //------------------------------------------------------------------------------
 template<class Id>
-void TransmitQueue<Id>::insert_message( boost::optional<Id> unreliable_id
+void TransmitQueue<Id>::insert_message( MessageId message_id
+                                      , bool resend_until_acked
                                       , MessagePtr message) {
+  using std::move;
+
+  Entry entry { std::move(message_id)
+              , resend_until_acked
+              , move(message)
+              };
+
   if (_next != _messages.end() || _messages.empty()) {
-    _messages.insert(_next, Entry{ std::move(unreliable_id)
-                          , std::move(message)
-                          });
+    _messages.insert(_next, move(entry));
   }
   else {
     // If we're at the end of the queue and it isn't empty, that means we've
     // just sent everything in it. So the new messages shall be
     // sent next.
-    _next = _messages.insert(_messages.begin(), Entry{ std::move(unreliable_id)
-                                      , std::move(message)
-                                      });
+    _next = _messages.insert(_messages.begin(), move(entry));
   }
 }
 
@@ -128,7 +135,7 @@ TransmitQueue<Id>::erase(typename Messages::iterator i) {
   assert(i != _messages.end());
 
   // Tell the _core object that we're no longer using this message.
-  _core->release( std::move(i->unreliable_id)
+  _core->release( std::move(i->message_id)
                 , std::move(i->message));
 
   if (i == _next) {
@@ -191,9 +198,11 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     ++count;
 
+    //cout << core().id() << " sending " << *current->message << endl;
+
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (current->message->type == MessageType::unreliable) {
+    if (!current->resend_until_acked) {
       auto& m = *current->message;
 
       for (const auto& target : _target_intersection) {

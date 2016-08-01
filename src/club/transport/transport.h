@@ -52,6 +52,7 @@ private:
 public:
   using TransmitQueue = transport::TransmitQueue<UnreliableId>;
   using Core          = transport::Core<UnreliableId>;
+  using MessageId     = transport::MessageId<UnreliableId>;
 
 public:
   Transport( uuid                  id
@@ -81,7 +82,8 @@ public:
 private:
   friend class ::club::transport::Core<UnreliableId>;
 
-  void insert_message( boost::optional<UnreliableId>
+  void insert_message( MessageId
+                     , bool resend_until_acked
                      , std::shared_ptr<OutMessage> m);
 
   void start_receiving(std::shared_ptr<SocketState>);
@@ -205,6 +207,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   // Parse messages
   while (auto opt_msg = _message_reader.read_one_message()) {
+    //cout << _id << " received " << *opt_msg << endl;
     handle_message(state, std::move(*opt_msg));
     if (state->was_destroyed) return;
   }
@@ -333,9 +336,12 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::insert_message( boost::optional<Id> unreliable_id
+void Transport<Id>::insert_message( MessageId message_id
+                                  , bool resend_until_acked
                                   , std::shared_ptr<OutMessage> m) {
-  _transmit_queue.insert_message(std::move(unreliable_id), std::move(m));
+  _transmit_queue.insert_message( std::move(message_id)
+                                , resend_until_acked
+                                , std::move(m));
   start_sending(_socket_state);
 }
 
