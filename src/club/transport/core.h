@@ -46,8 +46,7 @@ private:
 public:
   Core(uuid our_id, OnReceive);
 
-  void broadcast_reliable( std::vector<uint8_t>&& data
-                         , std::set<uuid>         targets);
+  void broadcast_reliable(std::vector<uint8_t>&& data);
 
   void broadcast_unreliable( UnreliableId           id
                            , std::vector<uint8_t>&& data
@@ -276,8 +275,7 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
 //------------------------------------------------------------------------------
 template<class Id>
 void
-Core<Id>::broadcast_reliable( std::vector<uint8_t>&& data
-                            , std::set<uuid>         targets) {
+Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
   using namespace std;
 
   auto sn = _next_reliable_broadcast_number++;
@@ -302,13 +300,13 @@ Core<Id>::broadcast_reliable( std::vector<uint8_t>&& data
   encoder.put_raw(data.data(), data.size());
 
   auto message = make_shared<Message>( _our_id
-                                     , move(targets)
+                                     , set<uuid>(_all_targets)
                                      , type
                                      , sn
                                      , move(data_)
                                      );
 
-  ReliableBroadcastId id{sn}; 
+  ReliableBroadcastId id{sn};
 
   _messages.emplace(id, message);
 

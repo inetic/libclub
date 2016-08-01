@@ -114,8 +114,8 @@ struct Node {
     transport_core->broadcast_unreliable(data_id, move(data));
   }
 
-  void send_reliable(vector<uint8_t> data, set<uuid> targets) {
-    transport_core->broadcast_reliable(move(data), move(targets));
+  void broadcast_reliable(vector<uint8_t> data) {
+    transport_core->broadcast_reliable(move(data));
   }
 
   template<class OnFlush> void flush(OnFlush on_flush) {
@@ -563,7 +563,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -600,8 +600,8 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
-  n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+  n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
+  n1.broadcast_reliable(std::vector<uint8_t>{4,5,6,7});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -630,7 +630,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
     if (counter++ == 0) {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
 
-      n1.send_reliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+      n1.broadcast_reliable(std::vector<uint8_t>{4,5,6,7});
       n1.flush(when_all.make_continuation());
     }
     else {
@@ -641,50 +641,13 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
       n1.transports.clear();
       n2.transports.clear();
-    });
-
-  ios.run();
-}
-
-//------------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
-  asio::io_service ios;
-
-  // n1 -> n2 -> n3
-  Node n1, n2, n3;
-
-  WhenAll when_all;
-
-  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
-    BOOST_REQUIRE_EQUAL(s, n1.id);
-    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    c();
-  });
-
-  connect_nodes(ios, n1, n2);
-  connect_nodes(ios, n2, n3);
-
-  // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
-
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
-
-  n1.flush(when_all.make_continuation());
-  n2.flush(when_all.make_continuation());
-  n3.flush(when_all.make_continuation());
-
-  when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
     });
 
   ios.run();
@@ -694,21 +657,22 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_hop) {
 BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   asio::io_service ios;
 
-  //  n1 -> n2 -> n3
+  // n1 -> n2 -> n3
   Node n1, n2, n3;
-
-  size_t count = 0;
 
   WhenAll when_all;
 
-  auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    if (++count == 2) c();
+    n2.flush(c);
   });
 
-  n2.on_recv = on_recv;
-  n3.on_recv = on_recv;
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    n3.flush(c);
+  });
 
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
@@ -717,11 +681,9 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   n1.transports[n2.id]->add_target(n3.id);
   n3.transports[n2.id]->add_target(n1.id);
 
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n2.id});
+  n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
-  n2.flush(when_all.make_continuation());
-  n3.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
       n1.transports.clear();
@@ -769,7 +731,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
   n3.transports[n2.id]->add_target(n1.id);
   n3.transports[n2.id]->add_target(n4.id);
 
-  n1.send_reliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id, n4.id});
+  n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -812,7 +774,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
 
   for (uint8_t i = 0; i < N; ++i) {
     if (std::rand() % 2) {
-      n1.send_reliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+      n1.broadcast_reliable(std::vector<uint8_t>{i});
     }
     else {
       n1.broadcast_unreliable(std::vector<uint8_t>{i});
