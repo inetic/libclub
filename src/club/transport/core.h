@@ -114,13 +114,13 @@ private:
 
   void recursively_apply(SequenceNumber, PendingMessages&);
 
-  struct Inbound {
-    struct Recv {
+  struct NodeData {
+    struct Sync {
       SequenceNumber last_executed_message;
       AckSet         acks;
     };
 
-    boost::optional<Recv> recv;
+    boost::optional<Sync> sync;
     PendingMessages       pending;
   };
 
@@ -134,6 +134,15 @@ private:
     }
   };
 
+  template<class Key, class Value>
+  static
+  std::set<Key> keys(const std::map<Key, Value>& map) {
+    std::set<Key> retval;
+    for (const auto& pair : map)
+      retval.insert(retval.end(), pair.first);
+    return retval;
+  }
+
 private:
   uuid                   _our_id;
   OnReceive              _on_recv;
@@ -145,11 +154,9 @@ private:
   SequenceNumber         _next_message_number;
   std::set<Transport*>   _transports;
   Messages               _messages;
-
-  std::set<uuid>         _all_targets;
   OnFlush                _on_flush;
 
-  std::map<uuid, Inbound>                    _inbound;
+  std::map<uuid, NodeData>                   _nodes;
   std::map<uuid, std::map<AckSetId, AckSet>> _outbound_acks;
   //        |              |
   //        |              +-> from
@@ -333,7 +340,7 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
   encoder.put_raw(data.data(), data.size());
 
   auto message = make_shared<Message>( _our_id
-                                     , set<uuid>(_all_targets)
+                                     , keys(_nodes)
                                      , type
                                      , sn
                                      , move(data_)
@@ -353,11 +360,9 @@ template<class Id>
 void Core<Id>::add_target(uuid new_target) {
   using namespace std;
 
-  auto inserted = _all_targets.insert(new_target).second;
+  auto inserted = _nodes.emplace(new_target, NodeData()).second;
 
   if (inserted) {
-    _inbound.emplace(new_target, Inbound());
-
     auto sn = _next_reliable_broadcast_number;
 
     std::vector<uint8_t> data( binary::encoded<MessageType>::size()
@@ -421,7 +426,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
     encoder.put_raw(data.data(), data.size());
 
     auto message = make_shared<Message>( _our_id
-                                       , std::set<uuid>(_all_targets)
+                                       , keys(_nodes)
                                        , type
                                        , sn
                                        , move(data_)
@@ -486,43 +491,43 @@ template<class Id>
 void Core<Id>::on_receive(InMessage msg) {
   using std::move;
 
-  auto i = _inbound.find(msg.source);
+  auto i = _nodes.find(msg.source);
 
   // If there is no AckSet for this source we attempted to establish
   // connection with it.
-  if (i == _inbound.end()) {
+  if (i == _nodes.end()) {
     return;
   }
 
-  auto &inbound = i->second;
+  auto &node = i->second;
 
   if (msg.type == MessageType::reliable_broadcast) {
     // Have we received syn packet yet?
-    if (!inbound.recv) {
+    if (!node.sync) {
       return;
     }
 
     // If the remote peer is sending too quickly we refuse to receive
     // and acknowledge the message.
-    if (inbound.recv->acks.try_add(msg.sequence_number)) {
+    if (node.sync->acks.try_add(msg.sequence_number)) {
       acknowledge(msg.source, AckSet::Type::broadcast, msg.sequence_number);
 
-      if (msg.sequence_number == inbound.recv->last_executed_message + 1) {
+      if (msg.sequence_number == node.sync->last_executed_message + 1) {
         auto was_destroyed = _was_destroyed;
 
         auto sn = msg.sequence_number;
 
         // TODO: Is OK for invokation of _on_recv to destroy _on_recv?
-        inbound.recv->last_executed_message = sn;
+        node.sync->last_executed_message = sn;
         _on_recv(msg.source, msg.payload);
         if (*was_destroyed) return;
 
         // This should be the last thing this function does (or you need
         // to check the was_destroyed flag again).
-        recursively_apply(++sn, inbound.pending);
+        recursively_apply(++sn, node.pending);
       }
-      else if (msg.sequence_number > inbound.recv->last_executed_message + 1) {
-        inbound.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
+      else if (msg.sequence_number > node.sync->last_executed_message + 1) {
+        node.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
       }
     }
   }
@@ -532,10 +537,10 @@ void Core<Id>::on_receive(InMessage msg) {
   else if (msg.type == MessageType::syn) {
     acknowledge(msg.source, AckSet::Type::directed, msg.sequence_number);
 
-    if (!inbound.recv) {
-      AckSet acks;
-      //acks.try_add(msg.sequence_number);
-      inbound.recv = typename Inbound::Recv{msg.sequence_number-1, acks};
+    if (!node.sync) {
+      node.sync = typename NodeData::Sync{ msg.sequence_number-1
+                                         , AckSet( AckSet::Type::broadcast
+                                                 , msg.sequence_number-1)};
     }
   }
   else {
