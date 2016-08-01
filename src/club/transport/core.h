@@ -32,18 +32,16 @@ template<typename> class Transport;
 template<typename UnreliableId>
 class Core {
 private:
-  using OnReceive  = std::function<void(uuid, boost::asio::const_buffer)>;
-  using OnFlush    = std::function<void()>;
-  using Queue      = TransmitQueue<UnreliableId>;
-  using Message    = transport::OutMessage;
-  using Transport  = transport::Transport<UnreliableId>;
-  using MessageId  = transport::MessageId<UnreliableId>;
+  using OnReceive = std::function<void(uuid, boost::asio::const_buffer)>;
+  using OnFlush   = std::function<void()>;
+  using Queue     = TransmitQueue<UnreliableId>;
+  using Message   = transport::OutMessage;
+  using Transport = transport::Transport<UnreliableId>;
+  using MessageId = transport::MessageId<UnreliableId>;
+  using Messages  = std::map<MessageId, std::weak_ptr<Message>>;
 
   using UnreliableBroadcastId = transport::UnreliableBroadcastId<UnreliableId>;
 
-  using Messages = std::map<MessageId, std::weak_ptr<Message>>;
-  //using ReliableMessages   = std::map<SequenceNumber, std::weak_ptr<Message>>;
-  //using UnreliableMessages = std::map<UnreliableId, std::weak_ptr<Message>>;
 
 public:
   Core(uuid our_id, OnReceive);
@@ -54,6 +52,9 @@ public:
   void broadcast_unreliable( UnreliableId           id
                            , std::vector<uint8_t>&& data
                            , std::set<uuid>         targets);
+
+  void broadcast_unreliable( UnreliableId           id
+                           , std::vector<uint8_t>&& data);
 
   const uuid& id() const { return _our_id; }
 
@@ -69,7 +70,7 @@ private:
 
   void register_transport(Transport*);
   void unregister_transport(Transport*);
-  void forward_message(InMessage&&);
+  void forward_message(const InMessage&);
 
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
@@ -358,8 +359,7 @@ void Core<Id>::add_target(uuid new_target) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::broadcast_unreliable( Id                     id
-                                   , std::vector<uint8_t>&& data
-                                   , std::set<uuid>         targets) {
+                                   , std::vector<uint8_t>&& data) {
   using namespace std;
 
   auto i = _messages.find(UnreliableBroadcastId{id});
@@ -390,7 +390,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
     encoder.put_raw(data.data(), data.size());
 
     auto message = make_shared<Message>( _our_id
-                                       , move(targets)
+                                       , std::set<uuid>(_all_targets)
                                        , type
                                        , sn
                                        , move(data_)
@@ -409,7 +409,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::forward_message(InMessage&& msg) {
+void Core<Id>::forward_message(const InMessage& msg) {
   using namespace std;
 
   auto begin = boost::asio::buffer_cast<const uint8_t*>(msg.type_and_payload);
@@ -417,8 +417,8 @@ void Core<Id>::forward_message(InMessage&& msg) {
 
   std::vector<uint8_t> data(begin, begin + size);
 
-  auto message = make_shared<Message>( move(msg.source)
-                                     , move(msg.targets)
+  auto message = make_shared<Message>( msg.source
+                                     , set<uuid>(msg.targets)
                                      , msg.type
                                      , msg.sequence_number
                                      , move(data) );

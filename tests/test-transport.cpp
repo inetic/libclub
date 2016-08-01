@@ -108,12 +108,10 @@ struct Node {
     transports[other_id]->add_target(other_id);
   }
 
-  void send_unreliable(vector<uint8_t> data, set<uuid> targets) {
+  void broadcast_unreliable(vector<uint8_t> data) {
     auto data_id = boost::hash_value(data);
 
-    transport_core->broadcast_unreliable( data_id
-                                        , move(data)
-                                        , move(targets));
+    transport_core->broadcast_unreliable(data_id, move(data));
   }
 
   void send_reliable(vector<uint8_t> data, set<uuid> targets) {
@@ -161,7 +159,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
 
@@ -197,8 +195,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
-  n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
+  n1.broadcast_unreliable(std::vector<uint8_t>{4,5,6,7});
 
   n1.flush(when_all.make_continuation());
 
@@ -231,7 +229,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_many_messages) {
   connect_nodes(ios, n1, n2);
 
   for (uint8_t i = 0; i < N; ++i) {
-    n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+    n1.broadcast_unreliable(std::vector<uint8_t>{i});
   }
 
   n1.flush(when_all.make_continuation());
@@ -259,7 +257,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
 
     if (counter++ == 0) {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-      n1.send_unreliable(std::vector<uint8_t>{4,5,6,7}, set<uuid>{n2.id});
+      n1.broadcast_unreliable(std::vector<uint8_t>{4,5,6,7});
     }
     else {
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
@@ -269,7 +267,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
 
   connect_nodes(ios, n1, n2);
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
 
@@ -303,8 +301,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
     c();
   });
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id});
-  n2.send_unreliable(std::vector<uint8_t>{2,3,4,5}, set<uuid>{n1.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
+  n2.broadcast_unreliable(std::vector<uint8_t>{2,3,4,5});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -333,12 +331,19 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop) {
 
   WhenAll when_all;
 
-  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
     c();
   });
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id});
+  n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    c();
+  });
+
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -370,15 +375,23 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_many_messages) {
   WhenAll when_all;
 
   const uint8_t N = 64;
-  size_t counter = 0;
+  size_t counter_n2 = 0;
+  size_t counter_n3 = 0;
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({counter_n2++}));
+    if (counter_n2 == N) c();
+  });
 
   n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
-    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({counter++}));
-    if (counter == N) c();
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({counter_n3++}));
+    if (counter_n3 == N) c();
   });
 
   for (uint8_t i = 0; i < N; ++i) {
-    n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n3.id});
+    n1.broadcast_unreliable(std::vector<uint8_t>{i});
   }
 
   n1.flush(when_all.make_continuation());
@@ -415,13 +428,19 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_hops) {
 
   WhenAll when_all;
 
-  n4.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+  size_t counter = 0;
+
+  auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    c();
+    if (++counter == 3) c();
   });
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n4.id});
+  n2.on_recv = on_recv;
+  n3.on_recv = on_recv;
+  n4.on_recv = on_recv;
+
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
   n2.flush(when_all.make_continuation());
@@ -442,7 +461,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_hops) {
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   asio::io_service ios;
 
-  // n1 -> n2 -> n3
+  // n3
+  // ^
+  // |
+  // n1 -> n2
   Node n1, n2, n3;
 
   connect_nodes(ios, n1, n2);
@@ -453,20 +475,18 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    c();
+    n2.flush(c);
   });
 
   n3.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    c();
+    n3.flush(c);
   });
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n2.id, n3.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
-  n2.flush(when_all.make_continuation());
-  n3.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
       n1.transports.clear();
@@ -506,18 +526,16 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   auto on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
     BOOST_REQUIRE_EQUAL(s, n1.id);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    if (++counter == 2) c();
+    if (++counter == 3) c();
   });
 
+  n2.on_recv = on_recv;
   n3.on_recv = on_recv;
   n4.on_recv = on_recv;
 
-  n1.send_unreliable(std::vector<uint8_t>{0,1,2,3}, set<uuid>{n3.id, n4.id});
+  n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
-  n2.flush(when_all.make_continuation());
-  n3.flush(when_all.make_continuation());
-  n4.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
       n1.transports.clear();
@@ -797,7 +815,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
       n1.send_reliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
     }
     else {
-      n1.send_unreliable(std::vector<uint8_t>{i}, set<uuid>{n2.id});
+      n1.broadcast_unreliable(std::vector<uint8_t>{i});
     }
   }
 

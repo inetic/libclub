@@ -207,7 +207,6 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   // Parse messages
   while (auto opt_msg = _message_reader.read_one_message()) {
-    //cout << _id << " received " << *opt_msg << endl;
     handle_message(state, std::move(*opt_msg));
     if (state->was_destroyed) return;
   }
@@ -240,15 +239,18 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
   if (msg.targets.count(_id)) {
     msg.targets.erase(_id);
 
+    if (!msg.targets.empty()) {
+      core().forward_message(msg);
+    }
+
     core().on_receive(std::move(msg));
 
     if (state->was_destroyed) return;
 
     start_sending(_socket_state);
   }
-
-  if (!msg.targets.empty()) {
-    core().forward_message(std::move(msg));
+  else {
+    core().forward_message(msg);
   }
 }
 
