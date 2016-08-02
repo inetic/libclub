@@ -16,7 +16,8 @@
 #define CLUB_TRANSPORT_CORE_H
 
 #include <map>
-#include "transport/message.h"
+#include "transport/in_message.h"
+#include "transport/out_message.h"
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
 #include "transport/outbound_acks.h"
@@ -245,30 +246,13 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
   auto sn = _next_reliable_broadcast_number++;
 
-  // TODO: It is inefficient to *copy* the data into the new vector just to
-  //       prepend a small header (same below).
-  std::vector<uint8_t> data_( binary::encoded<MessageType>::size()
-                            + sizeof(SequenceNumber)
-                            + sizeof(uint16_t) // Size of data
-                            + data.size()
-                            );
-
-  binary::encoder encoder(data_.data(), data_.size());
-
-  assert(data.size() <= std::numeric_limits<uint16_t>::max());
-
   auto type = MessageType::reliable_broadcast;
-
-  encoder.put(type);
-  encoder.put(sn);
-  encoder.put((uint16_t) data.size());
-  encoder.put_raw(data.data(), data.size());
 
   auto message = make_shared<OutMessage>( _our_id
                                         , keys(_nodes)
                                         , type
                                         , sn
-                                        , move(data_)
+                                        , move(data)
                                         );
 
   ReliableBroadcastId id{sn};
@@ -290,22 +274,11 @@ void Core<Id>::add_target(uuid new_target) {
   if (inserted) {
     auto sn = _next_reliable_broadcast_number;
 
-    std::vector<uint8_t> data( binary::encoded<MessageType>::size()
-                             + sizeof(SequenceNumber)
-                             + sizeof(uint16_t) // zero
-                             );
-
-    binary::encoder encoder(data);
-
-    encoder.put(MessageType::syn);
-    encoder.put(sn);
-    encoder.put((uint16_t) 0);
-
     auto message = make_shared<OutMessage>( _our_id
                                           , set<uuid>{new_target}
                                           , MessageType::syn
                                           , sn
-                                          , move(data));
+                                          , std::vector<uint8_t>());
 
     ReliableDirectedId id{std::move(new_target), sn};
 
@@ -327,34 +300,19 @@ void Core<Id>::broadcast_unreliable( Id                     id
 
   if (i != _messages.end()) {
     if (auto p = i->second.lock()) {
-      p->bytes = std::move(data);
+      p->reset_payload(std::move(data));
     }
     // else { it was there but was already sent, so noop }
   }
   else {
-    // TODO: Same as above, it is inefficient to *copy* the data
-    //       just to prepend a small header.
-    std::vector<uint8_t> data_( binary::encoded<MessageType>::size()
-                              + sizeof(Id)
-                              + sizeof(uint16_t) // Size of data
-                              + data.size()
-                              );
-
-    binary::encoder encoder(data_.data(), data_.size());
-
     auto sn   = _next_message_number++;
     auto type = MessageType::unreliable_broadcast;
-
-    encoder.put(type);
-    encoder.put(sn);
-    encoder.put((uint16_t) data.size());
-    encoder.put_raw(data.data(), data.size());
 
     auto message = make_shared<OutMessage>( _our_id
                                           , keys(_nodes)
                                           , type
                                           , sn
-                                          , move(data_)
+                                          , move(data)
                                           );
 
     UnreliableBroadcastId mid{id};
@@ -380,8 +338,8 @@ void Core<Id>::forward_message(const InMessage& msg) {
 
   auto message = make_shared<OutMessage>( msg.source
                                         , set<uuid>(msg.targets)
-                                        , msg.type
-                                        , msg.sequence_number
+                                        //, msg.type
+                                        //, msg.sequence_number
                                         , move(data) );
 
   // TODO: Same as with unreliable messages, store the message in a

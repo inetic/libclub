@@ -78,6 +78,19 @@ std::string str_from_range(const R& range) {
 template<typename T, size_t N>
 std::string str(const std::array<T, N>& a) { return str_from_range(a); }
 
+// Convert std::array to string
+template<size_t N>
+std::string str(const std::array<uint8_t, N>& a) {
+  std::ostringstream s;
+  s << "[";
+  for (size_t i = 0; i < N; ++i) {
+    s << (unsigned int) a[i];
+    if (i != N-1) s << ", ";
+  }
+  s << "]";
+  return s.str();
+}
+
 // Convert std::vector<uint8_t> to string
 inline
 std::string str(const std::vector<uint8_t>& a) {

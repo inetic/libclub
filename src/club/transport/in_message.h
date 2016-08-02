@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CLUB_TRANSPORT_MESSAGE_H
-#define CLUB_TRANSPORT_MESSAGE_H
+#ifndef CLUB_TRANSPORT_IN_MESSAGE_H
+#define CLUB_TRANSPORT_IN_MESSAGE_H
 
 #include <set>
 #include <club/uuid.h>
@@ -50,34 +50,6 @@ struct InMessage {
 };
 
 //------------------------------------------------------------------------------
-struct OutMessage {
-  const uuid                          source;
-        std::set<uuid>                targets;
-  const MessageType                   type;
-  const SequenceNumber                sequence_number;
-        std::vector<uint8_t>          bytes;
-
-  OutMessage( uuid                   source
-            , std::set<uuid>&&       targets
-            , MessageType            type
-            , SequenceNumber         sequence_number
-            , std::vector<uint8_t>&& bytes)
-    : source(std::move(source))
-    , targets(std::move(targets))
-    , type(type)
-    , sequence_number(sequence_number)
-    , bytes(std::move(bytes))
-  {}
-};
-
-//------------------------------------------------------------------------------
-
-inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
-  return os << "(OutMessage src:" << m.source
-            << " targets: " << str(m.targets)
-            << " " << str(m.bytes)
-            << ")";
-}
 
 inline std::ostream& operator<<(std::ostream& os, const InMessage& m) {
   return os << "(InMessage src:" << m.source
@@ -88,4 +60,4 @@ inline std::ostream& operator<<(std::ostream& os, const InMessage& m) {
 
 }} // club::transport namespace
 
-#endif // ifndef CLUB_TRANSPORT_MESSAGE_H
+#endif // ifndef CLUB_TRANSPORT_IN_MESSAGE_H

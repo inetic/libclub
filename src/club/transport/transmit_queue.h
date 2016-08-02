@@ -20,7 +20,7 @@
 #include <boost/variant.hpp>
 #include "binary/encoder.h"
 #include "binary/serialize/uuid.h"
-#include "transport/message.h"
+#include "transport/out_message.h"
 #include "transport/core.h"
 #include "transport/ack_set_serialize.h"
 #include "debug/string_tools.h"
@@ -249,7 +249,7 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
                          , const Message& msg) const {
   encoder.put(msg.source);
   encode_targets(encoder, targets);
-  encoder.put_raw(msg.bytes.data(), msg.bytes.size());
+  msg.encode_header_and_payload(encoder);
 }
 
 //------------------------------------------------------------------------------
@@ -262,7 +262,7 @@ TransmitQueue<Id>::encoded_size( const std::vector<uuid>& targets
   return sizeof_uuid // msg.source
        + sizeof(uint8_t) // number of targets
        + targets.size() * sizeof_uuid
-       + msg.bytes.size();
+       + msg.header_and_payload_size();
 }
 
 //------------------------------------------------------------------------------
