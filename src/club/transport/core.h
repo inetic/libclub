@@ -32,13 +32,13 @@ template<typename> class Transport;
 template<typename UnreliableId>
 class Core {
 private:
-  using OnReceive = std::function<void(uuid, boost::asio::const_buffer)>;
-  using OnFlush   = std::function<void()>;
-  using Queue     = TransmitQueue<UnreliableId>;
-  using Message   = transport::OutMessage;
-  using Transport = transport::Transport<UnreliableId>;
-  using MessageId = transport::MessageId<UnreliableId>;
-  using Messages  = std::map<MessageId, std::weak_ptr<Message>>;
+  using OnReceive  = std::function<void(uuid, boost::asio::const_buffer)>;
+  using OnFlush    = std::function<void()>;
+  using Queue      = TransmitQueue<UnreliableId>;
+  using OutMessage = transport::OutMessage;
+  using Transport  = transport::Transport<UnreliableId>;
+  using MessageId  = transport::MessageId<UnreliableId>;
+  using Messages   = std::map<MessageId, std::weak_ptr<OutMessage>>;
 
   using UnreliableBroadcastId = transport::UnreliableBroadcastId<UnreliableId>;
 
@@ -65,7 +65,7 @@ private:
   friend class ::club::transport::Transport<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
-  void release(MessageId, std::shared_ptr<Message>&&);
+  void release(MessageId, std::shared_ptr<OutMessage>&&);
 
   void register_transport(Transport*);
   void unregister_transport(Transport*);
@@ -339,12 +339,12 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
   encoder.put((uint16_t) data.size());
   encoder.put_raw(data.data(), data.size());
 
-  auto message = make_shared<Message>( _our_id
-                                     , keys(_nodes)
-                                     , type
-                                     , sn
-                                     , move(data_)
-                                     );
+  auto message = make_shared<OutMessage>( _our_id
+                                        , keys(_nodes)
+                                        , type
+                                        , sn
+                                        , move(data_)
+                                        );
 
   ReliableBroadcastId id{sn};
 
@@ -376,11 +376,11 @@ void Core<Id>::add_target(uuid new_target) {
     encoder.put(sn);
     encoder.put((uint16_t) 0);
 
-    auto message = make_shared<Message>( _our_id
-                                       , set<uuid>{new_target}
-                                       , MessageType::syn
-                                       , sn
-                                       , move(data));
+    auto message = make_shared<OutMessage>( _our_id
+                                          , set<uuid>{new_target}
+                                          , MessageType::syn
+                                          , sn
+                                          , move(data));
 
     ReliableDirectedId id{std::move(new_target), sn};
 
@@ -425,12 +425,12 @@ void Core<Id>::broadcast_unreliable( Id                     id
     encoder.put((uint16_t) data.size());
     encoder.put_raw(data.data(), data.size());
 
-    auto message = make_shared<Message>( _our_id
-                                       , keys(_nodes)
-                                       , type
-                                       , sn
-                                       , move(data_)
-                                       );
+    auto message = make_shared<OutMessage>( _our_id
+                                          , keys(_nodes)
+                                          , type
+                                          , sn
+                                          , move(data_)
+                                          );
 
     UnreliableBroadcastId mid{id};
 
@@ -453,11 +453,11 @@ void Core<Id>::forward_message(const InMessage& msg) {
 
   std::vector<uint8_t> data(begin, begin + size);
 
-  auto message = make_shared<Message>( msg.source
-                                     , set<uuid>(msg.targets)
-                                     , msg.type
-                                     , msg.sequence_number
-                                     , move(data) );
+  auto message = make_shared<OutMessage>( msg.source
+                                        , set<uuid>(msg.targets)
+                                        , msg.type
+                                        , msg.sequence_number
+                                        , move(data) );
 
   // TODO: Same as with unreliable messages, store the message in a
   // std::map so that we don't put identical messages to message queues
@@ -552,7 +552,7 @@ void Core<Id>::on_receive(InMessage msg) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::release( MessageId message_id
-                      , std::shared_ptr<Message>&& m) {
+                      , std::shared_ptr<OutMessage>&& m) {
   // For reliable messages, we only treat as reliable those that originated
   // here. Also, we don't store unreliable messages that did not originate
   // here in _messages because we don't want this user to change

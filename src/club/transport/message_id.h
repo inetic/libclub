@@ -50,6 +50,7 @@ struct ForwardId {
     // In the future it would be nice to store it there so that
     // we'd know when trying to send duplicates.
     assert(0);
+    return false;
   }
 };
 
