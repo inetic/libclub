@@ -31,6 +31,9 @@ struct InMessage {
         std::set<uuid>            targets;
   const MessageType               type;
   const SequenceNumber            sequence_number;
+        size_t                    original_size;
+        size_t                    chunk_start;
+        size_t                    chunk_size;
         boost::asio::const_buffer payload;
         boost::asio::const_buffer type_and_payload;
 
@@ -38,12 +41,18 @@ struct InMessage {
            , std::set<uuid>&&          targets
            , MessageType               type
            , SequenceNumber            sequence_number
+           , size_t                    original_size
+           , size_t                    chunk_start
+           , size_t                    chunk_size
            , boost::asio::const_buffer payload
            , boost::asio::const_buffer type_and_payload)
     : source(std::move(source))
     , targets(std::move(targets))
     , type(type)
     , sequence_number(sequence_number)
+    , original_size(original_size)
+    , chunk_start(chunk_start)
+    , chunk_size(chunk_size)
     , payload(payload)
     , type_and_payload(type_and_payload)
   {}

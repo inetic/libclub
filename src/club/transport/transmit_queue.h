@@ -43,6 +43,7 @@ private:
   struct Entry {
     MessageId  message_id;
     bool       resend_until_acked;
+    size_t     already_sent;
     MessagePtr message;
   };
 
@@ -74,16 +75,16 @@ private:
 
   bool try_encode( binary::encoder&
                  , const std::vector<uuid>&
-                 , const Message&) const;
+                 , Entry&) const;
 
   void encode( binary::encoder&
              , const std::vector<uuid>&
-             , const Message&) const;
+             , Entry&) const;
 
   void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
 
-  size_t encoded_size( const std::vector<uuid>& targets
-                     , const Message& msg) const;
+  size_t minimal_encoded_size( const std::vector<uuid>& targets
+                             , const Message& msg) const;
 
 private:
   std::shared_ptr<Core>       _core;
@@ -112,6 +113,7 @@ void TransmitQueue<Id>::insert_message( MessageId message_id
 
   Entry entry { std::move(message_id)
               , resend_until_acked
+              , 0 // already_sent
               , move(message)
               };
 
@@ -191,7 +193,7 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
       continue;
     }
 
-    if (!try_encode(encoder, _target_intersection, *current->message)) {
+    if (!try_encode(encoder, _target_intersection, *current)) {
       _next = current;
       break;
     }
@@ -205,6 +207,7 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
     if (!current->resend_until_acked) {
       auto& m = *current->message;
 
+      // TODO: This can have linear time complexity.
       for (const auto& target : _target_intersection) {
         m.targets.erase(target);
       }
@@ -228,13 +231,13 @@ template<class Id>
 bool
 TransmitQueue<Id>::try_encode( binary::encoder& encoder
                              , const std::vector<uuid>& targets
-                             , const Message& msg) const {
+                             , Entry& entry) const {
 
-  if (encoded_size(targets, msg) > encoder.remaining_size()) {
+  if (minimal_encoded_size(targets, *entry.message) > encoder.remaining_size()) {
     return false;
   }
 
-  encode(encoder, targets, msg);
+  encode(encoder, targets, entry);
 
   assert(!encoder.error());
 
@@ -246,23 +249,38 @@ template<class Id>
 void
 TransmitQueue<Id>::encode( binary::encoder& encoder
                          , const std::vector<uuid>& targets
-                         , const Message& msg) const {
-  encoder.put(msg.source);
+                         , Entry& entry) const {
+  auto& m = *entry.message;
+
+  encoder.put(m.source);
   encode_targets(encoder, targets);
-  msg.encode_header_and_payload(encoder);
+
+  uint16_t payload_size = m.encode_header_and_payload( encoder
+                                                     , entry.already_sent);
+
+  if (encoder.error()) {
+    assert(0);
+    return;
+  }
+
+  entry.already_sent += payload_size;
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
 size_t
-TransmitQueue<Id>::encoded_size( const std::vector<uuid>& targets
-                               , const Message& msg) const {
+TransmitQueue<Id>::minimal_encoded_size( const std::vector<uuid>& targets
+                                       , const Message& msg) const {
   size_t sizeof_uuid = binary::encoded<uuid>::size();
 
   return sizeof_uuid // msg.source
        + sizeof(uint8_t) // number of targets
        + targets.size() * sizeof_uuid
-       + msg.header_and_payload_size();
+       + OutMessage::header_size
+       // We'd want to send at least one byte of the payload,
+       // otherwise what's the point.
+       + std::min<size_t>(1, msg.payload_size())
+       ;
 }
 
 //------------------------------------------------------------------------------

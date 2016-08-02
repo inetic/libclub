@@ -98,13 +98,15 @@ boost::optional<InMessage> MessageReader::read_one_message() {
 
   auto type_start      = _decoder.current();
 
-  auto message_type    = _decoder.get<MessageType>();
-  auto sequence_number = _decoder.get<SequenceNumber>();
-  auto message_size    = _decoder.get<uint16_t>();
+  auto message_type      = _decoder.get<MessageType>();
+  auto sequence_number   = _decoder.get<SequenceNumber>();
+  auto orig_message_size = _decoder.get<uint16_t>();
+  auto chunk_start       = _decoder.get<uint16_t>();
+  auto chunk_size        = _decoder.get<uint16_t>();
 
   if (_decoder.error()) return boost::none;
 
-  if (message_size > _decoder.size()) {
+  if (chunk_size > _decoder.size()) {
     return boost::none;
   }
 
@@ -112,15 +114,18 @@ boost::optional<InMessage> MessageReader::read_one_message() {
 
   auto header_size = _decoder.current() - type_start;
 
-  auto payload = const_buffer(_decoder.current(), message_size);
-  auto payload_with_type = const_buffer(type_start, message_size + header_size);
+  auto payload = const_buffer(_decoder.current(), chunk_size);
+  auto payload_with_type = const_buffer(type_start, chunk_size + header_size);
 
-  _decoder.skip(message_size);
+  _decoder.skip(chunk_size);
 
   return InMessage( move(source)
                   , move(targets)
                   , message_type
                   , sequence_number
+                  , orig_message_size
+                  , chunk_start
+                  , chunk_size
                   , payload
                   , payload_with_type );
 }

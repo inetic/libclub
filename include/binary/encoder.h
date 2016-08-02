@@ -46,6 +46,8 @@ public:
   template<class T> void put(T&& value);
   template<class Iterator> void put_raw(const Iterator*, std::size_t);
 
+  void skip(size_t);
+
   void set_error() { _was_error = true; }
 
   state store_state() const {
@@ -124,6 +126,15 @@ inline
 std::size_t encoder::remaining_size() const {
   if (_was_error) return 0;
   return _current.end - _current.begin;
+}
+
+inline void encoder::skip(size_t size) {
+  if (_was_error) return;
+  if (_current.begin + size > _current.end) {
+    _was_error = true;
+    return;
+  }
+  _current.begin += size;
 }
 
 inline void encode(encoder& e, uint8_t value) {

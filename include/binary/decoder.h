@@ -27,6 +27,12 @@ class decoder {
 public:
   using const_iterator = const std::uint8_t*;
 
+  decoder(const decoder&);
+  decoder(decoder&);
+
+  template<typename RandomAccessSequence>
+  decoder(const RandomAccessSequence&);
+
   template<typename RandomAccessIterator>
   decoder(RandomAccessIterator begin, RandomAccessIterator end);
 
@@ -85,6 +91,28 @@ decoder::decoder()
   : _was_error(true) {
   _current.begin = nullptr;
   _current.end = nullptr;
+}
+
+inline
+decoder::decoder(const decoder& d)
+  : _was_error(d._was_error) {
+  _current.begin = d._current.begin;
+  _current.end = d._current.end;
+}
+
+inline
+decoder::decoder(decoder& d)
+  : _was_error(d._was_error) {
+  _current.begin = d._current.begin;
+  _current.end = d._current.end;
+}
+
+template <typename RandomAccessSequence>
+decoder::decoder(const RandomAccessSequence& sequence)
+  : _was_error(false) {
+  _current.begin = sequence.data();
+  auto value_size = sizeof(typename RandomAccessSequence::value_type);
+  _current.end = sequence.data() + sequence.size() * value_size;
 }
 
 template <typename RandomAccessIterator>
