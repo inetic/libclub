@@ -19,6 +19,7 @@
 #include "transport/message.h"
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
+#include "transport/outbound_acks.h"
 
 #include <club/debug/ostream_uuid.h>
 #include "debug/string_tools.h"
@@ -124,16 +125,6 @@ private:
     PendingMessages       pending;
   };
 
-  struct AckSetId {
-    AckSet::Type ack_type;
-    uuid         source;
-
-    bool operator < (const AckSetId& other) const {
-      return std::tie(ack_type, source)
-           < std::tie(other.ack_type, other.source);
-    }
-  };
-
   template<class Key, class Value>
   static
   std::set<Key> keys(const std::map<Key, Value>& map) {
@@ -156,11 +147,8 @@ private:
   Messages               _messages;
   OnFlush                _on_flush;
 
-  std::map<uuid, NodeData>                   _nodes;
-  std::map<uuid, std::map<AckSetId, AckSet>> _outbound_acks;
-  //        |              |
-  //        |              +-> from
-  //        +-> to
+  std::map<uuid, NodeData>  _nodes;
+  OutboundAcks              _outbound_acks;
 
   std::shared_ptr<bool> _was_destroyed;
 };
@@ -173,6 +161,7 @@ template<class Id> Core<Id>::Core(uuid our_id, OnReceive on_recv)
   , _on_recv(std::move(on_recv))
   , _next_reliable_broadcast_number(0) // TODO: Should this be initialized to a random number?
   , _next_message_number(0)
+  , _outbound_acks(_our_id)
   , _was_destroyed(std::make_shared<bool>(false))
 {
 }
@@ -197,64 +186,13 @@ template<class Id> void Core<Id>::unregister_transport(Transport* t)
 template<class Id>
 uint8_t Core<Id>::encode_acks( binary::encoder& encoder
                              , const std::set<uuid>& targets) {
-  // Need to write at least the size.
-  assert(encoder.remaining_size() > 0);
-
-  auto count_encoder = encoder;
-
-  uint8_t count = 0;
-  encoder.put(count); // Shall be rewritten later in this func.
-
-  for (auto i = _outbound_acks.begin(); i != _outbound_acks.end();) {
-    auto& froms = i->second;
-
-    // TODO: Optimize this set intersection of targets with _outbound_acks.
-    if (targets.count(i->first) == 0) {
-      ++i;
-      continue;
-    }
-
-    for (auto j = froms.begin(); j != froms.end();) {
-      auto tmp_encoder = encoder;
-
-      auto ack_entry = AckEntry{i->first, j->first.source, j->second};
-      encoder.put(ack_entry);
-
-      if (encoder.error()) {
-        count_encoder.put(count);
-        encoder = tmp_encoder;
-        return count;
-      }
-
-      if (count == std::numeric_limits<decltype(count)>::max()) {
-        count_encoder.put(count);
-        return count;
-      }
-
-      //std::cout << _our_id << " >>> " << ack_entry << std::endl;
-      ++count;
-
-      j = froms.erase(j);
-    }
-
-    if (i->second.empty()) {
-      i = _outbound_acks.erase(i);
-    }
-    else {
-      ++i;
-    }
-  }
-
-  count_encoder.put(count);
-  return count;
+  return _outbound_acks.encode_few(encoder, targets);
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::add_ack_entry(AckEntry entry) {
-  // TODO: Union with the existing AckSet?
-  AckSetId ack_set_id{entry.acks.type(), entry.from};
-  _outbound_acks[entry.to][ack_set_id] = entry.acks;
+  _outbound_acks.add_ack_entry(std::move(entry));
 }
 
 //------------------------------------------------------------------------------
@@ -262,22 +200,7 @@ template<class Id>
 void Core<Id>::acknowledge(const uuid& from
                           , AckSet::Type type
                           , SequenceNumber sn) {
-  AckSetId ack_set_id{type, _our_id};
-
-  auto i = _outbound_acks.find(from);
-
-  if (i == _outbound_acks.end()) {
-    _outbound_acks[from].emplace(ack_set_id, AckSet(type, sn));
-  }
-  else {
-    auto j = i->second.find(ack_set_id);
-    if (j == i->second.end()) {
-      _outbound_acks[from].emplace(ack_set_id, AckSet(type, sn));
-    }
-    else {
-      j->second.try_add(sn);
-    }
-  }
+  _outbound_acks.acknowledge(from, type, sn);
 }
 
 //------------------------------------------------------------------------------
@@ -286,13 +209,15 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
   bool acked_some = false;
 
   for (auto sn : acks) {
-    typename Messages::iterator i;
+    MessageId mid;
 
     switch (acks.type()) {
-      case AckSet::Type::directed: i = _messages.find(ReliableDirectedId{target, sn}); break;
-      case AckSet::Type::broadcast: i = _messages.find(ReliableBroadcastId{sn}); break;
+      case AckSet::Type::directed:  mid = ReliableDirectedId{target, sn}; break;
+      case AckSet::Type::broadcast: mid = ReliableBroadcastId{sn};        break;
       default: assert(0); return;
     }
+
+    auto i = _messages.find(mid);
 
     if (i != _messages.end()) {
       if (auto message = i->second.lock()) {
