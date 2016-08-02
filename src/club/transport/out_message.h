@@ -32,7 +32,7 @@ struct OutMessage {
 
   // When we receive payload from a user, we need to prepend the header
   // data to it (it would be inefficient to concatenate the two).
-  struct HeaderAndPayload {
+  struct HeaderAndPayloadSeparate {
     std::array<uint8_t, header_size> header;
     std::vector<uint8_t>             payload;
 
@@ -55,12 +55,12 @@ struct OutMessage {
     std::vector<uint8_t> header_and_payload;
   };
 
-  using Data = boost::variant< HeaderAndPayload
-                             , HeaderAndPayloadCombined >;
+  using HeaderAndPayload = boost::variant< HeaderAndPayloadSeparate
+                                         , HeaderAndPayloadCombined >;
 
-  const uuid           source;
-        std::set<uuid> targets;
-        Data           data;
+  const uuid             source;
+        std::set<uuid>   targets;
+        HeaderAndPayload data;
 
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
@@ -69,9 +69,9 @@ struct OutMessage {
             , std::vector<uint8_t>&& payload)
     : source(std::move(source))
     , targets(std::move(targets))
-    , data(HeaderAndPayload())
+    , data(HeaderAndPayloadSeparate())
   {
-    auto& data_ = *boost::get<HeaderAndPayload>(&data);
+    auto& data_ = *boost::get<HeaderAndPayloadSeparate>(&data);
 
     assert(data_.payload.size() <= std::numeric_limits<uint16_t>()::max());
 
@@ -99,8 +99,8 @@ struct OutMessage {
     // TODO: Once we start supporting message splitting, only reset
     // data if no part of the message has already been sent.
     return match(data
-                , [&](const HeaderAndPayload& data) {
-                    const_cast<HeaderAndPayload&>(data)
+                , [&](const HeaderAndPayloadSeparate& data) {
+                    const_cast<HeaderAndPayloadSeparate&>(data)
                       .reset_payload(std::move(new_payload));
                   }
                 , [](const HeaderAndPayloadCombined& data) {
@@ -110,7 +110,7 @@ struct OutMessage {
 
   size_t header_and_payload_size() const {
     return match(data
-                , [=](const HeaderAndPayload& data) {
+                , [=](const HeaderAndPayloadSeparate& data) {
                     return data.header.size() + data.payload.size();
                   }
                 , [=](const HeaderAndPayloadCombined& data) {
@@ -120,7 +120,7 @@ struct OutMessage {
 
   void encode_header_and_payload(binary::encoder& encoder) const {
     match(data
-         , [&](const HeaderAndPayload& data) {
+         , [&](const HeaderAndPayloadSeparate& data) {
              encoder.put_raw(data.header.data(),  data.header.size());
              encoder.put_raw(data.payload.data(), data.payload.size());
            }
@@ -137,7 +137,7 @@ inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
   os << "(OutMessage src:" << m.source
      << " targets: " << str(m.targets) << " ";
 
-  match(m.data, [&os](const OutMessage::HeaderAndPayload& data) {
+  match(m.data, [&os](const OutMessage::HeaderAndPayloadSeparate& data) {
                   os << str(data.header) << " " << str(data.payload);
                 }
               , [&os](const OutMessage::HeaderAndPayloadCombined& data) {
