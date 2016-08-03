@@ -21,6 +21,7 @@
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
 #include "transport/outbound_acks.h"
+#include "transport/pending_message.h"
 
 #include <club/debug/ostream_uuid.h>
 #include "debug/string_tools.h"
@@ -86,33 +87,7 @@ private:
   void try_flush();
 
 private:
-  struct PendingEntry {
-    InMessage            message;
-    std::vector<uint8_t> data;
-
-    PendingEntry(PendingEntry&&)                 = default;
-    PendingEntry(const PendingEntry&)            = delete;
-    PendingEntry& operator=(const PendingEntry&) = delete;
-
-    PendingEntry(InMessage m)
-      : message(std::move(m))
-      , data( boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-            , boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-              + boost::asio::buffer_size(message.type_and_payload) )
-    {
-      using boost::asio::const_buffer;
-      using boost::asio::buffer_size;
-
-      size_t type_size = buffer_size(message.type_and_payload)
-                       - buffer_size(message.payload);
-
-      message.type_and_payload = const_buffer(data.data(), data.size());
-      message.payload          = const_buffer( data.data() + type_size
-                                             , data.size() - type_size);
-    }
-  };
-
-  using PendingMessages = std::map<SequenceNumber, PendingEntry>;
+  using PendingMessages = std::map<SequenceNumber, PendingMessage>;
 
   void recursively_apply(SequenceNumber, PendingMessages&);
 
@@ -410,7 +385,7 @@ void Core<Id>::on_receive(InMessage msg) {
         recursively_apply(++sn, node.pending);
       }
       else if (msg.sequence_number > node.sync->last_executed_message + 1) {
-        node.pending.emplace(msg.sequence_number, PendingEntry(move(msg)));
+        node.pending.emplace(msg.sequence_number, PendingMessage(move(msg)));
       }
     }
   }
