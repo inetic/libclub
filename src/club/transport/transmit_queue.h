@@ -204,7 +204,7 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (!current->resend_until_acked) {
+    if (!current->resend_until_acked && current->already_sent == current->message->payload_size()) {
       auto& m = *current->message;
 
       // TODO: This can have linear time complexity.

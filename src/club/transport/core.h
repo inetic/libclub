@@ -344,14 +344,33 @@ void Core<Id>::on_receive_part(InMessagePart msg) {
     return;
   }
 
-  if (msg.type != MessageType::reliable_broadcast) return;
+  if (msg.type != MessageType::reliable_broadcast
+      && msg.type != MessageType::unreliable_broadcast) return;
+
   auto i = _nodes.find(msg.source);
   if (i == _nodes.end()) return;
   auto& node = i->second;
   if (!node.sync) return;
   if (!node.sync->acks.can_add(msg.sequence_number)) return;
 
-  node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)));
+  auto pending_i = node.pending.find(msg.sequence_number);
+
+  if (pending_i == node.pending.end()) {
+    node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)));
+  }
+  else {
+    auto& pm = pending_i->second;
+
+    pm.update_payload(msg.chunk_start, msg.payload );
+
+    if (auto opt_full_msg = pm.get_full_message()) {
+      auto stored_pm = std::move(pm);
+      node.pending.erase(pending_i);
+      on_receive_full(std::move(*pm.get_full_message()));
+    }
+    else {
+    }
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -359,6 +378,7 @@ template<class Id>
 void Core<Id>::on_receive_full(InMessageFull msg) {
   using std::move;
 
+  using namespace boost::asio;
   auto i = _nodes.find(msg.source);
 
   // If there is no NodeData for this source we have not yet

@@ -68,10 +68,23 @@ bool InMessagePart::is_full() const {
 
 //------------------------------------------------------------------------------
 inline std::ostream& operator<<(std::ostream& os, const InMessagePart& m) {
-  return os << "(InMessagePart src:" << m.source
-            << " targets: " << str(m.targets)
-            << " " << str(m.type_and_payload)
-            << ")";
+  using namespace boost::asio;
+
+  os << "(InMessagePart src:" << m.source
+     << " targets:" << str(m.targets)
+     << " type:" << m.type
+     << " sn:" << m.sequence_number
+     << " orig_size:" << m.original_size
+     << " chunk_start:" << m.chunk_start
+     << " chunk_size:" << m.chunk_size;
+
+  const_buffer b( buffer_cast<const uint8_t*>(m.payload)
+                , std::min<size_t>(10, buffer_size(m.payload)));
+
+  os << " " << str(b) << "x" << buffer_size(m.payload)
+     << ")";
+
+  return os;
 }
 
 }} // club::transport namespace

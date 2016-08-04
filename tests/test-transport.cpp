@@ -172,6 +172,41 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
 }
 
 //------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  WhenAll when_all;
+
+  size_t N = 65500;
+  vector<uint8_t> big_message(N);
+
+  for (size_t i = 0; i < N; i++) {
+    big_message[i] = i;
+  }
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), big_message);
+    c();
+  });
+
+  connect_nodes(ios, n1, n2);
+
+  n1.broadcast_unreliable(big_message);
+
+  n1.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
   asio::io_service ios;
 
@@ -364,6 +399,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_many_messages) {
 
   // n1 -> n2 -> n3
   Node n1, n2, n3;
+
+  //Debug d(n1, n2, n3);
 
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);

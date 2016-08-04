@@ -81,10 +81,11 @@ struct OutMessage {
       assert(cur_size == payload.size());
       assert(cur_size >= start);
 
-      auto size = std::min<uint16_t>(cur_size - start, e.remaining_size());
+      auto size = std::min<uint16_t>( cur_size - start
+                                    , e.remaining_size() - header.size());
 
       e.put_raw(header.data(),  header.size());
-      e.put_raw(payload.data(), size);
+      e.put_raw(payload.data() + start, size);
 
       // Correct the header.
       header_e.skip(pos_ST);
@@ -231,11 +232,23 @@ private:
 //------------------------------------------------------------------------------
 
 inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
+  using namespace boost::asio;
+
   os << "(OutMessage src:" << m.source
      << " targets: " << str(m.targets) << " ";
 
   match(m.data, [&os](const OutMessage::HeaderAndPayloadSeparate& data) {
-                  os << str(data.header) << " " << str(data.payload);
+                  os << str(data.header) << " ";
+
+                  if (data.payload.size() < 10) {
+                    os << str(data.payload);
+                  }
+                  else {
+                    auto p = data.payload.data();
+
+                    os << str(const_buffer(p, 10))
+                       << "...x" << data.payload.size();
+                  }
                 }
               , [&os](const OutMessage::HeaderAndPayloadCombined& data) {
                   os << str(data.header_and_payload);

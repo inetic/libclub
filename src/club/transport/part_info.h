@@ -37,6 +37,8 @@ private:
   void sanitize(Info::iterator);
 
 private:
+  friend std::ostream& operator<<(std::ostream&, const PartInfo&);
+
   Info _info;
 };
 
@@ -84,6 +86,18 @@ inline void PartInfo::sanitize(Info::iterator i) {
     i->second = std::max(i->second, j->second);
     j = _info.erase(j);
   }
+}
+
+//------------------------------------------------------------------------------
+inline std::ostream& operator<<(std::ostream& os, const PartInfo& info) {
+  os << "(PartInfo ";
+  for (auto i = info._info.begin(); i != info._info.end(); ++i) {
+    os << "(" << i->first << ", " << i->second << ")";
+    if (i != --info._info.end()) {
+      os << ", ";
+    }
+  }
+  return os << ")";
 }
 
 //------------------------------------------------------------------------------

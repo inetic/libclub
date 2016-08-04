@@ -39,6 +39,16 @@ inline void decode(binary::decoder& d, MessageType& t) {
 }
 
 //------------------------------------------------------------------------------
+inline std::ostream& operator<<(std::ostream& os, MessageType t) {
+  switch (t) {
+    case MessageType::unreliable_broadcast: return os << "unreliable_broadcast";
+    case MessageType::reliable_broadcast: return os << "reliable_broadcast";
+    case MessageType::syn: return os << "syn";
+  }
+  return os << "unknown";
+}
+
+//------------------------------------------------------------------------------
 }} // club::transport namespace
 
 //------------------------------------------------------------------------------

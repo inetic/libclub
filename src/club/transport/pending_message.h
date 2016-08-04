@@ -24,10 +24,10 @@ struct PendingMessage {
   const MessageType               type;
   const SequenceNumber            sequence_number;
         size_t                    size;
+  std::vector<uint8_t>            data;
         boost::asio::const_buffer payload;
         boost::asio::const_buffer type_and_payload;
 
-  std::vector<uint8_t> data;
   PartInfo             part_info;
 
   PendingMessage(PendingMessage&&)                 = default;
@@ -54,6 +54,7 @@ PendingMessage::PendingMessage(InMessagePart m)
   , sequence_number(m.sequence_number)
   , size(m.original_size)
   , data(m.original_size)
+  , payload(data.data() , data.size())
 {
   update_payload(m.chunk_start, m.payload);
 }
@@ -68,8 +69,8 @@ PendingMessage::PendingMessage(InMessageFull m)
   , data( boost::asio::buffer_cast<const uint8_t*>(m.payload)
         , boost::asio::buffer_cast<const uint8_t*>(m.payload)
           + boost::asio::buffer_size(m.payload) )
+  , payload(data.data() , data.size())
 {
-  m.payload = boost::asio::const_buffer(data.data() , data.size());
 }
 
 //------------------------------------------------------------------------------
@@ -99,7 +100,9 @@ bool PendingMessage::is_full() const {
 //------------------------------------------------------------------------------
 inline
 boost::optional<InMessageFull> PendingMessage::get_full_message() const {
-  assert(is_full() && "TODO");
+  if (!is_full()) {
+    return boost::none;
+  }
 
   return InMessageFull( source
                       , type
