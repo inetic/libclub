@@ -18,14 +18,14 @@
 namespace club { namespace transport {
 
 struct PendingMessage {
-  InMessage            message;
+  InMessagePart        message;
   std::vector<uint8_t> data;
 
   PendingMessage(PendingMessage&&)                 = default;
   PendingMessage(const PendingMessage&)            = delete;
   PendingMessage& operator=(const PendingMessage&) = delete;
 
-  PendingMessage(InMessage m)
+  PendingMessage(InMessagePart m)
     : message(std::move(m))
     , data( boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
           , boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)

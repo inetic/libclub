@@ -16,7 +16,7 @@
 #define CLUB_TRANSPORT_CORE_H
 
 #include <map>
-#include "transport/in_message.h"
+#include "transport/in_message_part.h"
 #include "transport/out_message.h"
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
@@ -72,14 +72,14 @@ private:
 
   void register_transport(Transport*);
   void unregister_transport(Transport*);
-  void forward_message(const InMessage&);
+  void forward_message(const InMessagePart&);
 
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
   void add_target(uuid);
 
-  void on_receive(InMessage);
+  void on_receive(InMessagePart);
 
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, AckSet::Type, SequenceNumber);
@@ -303,7 +303,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::forward_message(const InMessage& msg) {
+void Core<Id>::forward_message(const InMessagePart& msg) {
   using namespace std;
 
   auto begin = boost::asio::buffer_cast<const uint8_t*>(msg.type_and_payload);
@@ -338,15 +338,15 @@ Core<Id>::recursively_apply(SequenceNumber next_sn, PendingMessages& pending) {
 
   // Move the entry to this local variable to extend its lifetime beyond the
   // following erase.
-  auto pending_entry = std::move(i->second);
+  auto pending_message = std::move(i->second);
   i = pending.erase(i);
 
-  on_receive(std::move(pending_entry.message));
+  on_receive(std::move(pending_message.message));
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::on_receive(InMessage msg) {
+void Core<Id>::on_receive(InMessagePart msg) {
   using std::move;
 
   auto i = _nodes.find(msg.source);

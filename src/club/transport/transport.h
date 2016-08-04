@@ -102,7 +102,7 @@ private:
   const Core& core() const { return _transmit_queue.core(); }
 
   void handle_ack_entry(AckEntry);
-  void handle_message(std::shared_ptr<SocketState>&, InMessage);
+  void handle_message(std::shared_ptr<SocketState>&, InMessagePart);
 
 private:
   uuid                             _id;
@@ -231,7 +231,7 @@ void Transport<Id>::handle_ack_entry(AckEntry entry) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
-                                  , InMessage msg) {
+                                  , InMessagePart msg) {
   if (msg.source == _id) {
     assert(0 && "Our message was returned back");
     return;

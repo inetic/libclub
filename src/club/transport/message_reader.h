@@ -28,8 +28,8 @@ public:
 
   void set_data(const uint8_t* data, size_t);
 
-  boost::optional<InMessage> read_one_message();
-  boost::optional<AckEntry>  read_one_ack_entry();
+  boost::optional<InMessagePart> read_one_message();
+  boost::optional<AckEntry>      read_one_ack_entry();
 
 private:
   binary::decoder _decoder;
@@ -74,7 +74,7 @@ boost::optional<AckEntry> MessageReader::read_one_ack_entry() {
 }
 
 //------------------------------------------------------------------------------
-boost::optional<InMessage> MessageReader::read_one_message() {
+boost::optional<InMessagePart> MessageReader::read_one_message() {
   using std::move;
 
   // TODO: See if the number of octets can be reduced.
@@ -119,15 +119,15 @@ boost::optional<InMessage> MessageReader::read_one_message() {
 
   _decoder.skip(chunk_size);
 
-  return InMessage( move(source)
-                  , move(targets)
-                  , message_type
-                  , sequence_number
-                  , orig_message_size
-                  , chunk_start
-                  , chunk_size
-                  , payload
-                  , payload_with_type );
+  return InMessagePart( move(source)
+                      , move(targets)
+                      , message_type
+                      , sequence_number
+                      , orig_message_size
+                      , chunk_start
+                      , chunk_size
+                      , payload
+                      , payload_with_type );
 }
 
 }} // club::transport namespace
