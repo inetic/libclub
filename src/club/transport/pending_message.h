@@ -15,6 +15,8 @@
 #ifndef CLUB_TRANSPORT_PENDING_MESSAGE_H
 #define CLUB_TRANSPORT_PENDING_MESSAGE_H
 
+#include "part_info.h"
+
 namespace club { namespace transport {
 
 struct PendingMessage {
@@ -25,8 +27,8 @@ struct PendingMessage {
         boost::asio::const_buffer payload;
         boost::asio::const_buffer type_and_payload;
 
-  std::vector<uint8_t>     data;
-  std::map<size_t, size_t> part_info;
+  std::vector<uint8_t> data;
+  PartInfo             part_info;
 
   PendingMessage(PendingMessage&&)                 = default;
   PendingMessage(const PendingMessage&)            = delete;
@@ -34,6 +36,8 @@ struct PendingMessage {
 
   PendingMessage(InMessagePart m);
   PendingMessage(InMessageFull m);
+
+  void update_payload(size_t start, boost::asio::const_buffer);
 
   bool is_full() const;
 
@@ -49,21 +53,9 @@ PendingMessage::PendingMessage(InMessagePart m)
   , type(m.type)
   , sequence_number(m.sequence_number)
   , size(m.original_size)
-  , data( boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
-        , boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
-          + boost::asio::buffer_size(m.type_and_payload) )
+  , data(m.original_size)
 {
-  using boost::asio::const_buffer;
-  using boost::asio::buffer_size;
-
-  size_t type_size = buffer_size(m.type_and_payload)
-                   - buffer_size(m.payload);
-
-  type_and_payload = const_buffer(data.data(), data.size());
-  payload          = const_buffer( data.data() + type_size
-                                 , data.size() - type_size);
-
-  part_info.emplace(m.chunk_start, m.chunk_size);
+  update_payload(m.chunk_start, m.payload);
 }
 
 //------------------------------------------------------------------------------
@@ -73,26 +65,35 @@ PendingMessage::PendingMessage(InMessageFull m)
   , type(m.type)
   , sequence_number(m.sequence_number)
   , size(m.size)
-  , data( boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
-        , boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
-          + boost::asio::buffer_size(m.type_and_payload) )
+  , data( boost::asio::buffer_cast<const uint8_t*>(m.payload)
+        , boost::asio::buffer_cast<const uint8_t*>(m.payload)
+          + boost::asio::buffer_size(m.payload) )
 {
-  using boost::asio::const_buffer;
-  using boost::asio::buffer_size;
+  m.payload = boost::asio::const_buffer(data.data() , data.size());
+}
 
-  size_t type_size = buffer_size(m.type_and_payload)
-                   - buffer_size(m.payload);
+//------------------------------------------------------------------------------
+inline
+void PendingMessage::update_payload(size_t start, boost::asio::const_buffer b) {
+  namespace asio = boost::asio;
 
-  m.type_and_payload = const_buffer(data.data(), data.size());
-  m.payload          = const_buffer( data.data() + type_size
-                                   , data.size() - type_size);
+  asio::mutable_buffer target( data.data() + start
+                             , data.size() - start );
+
+  size_t copied = asio::buffer_copy(target, b);
+
+  assert(copied == asio::buffer_size(b));
+
+  part_info.add_part(start, start + copied);
 }
 
 //------------------------------------------------------------------------------
 inline
 bool PendingMessage::is_full() const {
   if (part_info.empty()) return true;
-  return part_info.begin()->first == 0 && part_info.begin()->second == size;
+  auto start = part_info.begin()->first;
+  return start == 0
+      && part_info.begin()->second == size;
 }
 
 //------------------------------------------------------------------------------

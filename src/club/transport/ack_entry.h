@@ -40,7 +40,12 @@ inline void decode(binary::decoder& d, AckEntry& ack_entry) {
   ack_entry.to   = d.get<uuid>();
   ack_entry.from = d.get<uuid>();
   ack_entry.acks = d.get<AckSet>();
-  assert(d.error() || ack_entry.acks.type() != AckSet::Type::unset);
+
+  if (ack_entry.acks.type() == AckSet::Type::unset) {
+    d.set_error();
+  }
+
+  assert(!d.error());
 }
 
 //------------------------------------------------------------------------------

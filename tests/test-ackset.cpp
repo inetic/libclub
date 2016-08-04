@@ -139,25 +139,25 @@ BOOST_AUTO_TEST_CASE(test_ack_set_serialize) {
   };
 
   {
-    AckSet acks;
+    AckSet acks(AckSet::Type::broadcast);
     BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec());
   }
 
   {
-    AckSet acks;
+    AckSet acks(AckSet::Type::broadcast);
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({10}));
   }
 
   {
-    AckSet acks;
+    AckSet acks(AckSet::Type::broadcast);
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
     BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({11, 10}));
   }
 
   {
-    AckSet acks;
+    AckSet acks(AckSet::Type::broadcast);
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
     BOOST_REQUIRE(acks.try_add(11+31));
