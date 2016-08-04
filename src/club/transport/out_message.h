@@ -139,7 +139,7 @@ struct OutMessage {
   {
     auto& data_ = *boost::get<HeaderAndPayloadSeparate>(&data);
 
-    assert(data_.payload.size() <= std::numeric_limits<uint16_t>()::max());
+    assert(data_.payload.size() <= std::numeric_limits<uint16_t>::max());
 
     binary::encoder e( data_.header.data()
                      , data_.header.data() + data_.header.size());

@@ -255,6 +255,10 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
   encoder.put(m.source);
   encode_targets(encoder, targets);
 
+  if (entry.already_sent == m.payload_size()) {
+    entry.already_sent = 0;
+  }
+
   uint16_t payload_size = m.encode_header_and_payload( encoder
                                                      , entry.already_sent);
 
