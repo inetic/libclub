@@ -341,10 +341,17 @@ void Core<Id>::on_receive_part(InMessagePart msg) {
                                  , msg.original_size
                                  , msg.payload
                                  , msg.type_and_payload));
+    return;
   }
-  else {
-    assert(0 && "TODO");
-  }
+
+  if (msg.type != MessageType::reliable_broadcast) return;
+  auto i = _nodes.find(msg.source);
+  if (i == _nodes.end()) return;
+  auto& node = i->second;
+  if (!node.sync) return;
+  if (!node.sync->acks.can_add(msg.sequence_number)) return;
+
+  node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)));
 }
 
 //------------------------------------------------------------------------------
@@ -354,8 +361,8 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
 
   auto i = _nodes.find(msg.source);
 
-  // If there is no AckSet for this source we attempted to establish
-  // connection with it.
+  // If there is no NodeData for this source we have not yet
+  // attempted to establish connection with it.
   if (i == _nodes.end()) {
     return;
   }
@@ -364,9 +371,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
 
   if (msg.type == MessageType::reliable_broadcast) {
     // Have we received syn packet yet?
-    if (!node.sync) {
-      return;
-    }
+    if (!node.sync) return;
 
     // If the remote peer is sending too quickly we refuse to receive
     // and acknowledge the message.
@@ -393,6 +398,9 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
     }
   }
   else if (msg.type == MessageType::unreliable_broadcast) {
+    // Have we received syn packet yet?
+    if (!node.sync) return;
+
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
@@ -416,9 +424,9 @@ void Core<Id>::replay_pending_messages(NodeData& node) {
   auto was_destroyed = _was_destroyed;
 
   for (auto i = node.pending.begin(); i != node.pending.end();) {
-    auto next_sn = node.sync->last_executed_message;
+    auto next_sn = node.sync->last_executed_message + 1;
 
-    if (i->first != next_sn) break;;
+    if (i->first != next_sn) break;
 
     if (auto opt_full_message = i->second.get_full_message())
     {
@@ -426,6 +434,8 @@ void Core<Id>::replay_pending_messages(NodeData& node) {
               , opt_full_message->payload);
 
       if (*was_destroyed) return;
+
+      node.sync->last_executed_message = next_sn;
 
       i = node.pending.erase(i);
     }

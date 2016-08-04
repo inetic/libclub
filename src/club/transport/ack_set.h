@@ -35,6 +35,7 @@ public:
   AckSet(Type, SequenceNumber);
 
   bool try_add(SequenceNumber new_sn);
+  bool can_add(SequenceNumber new_sn);
 
   struct iterator {
     iterator(const AckSet& acks, size_t pos)
@@ -159,6 +160,42 @@ inline bool AckSet::try_add(SequenceNumber new_sn) {
       predecessors |= 1 << (shift - 1);
       is_empty = was_empty;
       highest_sequence_number = new_sn;
+      return true;
+    }
+  }
+}
+
+inline bool AckSet::can_add(SequenceNumber new_sn) {
+  if (is_empty) {
+    return true;
+  }
+  else {
+    auto hsn = highest_sequence_number;
+
+    if (new_sn == hsn) {
+      return true;
+    }
+
+    if (new_sn < hsn) {
+      if (new_sn < hsn - 31) {
+        return true;
+      }
+
+      return true;
+    }
+    else {
+      if (new_sn > hsn + 31) {
+        return false;
+      }
+
+      auto shift = new_sn - hsn;
+
+      for (decltype(shift) i = 0; i < shift; ++i) {
+        if (!((hsn < lowest_sequence_number + 31 - i) || (predecessors & (1 << (30-i))))) {
+          return false;
+        }
+      }
+
       return true;
     }
   }

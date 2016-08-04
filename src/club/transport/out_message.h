@@ -109,7 +109,7 @@ struct OutMessage {
       auto cur_start = header_d.get<uint16_t>();
       auto cur_size  = header_d.get<uint16_t>();
 
-      assert(cur_size = header_and_payload.size() - header_size);
+      assert(cur_size == header_and_payload.size() - header_size);
 
       auto size = std::min<uint16_t>(cur_size - start, e.remaining_size());
 
