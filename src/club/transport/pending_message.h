@@ -18,8 +18,15 @@
 namespace club { namespace transport {
 
 struct PendingMessage {
-  InMessagePart        message;
-  std::vector<uint8_t> data;
+  const uuid                      source;
+  const MessageType               type;
+  const SequenceNumber            sequence_number;
+        size_t                    size;
+        boost::asio::const_buffer payload;
+        boost::asio::const_buffer type_and_payload;
+
+  std::vector<uint8_t>     data;
+  std::map<size_t, size_t> part_info;
 
   PendingMessage(PendingMessage&&)                 = default;
   PendingMessage(const PendingMessage&)            = delete;
@@ -27,6 +34,8 @@ struct PendingMessage {
 
   PendingMessage(InMessagePart m);
   PendingMessage(InMessageFull m);
+
+  bool is_full() const;
 
   boost::optional<InMessageFull> get_full_message() const;
 };
@@ -36,60 +45,67 @@ struct PendingMessage {
 //------------------------------------------------------------------------------
 inline
 PendingMessage::PendingMessage(InMessagePart m)
-  : message(std::move(m))
-  , data( boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-        , boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-          + boost::asio::buffer_size(message.type_and_payload) )
+  : source(std::move(m.source))
+  , type(m.type)
+  , sequence_number(m.sequence_number)
+  , size(m.original_size)
+  , data( boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
+        , boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
+          + boost::asio::buffer_size(m.type_and_payload) )
 {
   using boost::asio::const_buffer;
   using boost::asio::buffer_size;
 
-  size_t type_size = buffer_size(message.type_and_payload)
-                   - buffer_size(message.payload);
+  size_t type_size = buffer_size(m.type_and_payload)
+                   - buffer_size(m.payload);
 
-  message.type_and_payload = const_buffer(data.data(), data.size());
-  message.payload          = const_buffer( data.data() + type_size
-                                         , data.size() - type_size);
+  type_and_payload = const_buffer(data.data(), data.size());
+  payload          = const_buffer( data.data() + type_size
+                                 , data.size() - type_size);
+
+  part_info.emplace(m.chunk_start, m.chunk_size);
 }
 
 //------------------------------------------------------------------------------
 inline
 PendingMessage::PendingMessage(InMessageFull m)
-  : message( m.source
-           , std::set<uuid>()
-           , m.type
-           , m.sequence_number
-           , m.size
-           , 0
-           , m.size
-           , m.payload
-           , m.type_and_payload)
-  , data( boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-        , boost::asio::buffer_cast<const uint8_t*>(message.type_and_payload)
-          + boost::asio::buffer_size(message.type_and_payload) )
+  : source(std::move(m.source))
+  , type(m.type)
+  , sequence_number(m.sequence_number)
+  , size(m.size)
+  , data( boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
+        , boost::asio::buffer_cast<const uint8_t*>(m.type_and_payload)
+          + boost::asio::buffer_size(m.type_and_payload) )
 {
   using boost::asio::const_buffer;
   using boost::asio::buffer_size;
 
-  size_t type_size = buffer_size(message.type_and_payload)
-                   - buffer_size(message.payload);
+  size_t type_size = buffer_size(m.type_and_payload)
+                   - buffer_size(m.payload);
 
-  message.type_and_payload = const_buffer(data.data(), data.size());
-  message.payload          = const_buffer( data.data() + type_size
-                                         , data.size() - type_size);
+  m.type_and_payload = const_buffer(data.data(), data.size());
+  m.payload          = const_buffer( data.data() + type_size
+                                   , data.size() - type_size);
+}
+
+//------------------------------------------------------------------------------
+inline
+bool PendingMessage::is_full() const {
+  if (part_info.empty()) return true;
+  return part_info.begin()->first == 0 && part_info.begin()->second == size;
 }
 
 //------------------------------------------------------------------------------
 inline
 boost::optional<InMessageFull> PendingMessage::get_full_message() const {
-  assert(message.is_full());
+  assert(is_full() && "TODO");
 
-  return InMessageFull( message.source
-                      , message.type
-                      , message.sequence_number
-                      , message.original_size
-                      , message.payload
-                      , message.type_and_payload);
+  return InMessageFull( source
+                      , type
+                      , sequence_number
+                      , size
+                      , payload
+                      , type_and_payload);
 }
 
 //------------------------------------------------------------------------------
