@@ -17,6 +17,7 @@
 
 #include <map>
 #include "transport/in_message_part.h"
+#include "transport/in_message_full.h"
 #include "transport/out_message.h"
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
@@ -79,17 +80,17 @@ private:
 
   void add_target(uuid);
 
-  void on_receive(InMessagePart);
+  void on_receive_part(InMessagePart);
+  void on_receive_full(InMessageFull);
 
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, AckSet::Type, SequenceNumber);
 
   void try_flush();
 
+
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
-
-  void recursively_apply(SequenceNumber, PendingMessages&);
 
   struct NodeData {
     struct Sync {
@@ -100,6 +101,8 @@ private:
     boost::optional<Sync> sync;
     PendingMessages       pending;
   };
+
+  void replay_pending_messages(NodeData& node);
 
   template<class Key, class Value>
   static
@@ -330,23 +333,23 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void
-Core<Id>::recursively_apply(SequenceNumber next_sn, PendingMessages& pending) {
-  if (pending.empty()) return;
-  auto i = pending.begin();
-  if (i->first != next_sn) return;
-
-  // Move the entry to this local variable to extend its lifetime beyond the
-  // following erase.
-  auto pending_message = std::move(i->second);
-  i = pending.erase(i);
-
-  on_receive(std::move(pending_message.message));
+void Core<Id>::on_receive_part(InMessagePart msg) {
+  if (msg.is_full()) {
+    on_receive_full(InMessageFull( msg.source
+                                 , msg.type
+                                 , msg.sequence_number
+                                 , msg.original_size
+                                 , msg.payload
+                                 , msg.type_and_payload));
+  }
+  else {
+    assert(0 && "TODO");
+  }
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::on_receive(InMessagePart msg) {
+void Core<Id>::on_receive_full(InMessageFull msg) {
   using std::move;
 
   auto i = _nodes.find(msg.source);
@@ -382,7 +385,7 @@ void Core<Id>::on_receive(InMessagePart msg) {
 
         // This should be the last thing this function does (or you need
         // to check the was_destroyed flag again).
-        recursively_apply(++sn, node.pending);
+        replay_pending_messages(node);
       }
       else if (msg.sequence_number > node.sync->last_executed_message + 1) {
         node.pending.emplace(msg.sequence_number, PendingMessage(move(msg)));
@@ -404,6 +407,31 @@ void Core<Id>::on_receive(InMessagePart msg) {
   else {
     // TODO: Disconnect from the sender.
     assert(0);
+  }
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::replay_pending_messages(NodeData& node) {
+  auto was_destroyed = _was_destroyed;
+
+  for (auto i = node.pending.begin(); i != node.pending.end();) {
+    auto next_sn = node.sync->last_executed_message;
+
+    if (i->first != next_sn) break;;
+
+    if (auto opt_full_message = i->second.get_full_message())
+    {
+      _on_recv( opt_full_message->source
+              , opt_full_message->payload);
+
+      if (*was_destroyed) return;
+
+      i = node.pending.erase(i);
+    }
+    else {
+      break;
+    }
   }
 }
 

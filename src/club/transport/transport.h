@@ -247,7 +247,7 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
 
     //std::cout << _id << " <<< " << msg << std::endl;
 
-    core().on_receive(std::move(msg));
+    core().on_receive_part(std::move(msg));
 
     if (state->was_destroyed) return;
 

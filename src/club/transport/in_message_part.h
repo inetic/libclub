@@ -37,6 +37,8 @@ struct InMessagePart {
         boost::asio::const_buffer payload;
         boost::asio::const_buffer type_and_payload;
 
+  bool is_full() const;
+
   InMessagePart( uuid                      source
                , std::set<uuid>&&          targets
                , MessageType               type
@@ -59,7 +61,12 @@ struct InMessagePart {
 };
 
 //------------------------------------------------------------------------------
+inline
+bool InMessagePart::is_full() const {
+  return chunk_start == 0 && original_size == chunk_size;
+}
 
+//------------------------------------------------------------------------------
 inline std::ostream& operator<<(std::ostream& os, const InMessagePart& m) {
   return os << "(InMessagePart src:" << m.source
             << " targets: " << str(m.targets)
