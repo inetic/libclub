@@ -95,24 +95,27 @@ private:
 //------------------------------------------------------------------------------
 inline AckSet::AckSet()
   : _type(Type::unset)
+  , highest_sequence_number(0)
+  , lowest_sequence_number(0)
   , predecessors(0)
   , is_empty(true)
 {}
 
 inline AckSet::AckSet(Type type)
   : _type(type)
+  , highest_sequence_number(0)
+  , lowest_sequence_number(0)
   , predecessors(0)
   , is_empty(true)
 {}
 
 inline AckSet::AckSet(Type type, SequenceNumber sn)
   : _type(type)
+  , highest_sequence_number(sn)
+  , lowest_sequence_number(sn)
   , predecessors(0)
   , is_empty(false)
-{
-  highest_sequence_number = sn;
-  lowest_sequence_number  = sn;
-}
+{ }
 
 inline bool AckSet::try_add(SequenceNumber new_sn) {
   if (is_empty) {
