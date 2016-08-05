@@ -43,7 +43,7 @@ private:
   struct Entry {
     MessageId  message_id;
     bool       resend_until_acked;
-    size_t     already_sent;
+    size_t     bytes_already_sent;
     MessagePtr message;
   };
 
@@ -113,18 +113,14 @@ void TransmitQueue<Id>::insert_message( MessageId message_id
 
   Entry entry { std::move(message_id)
               , resend_until_acked
-              , 0 // already_sent
+              , 0 // bytes_already_sent
               , move(message)
               };
 
-  if (_next != _messages.end() || _messages.empty()) {
-    _messages.insert(_next, move(entry));
-  }
-  else {
-    // If we're at the end of the queue and it isn't empty, that means we've
-    // just sent everything in it. So the new messages shall be
-    // sent next.
-    _next = _messages.insert(_messages.begin(), move(entry));
+  auto i = _messages.insert(_next, move(entry));
+
+  if (_next == _messages.end()) {
+    _next = i;
   }
 }
 
@@ -161,10 +157,6 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
   auto current = _next;
 
-  if (current == _messages.end()) {
-    current = _messages.begin();
-  }
-
   auto last = current;
   if (last == _messages.begin()) { last = --_messages.end(); }
   else --last;
@@ -178,6 +170,8 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
   while (true) {
     _next = std::next(current);
 
+    if (_next == _messages.end()) _next = _messages.begin();
+
     bool is_last = current == last;
 
     set_intersection( current->message->targets
@@ -187,9 +181,8 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
     if (_target_intersection.empty()) {
       erase(current);
       if (is_last) break;
-      current = _next;
-      if (current == _messages.end()) current = _messages.begin();
       if (_messages.empty()) break;
+      current = _next;
       continue;
     }
 
@@ -204,23 +197,25 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (!current->resend_until_acked && current->already_sent == current->message->payload_size()) {
-      auto& m = *current->message;
+    if (!current->resend_until_acked) {
+      // Have we sent the payload in its entirety?
+      if (current->bytes_already_sent == current->message->payload_size()) {
+        auto& m = *current->message;
 
-      // TODO: This can have linear time complexity.
-      for (const auto& target : _target_intersection) {
-        m.targets.erase(target);
-      }
+        // TODO: This can have linear time complexity.
+        for (const auto& target : _target_intersection) {
+          m.targets.erase(target);
+        }
 
-      if (m.targets.empty()) {
-        erase(current);
-        if (_messages.empty()) break;
+        if (m.targets.empty()) {
+          erase(current);
+          if (_messages.empty()) break;
+        }
       }
     }
 
     if (is_last) break;
     current = _next;
-    if (current == _messages.end()) current = _messages.begin();
   }
 
   return count;
@@ -255,19 +250,19 @@ TransmitQueue<Id>::encode( binary::encoder& encoder
   encoder.put(m.source);
   encode_targets(encoder, targets);
 
-  if (entry.already_sent == m.payload_size()) {
-    entry.already_sent = 0;
+  if (entry.bytes_already_sent == m.payload_size()) {
+    entry.bytes_already_sent = 0;
   }
 
   uint16_t payload_size = m.encode_header_and_payload( encoder
-                                                     , entry.already_sent);
+                                                     , entry.bytes_already_sent);
 
   if (encoder.error()) {
     assert(0);
     return;
   }
 
-  entry.already_sent += payload_size;
+  entry.bytes_already_sent += payload_size;
 }
 
 //------------------------------------------------------------------------------
