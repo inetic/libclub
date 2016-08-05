@@ -23,13 +23,10 @@ struct PendingMessage {
   const uuid                      source;
   const MessageType               type;
   const SequenceNumber            sequence_number;
-        size_t                    size;
+  const size_t                    size;
   std::vector<uint8_t>            data;
-        boost::asio::const_buffer payload;
-        // TODO: I think this one isn't needed => remove it
-        boost::asio::const_buffer type_and_payload;
-
-  PartInfo             part_info;
+  const boost::asio::const_buffer payload;
+  PartInfo                        part_info;
 
   PendingMessage(PendingMessage&&)                 = default;
   PendingMessage(const PendingMessage&)            = delete;
@@ -109,8 +106,7 @@ boost::optional<InMessageFull> PendingMessage::get_full_message() const {
                       , type
                       , sequence_number
                       , size
-                      , payload
-                      , type_and_payload);
+                      , payload);
 }
 
 //------------------------------------------------------------------------------

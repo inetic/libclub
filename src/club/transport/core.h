@@ -339,8 +339,7 @@ void Core<Id>::on_receive_part(InMessagePart msg) {
                                  , msg.type
                                  , msg.sequence_number
                                  , msg.original_size
-                                 , msg.payload
-                                 , msg.type_and_payload));
+                                 , msg.payload));
     return;
   }
 

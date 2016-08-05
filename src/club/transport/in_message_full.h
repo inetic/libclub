@@ -23,20 +23,17 @@ struct InMessageFull {
   const SequenceNumber            sequence_number;
         size_t                    size;
         boost::asio::const_buffer payload;
-        boost::asio::const_buffer type_and_payload;
 
   InMessageFull( uuid                      source
                , MessageType               type
                , SequenceNumber            sequence_number
                , size_t                    size
-               , boost::asio::const_buffer payload
-               , boost::asio::const_buffer type_and_payload)
+               , boost::asio::const_buffer payload)
     : source(std::move(source))
     , type(type)
     , sequence_number(sequence_number)
     , size(size)
     , payload(payload)
-    , type_and_payload(type_and_payload)
   {}
 };
 
