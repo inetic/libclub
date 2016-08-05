@@ -191,8 +191,8 @@ void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
     MessageId mid;
 
     switch (acks.type()) {
-      case AckSet::Type::directed:  mid = ReliableDirectedId{target, sn}; break;
-      case AckSet::Type::broadcast: mid = ReliableBroadcastId{sn};        break;
+      case AckSet::Type::unicast:   mid = ReliableUnicastId{target, sn}; break;
+      case AckSet::Type::broadcast: mid = ReliableBroadcastId{sn};       break;
       default: assert(0); return;
     }
 
@@ -258,7 +258,7 @@ void Core<Id>::add_target(uuid new_target) {
                                           , sn
                                           , std::vector<uint8_t>());
 
-    ReliableDirectedId id{std::move(new_target), sn};
+    ReliableUnicastId id{std::move(new_target), sn};
 
     _messages.emplace(id, message);
 
@@ -423,7 +423,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
-    acknowledge(msg.source, AckSet::Type::directed, msg.sequence_number);
+    acknowledge(msg.source, AckSet::Type::unicast, msg.sequence_number);
 
     if (!node.sync) {
       node.sync = typename NodeData::Sync{ msg.sequence_number-1

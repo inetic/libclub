@@ -27,7 +27,7 @@ namespace club { namespace transport {
 
 class AckSet {
 public:
-  enum class Type { broadcast, directed, unset };
+  enum class Type { broadcast, unicast, unset };
 
 public:
   AckSet();
@@ -207,7 +207,7 @@ std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
 
   switch (acks._type) {
     case AckSet::Type::broadcast: os << "broadcast "; break;
-    case AckSet::Type::directed:  os << "directed "; break;
+    case AckSet::Type::unicast:   os << "unicast "; break;
     case AckSet::Type::unset:     os << "unset "; break;
   }
 

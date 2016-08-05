@@ -36,7 +36,7 @@ namespace club { namespace transport {
 template<typename Encoder>
 inline void encode( Encoder& e, const AckSet& ack_set) {
   assert(ack_set._type == AckSet::Type::broadcast
-      || ack_set._type == AckSet::Type::directed);
+      || ack_set._type == AckSet::Type::unicast);
 
   e.put((uint8_t) ack_set._type);
   e.put((SequenceNumber) ack_set.highest_sequence_number);
@@ -52,7 +52,7 @@ inline void decode(binary::decoder& d, AckSet& ack_set) {
   ack_set._type = static_cast<AckSet::Type>(d.get<uint8_t>());
 
   if (ack_set._type != AckSet::Type::broadcast
-      && ack_set._type != AckSet::Type::directed) {
+      && ack_set._type != AckSet::Type::unicast) {
     assert(0);
     return d.set_error();
   }

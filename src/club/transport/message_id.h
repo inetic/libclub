@@ -37,11 +37,11 @@ struct UnreliableBroadcastId {
 };
 
 //------------------------------------------------------------------------------
-struct ReliableDirectedId {
+struct ReliableUnicastId {
   uuid           target;
   SequenceNumber number;
 
-  bool operator < (ReliableDirectedId other) const {
+  bool operator < (ReliableUnicastId other) const {
     return std::tie(number, target)
          < std::tie(other.number, other.target);
   }
@@ -62,7 +62,7 @@ struct ForwardId {
 template<class UnreliableId>
 using MessageId = boost::variant< ReliableBroadcastId
                                 , UnreliableBroadcastId<UnreliableId>
-                                , ReliableDirectedId
+                                , ReliableUnicastId
                                 , ForwardId
                                 >;
 
@@ -76,7 +76,7 @@ inline std::ostream& operator<<(std::ostream& os, UnreliableBroadcastId<UID> id)
   return os << "(UnreliableBroadcastId " << id.number << ")";
 }
 
-inline std::ostream& operator<<(std::ostream& os, ReliableDirectedId id) {
+inline std::ostream& operator<<(std::ostream& os, ReliableUnicastId id) {
   return os << "(ReliableBroadcastId " << id.target << " " << id.number << ")";
 }
 
@@ -88,7 +88,7 @@ template<class UID>
 inline std::ostream& operator<<(std::ostream& os, MessageId<UID> id) {
   match(id, [&](ReliableBroadcastId id)        { os << id; }
           , [&](UnreliableBroadcastId<UID> id) { os << id; }
-          , [&](ReliableDirectedId id)         { os << id; }
+          , [&](ReliableUnicastId id)          { os << id; }
           , [&](ForwardId id)                  { os << id; });
 
   return os;
