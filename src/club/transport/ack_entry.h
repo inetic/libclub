@@ -16,7 +16,6 @@
 #define CLUB_TRANSPORT_ACK_ENTRY_H
 
 #include "ack_set.h"
-#include "ack_set_serialize.h"
 
 namespace club { namespace transport {
 

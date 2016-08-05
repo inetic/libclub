@@ -16,6 +16,7 @@
 #define CLUB_TRANSPORT_ACK_SET_H
 
 #include <binary/encoder.h>
+#include <binary/decoder.h>
 #include <binary/encoded.h>
 
 #include "sequence_number.h"
@@ -237,5 +238,56 @@ std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
 
 }} // club::transport namespace
 
+//------------------------------------------------------------------------------
+namespace binary {
+  template<> struct encoded<::club::transport::AckSet> {
+    static size_t size() {
+      return sizeof(uint8_t) // type
+           + sizeof(::club::transport::SequenceNumber)
+           + sizeof(uint32_t);
+    }
+  };
+} // binary namespace
+
+namespace club { namespace transport {
+
+//------------------------------------------------------------------------------
+template<typename Encoder>
+inline void encode( Encoder& e, const AckSet& ack_set) {
+  assert(ack_set._type == AckSet::Type::broadcast
+      || ack_set._type == AckSet::Type::unicast);
+
+  e.put((uint8_t) ack_set._type);
+  e.put((SequenceNumber) ack_set.highest_sequence_number);
+
+  uint32_t mixed = ack_set.predecessors
+                 | (ack_set.is_empty << 31);
+
+  e.put(mixed);
+}
+
+//------------------------------------------------------------------------------
+inline void decode(binary::decoder& d, AckSet& ack_set) {
+  ack_set._type = static_cast<AckSet::Type>(d.get<uint8_t>());
+
+  if (ack_set._type != AckSet::Type::broadcast
+      && ack_set._type != AckSet::Type::unicast) {
+    assert(0);
+    return d.set_error();
+  }
+
+  if (d.error()) return;
+
+  ack_set.highest_sequence_number = d.get<SequenceNumber>();
+
+  auto mixed = d.get<uint32_t>();
+
+  ack_set.predecessors = mixed;
+  ack_set.is_empty     = mixed >> 31;
+}
+
+//------------------------------------------------------------------------------
+
+}} // club::transport namespace
 #endif // ifndef CLUB_TRANSPORT_ACK_SET_H
 

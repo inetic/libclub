@@ -17,7 +17,6 @@
 
 #include <iostream>
 #include <transport/ack_set.h>
-#include <transport/ack_set_serialize.h>
 #include <debug/string_tools.h>
 
 using AckSet = club::transport::AckSet;

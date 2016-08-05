@@ -22,7 +22,6 @@
 #include "binary/serialize/uuid.h"
 #include "transport/out_message.h"
 #include "transport/core.h"
-#include "transport/ack_set_serialize.h"
 #include "debug/string_tools.h"
 
 namespace club { namespace transport {
