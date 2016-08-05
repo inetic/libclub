@@ -652,6 +652,48 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
 }
 
 //------------------------------------------------------------------------------
+// TODO: This test fails when packet dropping is enabled.
+BOOST_AUTO_TEST_CASE(test_transport_reliable_many_messages) {
+  asio::io_service ios;
+
+  Node n1, n2;
+
+  size_t N = 100;
+  size_t counter = 0;
+
+  WhenAll when_all;
+
+  vector<uint8_t> message(1000);
+
+  for (size_t i = 0; i < message.size(); ++i) {
+    message[i] = i;
+  }
+
+  n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
+    BOOST_REQUIRE_EQUAL(s, n1.id);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), message);
+
+    if (++counter == N) c();
+  });
+
+  connect_nodes(ios, n1, n2);
+
+  for (size_t i = 0; i < N; ++i) {
+    n1.broadcast_reliable(message);
+  }
+
+  n1.flush(when_all.make_continuation());
+  n2.flush(when_all.make_continuation());
+
+  when_all.on_complete([&]() {
+      n1.transports.clear();
+      n2.transports.clear();
+    });
+
+  ios.run();
+}
+
+//------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
   asio::io_service ios;
 
