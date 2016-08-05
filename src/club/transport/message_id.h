@@ -17,6 +17,7 @@
 
 namespace club { namespace transport {
 
+//------------------------------------------------------------------------------
 struct ReliableBroadcastId {
   SequenceNumber number;
 
@@ -25,6 +26,7 @@ struct ReliableBroadcastId {
   }
 };
 
+//------------------------------------------------------------------------------
 template<class UnreliableId>
 struct UnreliableBroadcastId {
   UnreliableId number;
@@ -34,6 +36,7 @@ struct UnreliableBroadcastId {
   }
 };
 
+//------------------------------------------------------------------------------
 struct ReliableDirectedId {
   uuid           target;
   SequenceNumber number;
@@ -44,6 +47,7 @@ struct ReliableDirectedId {
   }
 };
 
+//------------------------------------------------------------------------------
 struct ForwardId {
   bool operator < (ForwardId other) const {
     // Currently we're not storing this in outgoing messages.
@@ -54,6 +58,7 @@ struct ForwardId {
   }
 };
 
+//------------------------------------------------------------------------------
 template<class UnreliableId>
 using MessageId = boost::variant< ReliableBroadcastId
                                 , UnreliableBroadcastId<UnreliableId>
@@ -61,6 +66,33 @@ using MessageId = boost::variant< ReliableBroadcastId
                                 , ForwardId
                                 >;
 
+//------------------------------------------------------------------------------
+inline std::ostream& operator<<(std::ostream& os, ReliableBroadcastId id) {
+  return os << "(ReliableBroadcastId " << id.number << ")";
+}
+
+template<class UID>
+inline std::ostream& operator<<(std::ostream& os, UnreliableBroadcastId<UID> id) {
+  return os << "(UnreliableBroadcastId " << id.number << ")";
+}
+
+inline std::ostream& operator<<(std::ostream& os, ReliableDirectedId id) {
+  return os << "(ReliableBroadcastId " << id.target << " " << id.number << ")";
+}
+
+inline std::ostream& operator<<(std::ostream& os, ForwardId id) {
+  return os << "(ForwardId)";
+}
+
+template<class UID>
+inline std::ostream& operator<<(std::ostream& os, MessageId<UID> id) {
+  match(id, [&](ReliableBroadcastId id)        { os << id; }
+          , [&](UnreliableBroadcastId<UID> id) { os << id; }
+          , [&](ReliableDirectedId id)         { os << id; }
+          , [&](ForwardId id)                  { os << id; });
+
+  return os;
+}
 
 }} // club::transport namespace
 

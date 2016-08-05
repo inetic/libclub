@@ -179,7 +179,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
 
   WhenAll when_all;
 
-  size_t N = 65500;
+  size_t N = 5000;
   vector<uint8_t> big_message(N);
 
   for (size_t i = 0; i < N; i++) {

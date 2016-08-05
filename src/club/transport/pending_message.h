@@ -26,6 +26,7 @@ struct PendingMessage {
         size_t                    size;
   std::vector<uint8_t>            data;
         boost::asio::const_buffer payload;
+        // TODO: I think this one isn't needed => remove it
         boost::asio::const_buffer type_and_payload;
 
   PartInfo             part_info;
