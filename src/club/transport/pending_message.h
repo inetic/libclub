@@ -69,6 +69,7 @@ PendingMessage::PendingMessage(InMessageFull m)
           + boost::asio::buffer_size(m.payload) )
   , payload(data.data() , data.size())
 {
+  part_info.add_part(0, data.size());
 }
 
 //------------------------------------------------------------------------------
@@ -89,10 +90,9 @@ void PendingMessage::update_payload(size_t start, boost::asio::const_buffer b) {
 //------------------------------------------------------------------------------
 inline
 bool PendingMessage::is_full() const {
-  if (part_info.empty()) return true;
-  auto start = part_info.begin()->first;
-  return start == 0
-      && part_info.begin()->second == size;
+  if (part_info.empty()) return false;
+  auto pi = *part_info.begin();
+  return pi.first == 0 && pi.second == size;
 }
 
 //------------------------------------------------------------------------------
@@ -107,6 +107,12 @@ boost::optional<InMessageFull> PendingMessage::get_full_message() const {
                       , sequence_number
                       , size
                       , payload);
+}
+
+//------------------------------------------------------------------------------
+inline std::ostream& operator<<(std::ostream& os, const PendingMessage& m) {
+  return os << "(PendingMessage source:" << m.source << " " << m.type
+            << " sn:" << m.sequence_number << " " << m.part_info << ")";
 }
 
 //------------------------------------------------------------------------------

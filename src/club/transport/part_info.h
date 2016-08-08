@@ -90,6 +90,10 @@ inline void PartInfo::sanitize(Info::iterator i) {
 
 //------------------------------------------------------------------------------
 inline std::ostream& operator<<(std::ostream& os, const PartInfo& info) {
+  if (info._info.empty()) {
+    return os << "(PartInfo)";
+  }
+
   os << "(PartInfo ";
   for (auto i = info._info.begin(); i != info._info.end(); ++i) {
     os << "(" << i->first << ", " << i->second << ")";

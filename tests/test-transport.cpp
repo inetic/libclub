@@ -653,17 +653,17 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
 
 //------------------------------------------------------------------------------
 // TODO: This test fails when packet dropping is enabled.
-BOOST_AUTO_TEST_CASE(test_transport_reliable_many_messages) {
+BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
   asio::io_service ios;
 
   Node n1, n2;
 
-  size_t N = 100;
+  size_t N = 3;
   size_t counter = 0;
 
   WhenAll when_all;
 
-  vector<uint8_t> message(1000);
+  vector<uint8_t> message(2*2000);
 
   for (size_t i = 0; i < message.size(); ++i) {
     message[i] = i;

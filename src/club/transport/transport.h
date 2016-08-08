@@ -29,9 +29,11 @@ class Transport {
 private:
   enum class SendState { sending, waiting, pending };
 
+public:
   //static const size_t max_message_size = 65536;
   static const size_t max_message_size = 1452;
 
+private:
   using udp = boost::asio::ip::udp;
   using OnReceive = std::function<void( const boost::system::error_code&
                                       , boost::asio::const_buffer )>;

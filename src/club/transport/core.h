@@ -85,9 +85,9 @@ private:
 
   void on_receive_acks(const uuid&, AckSet);
   void acknowledge(const uuid&, AckSet::Type, SequenceNumber);
+  void acknowledge(const InMessageFull&);
 
   void try_flush();
-
 
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
@@ -101,6 +101,9 @@ private:
     boost::optional<Sync> sync;
     PendingMessages       pending;
   };
+
+  PendingMessage& add_to_pending(NodeData&, InMessagePart&&);
+  PendingMessage& add_to_pending(NodeData&, InMessageFull&&);
 
   void replay_pending_messages(NodeData& node);
 
@@ -176,10 +179,18 @@ void Core<Id>::add_ack_entry(AckEntry entry) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::acknowledge(const uuid& from
-                          , AckSet::Type type
-                          , SequenceNumber sn) {
-  _outbound_acks.acknowledge(from, type, sn);
+void Core<Id>::acknowledge(const InMessageFull& msg) {
+  AckSet::Type type;
+
+  switch (msg.type) {
+    case MessageType::reliable_broadcast: type = AckSet::Type::broadcast; break;
+    case MessageType::syn:                type = AckSet::Type::unicast; break;
+    default:
+                                          assert(0);
+                                          return;
+  }
+
+  _outbound_acks.acknowledge(msg.source, type, msg.sequence_number);
 }
 
 //------------------------------------------------------------------------------
@@ -332,6 +343,40 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 }
 
 //------------------------------------------------------------------------------
+// TODO: Reduce these two functions that do almost exactly the same thing.
+template<class Id>
+PendingMessage& Core<Id>::add_to_pending(NodeData& node, InMessagePart&& msg) {
+  auto pending_i = node.pending.find(msg.sequence_number);
+
+  if (pending_i == node.pending.end()) {
+    auto pi = node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)))
+      .first;
+    return pi->second;
+  }
+  else {
+    auto& pm = pending_i->second;
+    pm.update_payload(msg.chunk_start, msg.payload);
+    return pm;
+  }
+}
+
+template<class Id>
+PendingMessage& Core<Id>::add_to_pending(NodeData& node, InMessageFull&& msg) {
+  auto pending_i = node.pending.find(msg.sequence_number);
+
+  if (pending_i == node.pending.end()) {
+    auto pi = node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)))
+      .first;
+    return pi->second;
+  }
+  else {
+    auto& pm = pending_i->second;
+    pm.update_payload(0, msg.payload);
+    return pm;
+  }
+}
+
+//------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::on_receive_part(InMessagePart msg) {
   if (msg.is_full()) {
@@ -352,23 +397,10 @@ void Core<Id>::on_receive_part(InMessagePart msg) {
   if (!node.sync) return;
   if (!node.sync->acks.can_add(msg.sequence_number)) return;
 
-  auto pending_i = node.pending.find(msg.sequence_number);
+  auto& pm = add_to_pending(node, std::move(msg));
 
-  if (pending_i == node.pending.end()) {
-    node.pending.emplace(msg.sequence_number, PendingMessage(std::move(msg)));
-  }
-  else {
-    auto& pm = pending_i->second;
-
-    pm.update_payload(msg.chunk_start, msg.payload );
-
-    if (auto opt_full_msg = pm.get_full_message()) {
-      auto stored_pm = std::move(pm);
-      node.pending.erase(pending_i);
-      on_receive_full(std::move(*pm.get_full_message()));
-    }
-    else {
-    }
+  if (auto opt_full_msg = pm.get_full_message()) {
+    on_receive_full(std::move(*opt_full_msg));
   }
 }
 
@@ -395,7 +427,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
     // If the remote peer is sending too quickly we refuse to receive
     // and acknowledge the message.
     if (node.sync->acks.try_add(msg.sequence_number)) {
-      acknowledge(msg.source, AckSet::Type::broadcast, msg.sequence_number);
+      acknowledge(msg);
 
       if (msg.sequence_number == node.sync->last_executed_message + 1) {
         auto was_destroyed = _was_destroyed;
@@ -412,7 +444,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
         replay_pending_messages(node);
       }
       else if (msg.sequence_number > node.sync->last_executed_message + 1) {
-        node.pending.emplace(msg.sequence_number, PendingMessage(move(msg)));
+        add_to_pending(node, move(msg));
       }
     }
   }
@@ -423,12 +455,13 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
     _on_recv(msg.source, msg.payload);
   }
   else if (msg.type == MessageType::syn) {
-    acknowledge(msg.source, AckSet::Type::unicast, msg.sequence_number);
+    acknowledge(msg);
 
     if (!node.sync) {
       node.sync = typename NodeData::Sync{ msg.sequence_number-1
                                          , AckSet( AckSet::Type::broadcast
                                                  , msg.sequence_number-1)};
+      // TODO: Replay pending messages.
     }
   }
   else {
@@ -443,14 +476,22 @@ void Core<Id>::replay_pending_messages(NodeData& node) {
   auto was_destroyed = _was_destroyed;
 
   for (auto i = node.pending.begin(); i != node.pending.end();) {
+    if (i->first <= node.sync->last_executed_message) {
+      i = node.pending.erase(i);
+      continue;
+    }
+
     auto next_sn = node.sync->last_executed_message + 1;
 
     if (i->first != next_sn) break;
 
     if (auto opt_full_message = i->second.get_full_message())
     {
-      _on_recv( opt_full_message->source
-              , opt_full_message->payload);
+      auto& msg = *opt_full_message;
+
+      acknowledge(msg);
+
+      _on_recv(msg.source, msg.payload);
 
       if (*was_destroyed) return;
 

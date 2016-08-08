@@ -149,4 +149,12 @@ BOOST_AUTO_TEST_CASE(test_part_info) {
     BOOST_REQUIRE(!pi.empty());
     BOOST_REQUIRE_EQUAL(parts_to_vector(pi), PartV({ {3, 30} }));
   }
+
+  {
+    PartInfo pi;
+    pi.add_part(0, 1000);
+    pi.add_part(0, 91);
+    BOOST_REQUIRE(!pi.empty());
+    BOOST_REQUIRE_EQUAL(parts_to_vector(pi), PartV({ {0, 1000} }));
+  }
 }
