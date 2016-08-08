@@ -327,13 +327,22 @@ void Transport<Id>::on_send( const boost::system::error_code& error
    * [1] https://en.wikipedia.org/wiki/2G
    *
    * We calculate delay:
-   *   delay_s  = size / (400000/8)
-   *   delay_us = 1000000 * size / (400000/8)
-   *   delay_us = 20 * size
+   *   delay_s  = size / (40000/8)
+   *   delay_us = 1000000 * size / (40000/8)
+   *   delay_us = 200 * size
    *
    * TODO: Proper congestion control
    */
-  _timer.expires_from_now(std::chrono::microseconds(20*size));
+  if (_remote_endpoint.address().is_unspecified()) {
+    // No need to wait when we're on the same PC. Would have been nicer
+    // if we didn't use timer at all in this case, but this is gonna
+    // have to be refactored due to proper congestion control.
+    _timer.expires_from_now(std::chrono::microseconds(0));
+  }
+  else {
+    _timer.expires_from_now(std::chrono::microseconds(200*size));
+  }
+
   _timer.async_wait([this, state = move(state)]
                     (const error_code error) {
                       if (state->was_destroyed) return;
