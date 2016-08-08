@@ -80,6 +80,8 @@ void PendingMessage::update_payload(size_t start, boost::asio::const_buffer b) {
   asio::mutable_buffer target( data.data() + start
                              , data.size() - start );
 
+  // TODO: First check that it isn't already there, only then do the
+  //       buffer copying.
   size_t copied = asio::buffer_copy(target, b);
 
   assert(copied == asio::buffer_size(b));

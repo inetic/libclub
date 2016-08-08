@@ -432,10 +432,8 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
       if (msg.sequence_number == node.sync->last_executed_message + 1) {
         auto was_destroyed = _was_destroyed;
 
-        auto sn = msg.sequence_number;
-
         // TODO: Is OK for invokation of _on_recv to destroy _on_recv?
-        node.sync->last_executed_message = sn;
+        node.sync->last_executed_message = msg.sequence_number;
         _on_recv(msg.source, msg.payload);
         if (*was_destroyed) return;
 
@@ -461,7 +459,9 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
       node.sync = typename NodeData::Sync{ msg.sequence_number-1
                                          , AckSet( AckSet::Type::broadcast
                                                  , msg.sequence_number-1)};
-      // TODO: Replay pending messages.
+
+      // No need to replay pending messages here because, we've been ignoring
+      // everything until now.
     }
   }
   else {
