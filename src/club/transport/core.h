@@ -78,7 +78,7 @@ private:
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
-  void transport_adds_target(uuid);
+  void transport_adds_target(Transport&, uuid);
 
   void on_receive_part(InMessagePart);
   void on_receive_full(InMessageFull);
@@ -92,7 +92,7 @@ private:
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
 
-  struct NodeData {
+  struct Target {
     struct Sync {
       SequenceNumber last_executed_message;
       AckSet         acks;
@@ -102,10 +102,10 @@ private:
     PendingMessages       pending;
   };
 
-  PendingMessage& add_to_pending(NodeData&, InMessagePart&&);
-  PendingMessage& add_to_pending(NodeData&, InMessageFull&&);
+  PendingMessage& add_to_pending(Target&, InMessagePart&&);
+  PendingMessage& add_to_pending(Target&, InMessageFull&&);
 
-  void replay_pending_messages(NodeData& node);
+  void replay_pending_messages(Target&);
 
   template<class Key, class Value>
   static
@@ -129,8 +129,8 @@ private:
   Messages               _messages;
   OnFlush                _on_flush;
 
-  std::map<uuid, NodeData>  _nodes;
-  OutboundAcks              _outbound_acks;
+  std::map<uuid, Target>  _targets;
+  OutboundAcks            _outbound_acks;
 
   std::shared_ptr<bool> _was_destroyed;
 };
@@ -238,7 +238,7 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
   auto type = MessageType::reliable_broadcast;
 
   auto message = make_shared<OutMessage>( _our_id
-                                        , keys(_nodes)
+                                        , keys(_targets)
                                         , true
                                         , type
                                         , sn
@@ -256,10 +256,10 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::transport_adds_target(uuid new_target) {
+void Core<Id>::transport_adds_target(Transport& transport, uuid new_target) {
   using namespace std;
 
-  auto inserted = _nodes.emplace(new_target, NodeData()).second;
+  auto inserted = _targets.emplace(new_target, Target()).second;
 
   if (inserted) {
     auto sn = _next_reliable_broadcast_number;
@@ -277,6 +277,18 @@ void Core<Id>::transport_adds_target(uuid new_target) {
 
     for (auto t : _transports) {
       t->insert_message(id, message);
+    }
+  }
+  else {
+    // The target was already there, byt a different transport is/was sending to
+    // it. The other transport may soon remove the target from its list so
+    // we need to take care the message gets delivered.
+    for (auto& m : _messages) {
+      auto m_ptr = m.second.lock();
+      if (!m_ptr) continue;
+      if (m_ptr->targets.count(new_target)) {
+        transport.insert_message(m.first, m_ptr);
+      }
     }
   }
 }
@@ -300,7 +312,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
     auto type = MessageType::unreliable_broadcast;
 
     auto message = make_shared<OutMessage>( _our_id
-                                          , keys(_nodes)
+                                          , keys(_targets)
                                           , false
                                           , type
                                           , sn
@@ -349,7 +361,7 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 //------------------------------------------------------------------------------
 // TODO: Reduce these two functions that do almost exactly the same thing.
 template<class Id>
-PendingMessage& Core<Id>::add_to_pending(NodeData& node, InMessagePart&& msg) {
+PendingMessage& Core<Id>::add_to_pending(Target& node, InMessagePart&& msg) {
   auto pending_i = node.pending.find(msg.sequence_number);
 
   if (pending_i == node.pending.end()) {
@@ -365,7 +377,7 @@ PendingMessage& Core<Id>::add_to_pending(NodeData& node, InMessagePart&& msg) {
 }
 
 template<class Id>
-PendingMessage& Core<Id>::add_to_pending(NodeData& node, InMessageFull&& msg) {
+PendingMessage& Core<Id>::add_to_pending(Target& node, InMessageFull&& msg) {
   auto pending_i = node.pending.find(msg.sequence_number);
 
   if (pending_i == node.pending.end()) {
@@ -395,8 +407,8 @@ void Core<Id>::on_receive_part(InMessagePart msg) {
   if (msg.type != MessageType::reliable_broadcast
       && msg.type != MessageType::unreliable_broadcast) return;
 
-  auto i = _nodes.find(msg.source);
-  if (i == _nodes.end()) return;
+  auto i = _targets.find(msg.source);
+  if (i == _targets.end()) return;
   auto& node = i->second;
   if (!node.sync) return;
   if (!node.sync->acks.can_add(msg.sequence_number)) return;
@@ -414,11 +426,12 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
   using std::move;
 
   using namespace boost::asio;
-  auto i = _nodes.find(msg.source);
+  auto i = _targets.find(msg.source);
 
-  // If there is no NodeData for this source we have not yet
+  // If there is no Target for this source we have not yet
   // attempted to establish connection with it.
-  if (i == _nodes.end()) {
+  // (User has not called `add_target`).
+  if (i == _targets.end()) {
     return;
   }
 
@@ -460,9 +473,9 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
     acknowledge(msg);
 
     if (!node.sync) {
-      node.sync = typename NodeData::Sync{ msg.sequence_number-1
-                                         , AckSet( AckSet::Type::broadcast
-                                                 , msg.sequence_number-1)};
+      node.sync = typename Target::Sync{ msg.sequence_number-1
+                                       , AckSet( AckSet::Type::broadcast
+                                               , msg.sequence_number-1)};
 
       // No need to replay pending messages here because, we've been ignoring
       // everything until now.
@@ -476,7 +489,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::replay_pending_messages(NodeData& node) {
+void Core<Id>::replay_pending_messages(Target& node) {
   auto was_destroyed = _was_destroyed;
 
   for (auto i = node.pending.begin(); i != node.pending.end();) {

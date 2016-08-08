@@ -922,3 +922,51 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable_one_hop) {
 
   BOOST_REQUIRE_EQUAL(count, N);
 }
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_reliable_switch_transport) {
+  asio::io_service ios;
+
+  //  n1 -> n2 -> n3
+  //   \          /
+  //    +-> n4 ->+
+
+  Node n1, n2, n3, n4;
+
+  connect_nodes(ios, n1, n2);
+  connect_nodes(ios, n2, n3);
+  n1.transports[n2.id]->add_target(n3.id);
+  n3.transports[n2.id]->add_target(n1.id);
+
+  // Destroy the path: n1 -> n2 -> n3
+  n2.transports.clear();
+
+  n1.broadcast_reliable(std::vector<uint8_t>{6});
+
+  asio::steady_timer timer(ios);
+
+  timer.expires_from_now(std::chrono::milliseconds(10));
+  timer.async_wait([&](error_code e) {
+      // Add the new path for the message to use: n1 -> n4 -> n3
+      connect_nodes(ios, n1, n4);
+      connect_nodes(ios, n4, n3);
+      n1.transports[n4.id]->add_target(n3.id);
+      n3.transports[n4.id]->add_target(n1.id);
+    });
+
+  bool received = false;
+
+  n2.on_recv = [](auto s, auto b) {};
+  n4.on_recv = [](auto s, auto b) {};
+  n3.on_recv = [&](auto s, auto b) {
+    received = true;
+    n1.transports.clear();
+    n2.transports.clear();
+    n3.transports.clear();
+    n4.transports.clear();
+  };
+
+  ios.run();
+
+  BOOST_REQUIRE(received);
+}

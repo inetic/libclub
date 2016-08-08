@@ -154,7 +154,7 @@ void Transport<Id>::add_target(const uuid& id)
     return;
   }
 
-  core().transport_adds_target(id);
+  core().transport_adds_target(*this, id);
 }
 
 //------------------------------------------------------------------------------
