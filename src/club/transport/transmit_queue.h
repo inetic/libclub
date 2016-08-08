@@ -194,22 +194,25 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     //cout << core().id() << " >>> " << *current->message << endl;
 
+    // Have we sent the payload in its entirety?
+    if (current->bytes_already_sent != current->message->payload_size()) {
+      _next = current;
+      break;
+    }
+
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
     if (!current->resend_until_acked) {
-      // Have we sent the payload in its entirety?
-      if (current->bytes_already_sent == current->message->payload_size()) {
-        auto& m = *current->message;
+      auto& m = *current->message;
 
-        // TODO: This can have linear time complexity.
-        for (const auto& target : _target_intersection) {
-          m.targets.erase(target);
-        }
+      // TODO: This can have linear time complexity.
+      for (const auto& target : _target_intersection) {
+        m.targets.erase(target);
+      }
 
-        if (m.targets.empty()) {
-          erase(current);
-          if (_messages.empty()) break;
-        }
+      if (m.targets.empty()) {
+        erase(current);
+        if (_messages.empty()) break;
       }
     }
 
