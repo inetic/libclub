@@ -130,11 +130,13 @@ struct OutMessage {
 
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
+            , bool                   resend_until_acked
             , MessageType            type
             , SequenceNumber         sequence_number
             , std::vector<uint8_t>&& payload)
     : source(std::move(source))
     , targets(std::move(targets))
+    , resend_until_acked(resend_until_acked)
     , data(HeaderAndPayloadSeparate())
     , _is_dirty(false)
   {
@@ -158,9 +160,11 @@ struct OutMessage {
 
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
+            , bool                   resend_until_acked
             , std::vector<uint8_t>&& header_and_payload)
     : source(std::move(source))
     , targets(std::move(targets))
+    , resend_until_acked(resend_until_acked)
     , data(HeaderAndPayloadCombined{std::move(header_and_payload)})
     , _is_dirty(false)
   { }
@@ -220,6 +224,7 @@ public:
   //       but now it's quite more complex so try to make them private.
   const uuid             source;
         std::set<uuid>   targets;
+        bool             resend_until_acked;
         HeaderAndPayload data;
 
 private:

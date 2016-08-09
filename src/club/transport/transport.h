@@ -85,9 +85,7 @@ public:
 private:
   friend class ::club::transport::Core<UnreliableId>;
 
-  void insert_message( MessageId
-                     , bool resend_until_acked
-                     , std::shared_ptr<OutMessage> m);
+  void insert_message(MessageId, std::shared_ptr<OutMessage> m);
 
   void start_receiving(std::shared_ptr<SocketState>);
 
@@ -152,9 +150,11 @@ Transport<UnreliableId>::~Transport() {
 template<class Id>
 void Transport<Id>::add_target(const uuid& id)
 {
-  if (_targets.insert(id).second) {
-    core().add_target(id);
+  if (!_targets.insert(id).second) {
+    return;
   }
+
+  core().transport_adds_target(id);
 }
 
 //------------------------------------------------------------------------------
@@ -355,11 +355,8 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 //------------------------------------------------------------------------------
 template<class Id>
 void Transport<Id>::insert_message( MessageId message_id
-                                  , bool resend_until_acked
                                   , std::shared_ptr<OutMessage> m) {
-  _transmit_queue.insert_message( std::move(message_id)
-                                , resend_until_acked
-                                , std::move(m));
+  _transmit_queue.insert_message(std::move(message_id), std::move(m));
   start_sending(_socket_state);
 }
 

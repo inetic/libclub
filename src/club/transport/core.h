@@ -78,7 +78,7 @@ private:
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
-  void add_target(uuid);
+  void transport_adds_target(uuid);
 
   void on_receive_part(InMessagePart);
   void on_receive_full(InMessageFull);
@@ -239,6 +239,7 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
   auto message = make_shared<OutMessage>( _our_id
                                         , keys(_nodes)
+                                        , true
                                         , type
                                         , sn
                                         , move(data)
@@ -249,13 +250,13 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
   _messages.emplace(id, message);
 
   for (auto t : _transports) {
-    t->insert_message(id, true, message);
+    t->insert_message(id, message);
   }
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::add_target(uuid new_target) {
+void Core<Id>::transport_adds_target(uuid new_target) {
   using namespace std;
 
   auto inserted = _nodes.emplace(new_target, NodeData()).second;
@@ -265,6 +266,7 @@ void Core<Id>::add_target(uuid new_target) {
 
     auto message = make_shared<OutMessage>( _our_id
                                           , set<uuid>{new_target}
+                                          , true
                                           , MessageType::syn
                                           , sn
                                           , std::vector<uint8_t>());
@@ -274,7 +276,7 @@ void Core<Id>::add_target(uuid new_target) {
     _messages.emplace(id, message);
 
     for (auto t : _transports) {
-      t->insert_message(id, true, message);
+      t->insert_message(id, message);
     }
   }
 }
@@ -299,6 +301,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
 
     auto message = make_shared<OutMessage>( _our_id
                                           , keys(_nodes)
+                                          , false
                                           , type
                                           , sn
                                           , move(data)
@@ -309,7 +312,7 @@ void Core<Id>::broadcast_unreliable( Id                     id
     _messages.emplace(mid, move(message));
 
     for (auto t : _transports) {
-      t->insert_message(mid, false, message);
+      t->insert_message(mid, message);
     }
   }
 
@@ -327,6 +330,7 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 
   auto message = make_shared<OutMessage>( msg.source
                                         , set<uuid>(msg.targets)
+                                        , false
                                         //, msg.type
                                         //, msg.sequence_number
                                         , move(data) );
@@ -338,7 +342,7 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
   ForwardId id;
 
   for (auto t : _transports) {
-    t->insert_message(id, false, message);
+    t->insert_message(id, message);
   }
 }
 

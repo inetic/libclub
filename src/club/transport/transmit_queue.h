@@ -41,7 +41,6 @@ private:
 
   struct Entry {
     MessageId  message_id;
-    bool       resend_until_acked;
     size_t     bytes_already_sent;
     MessagePtr message;
   };
@@ -55,7 +54,6 @@ public:
                    , const std::set<uuid>& targets);
 
   void insert_message( MessageId
-                     , bool resend_until_acked
                      , MessagePtr);
 
   Core& core() { return *_core; }
@@ -106,12 +104,10 @@ TransmitQueue<Id>::TransmitQueue(std::shared_ptr<Core> core)
 //------------------------------------------------------------------------------
 template<class Id>
 void TransmitQueue<Id>::insert_message( MessageId message_id
-                                      , bool resend_until_acked
                                       , MessagePtr message) {
   using std::move;
 
   Entry entry { std::move(message_id)
-              , resend_until_acked
               , 0 // bytes_already_sent
               , move(message)
               };
@@ -202,7 +198,7 @@ TransmitQueue<Id>::encode_few( binary::encoder& encoder
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (!current->resend_until_acked) {
+    if (!current->message->resend_until_acked) {
       auto& m = *current->message;
 
       // TODO: This can have linear time complexity.
