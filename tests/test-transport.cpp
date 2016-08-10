@@ -179,10 +179,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
 
   WhenAll when_all;
 
-  size_t N = 5000;
-  vector<uint8_t> big_message(N);
+  vector<uint8_t> big_message(3*Transport::packet_size);
 
-  for (size_t i = 0; i < N; i++) {
+  for (size_t i = 0; i < big_message.size(); i++) {
     big_message[i] = i;
   }
 
@@ -663,7 +662,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
 
   WhenAll when_all;
 
-  vector<uint8_t> message(2*2000);
+  vector<uint8_t> message(2*Transport::packet_size);
 
   for (size_t i = 0; i < message.size(); ++i) {
     message[i] = i;

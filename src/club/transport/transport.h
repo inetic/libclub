@@ -30,8 +30,7 @@ private:
   enum class SendState { sending, waiting, pending };
 
 public:
-  //static const size_t max_message_size = 65536;
-  static const size_t max_message_size = 1452;
+  static const size_t packet_size = 1452;
 
 private:
   using udp = boost::asio::ip::udp;
@@ -47,8 +46,8 @@ private:
 
     SocketState()
       : was_destroyed(false)
-      , rx_buffer(max_message_size)
-      , tx_buffer(max_message_size)
+      , rx_buffer(packet_size)
+      , tx_buffer(packet_size)
     {}
   };
 
