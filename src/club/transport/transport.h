@@ -66,10 +66,6 @@ public:
   Transport(Transport&&) = delete;
   Transport& operator=(Transport&&) = delete;
 
-  const uuid& id() const { return core()._our_id; }
-
-  void add_target(const uuid&);
-
   bool has_message(SequenceNumber sn) {
     return _transmit_queue.has_message(sn);
   }
@@ -83,6 +79,8 @@ public:
 
 private:
   friend class ::club::transport::Core<UnreliableId>;
+
+  bool add_target(const uuid&);
 
   void insert_message(MessageId, std::shared_ptr<OutMessage> m);
 
@@ -105,7 +103,8 @@ private:
   void handle_message(std::shared_ptr<SocketState>&, InMessagePart);
 
 private:
-  uuid                             _id;
+  uuid                             _transport_id;
+  uuid                             _our_id;
   SendState                        _send_state;
   std::set<uuid>                   _targets;
   udp::socket                      _socket;
@@ -125,7 +124,8 @@ Transport<UnreliableId>
            , udp::socket           socket
            , udp::endpoint         remote_endpoint
            , std::shared_ptr<Core> core)
-  : _id(std::move(id))
+  : _transport_id(std::move(id))
+  , _our_id(core->id())
   , _send_state(SendState::pending)
   , _socket(std::move(socket))
   , _remote_endpoint(std::move(remote_endpoint))
@@ -133,6 +133,7 @@ Transport<UnreliableId>
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
 {
+  assert(_transport_id != _our_id);
   this->core().register_transport(this);
 
   start_receiving(_socket_state);
@@ -147,13 +148,9 @@ Transport<UnreliableId>::~Transport() {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::add_target(const uuid& id)
+bool Transport<Id>::add_target(const uuid& id)
 {
-  if (!_targets.insert(id).second) {
-    return;
-  }
-
-  core().transport_adds_target(*this, id);
+  return _targets.insert(id).second;
 }
 
 //------------------------------------------------------------------------------
@@ -201,8 +198,8 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
   // Parse Acks
   while (auto opt_ack_entry = _message_reader.read_one_ack_entry()) {
-    assert(opt_ack_entry->from != id());
-    if (opt_ack_entry->from == id()) continue;
+    assert(opt_ack_entry->from != _our_id);
+    if (opt_ack_entry->from == _our_id) continue;
     handle_ack_entry(std::move(*opt_ack_entry));
     if (state->was_destroyed) return;
   }
@@ -219,10 +216,10 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 //------------------------------------------------------------------------------
 template<class Id>
 void Transport<Id>::handle_ack_entry(AckEntry entry) {
-  //std::cout << _id << " <<< " << entry << std::endl;
+  //std::cout << _our_id << " <<< " << entry << std::endl;
 
-  if (entry.to == _id) {
-    assert(entry.from != _id);
+  if (entry.to == _our_id) {
+    assert(entry.from != _our_id);
     core().on_receive_acks(entry.from, entry.acks);
   }
   else {
@@ -234,20 +231,20 @@ void Transport<Id>::handle_ack_entry(AckEntry entry) {
 template<class Id>
 void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
                                   , InMessagePart msg) {
-  if (msg.source == _id) {
+  if (msg.source == _our_id) {
     assert(0 && "Our message was returned back");
     return;
   }
 
   // Notify user only if we're one of the targets.
-  if (msg.targets.count(_id)) {
-    msg.targets.erase(_id);
+  if (msg.targets.count(_our_id)) {
+    msg.targets.erase(_our_id);
 
     if (!msg.targets.empty()) {
       core().forward_message(msg);
     }
 
-    //std::cout << _id << " <<< " << msg << std::endl;
+    //std::cout << _our_id << " <<< " << msg << std::endl;
 
     core().on_receive_part(std::move(msg));
 

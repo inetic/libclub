@@ -46,12 +46,13 @@ using std::vector;
 using boost::system::error_code;
 using boost::asio::const_buffer;
 
-using uuid             = club::uuid;
-using UnreliableId     = uint32_t;
-using TransmitQueue    = club::transport::TransmitQueue<UnreliableId>;
-using Core             = club::transport::Core<UnreliableId>;
-using Transport        = club::transport::Transport<UnreliableId>;
-using udp              = boost::asio::ip::udp;
+using uuid           = club::uuid;
+using UnreliableId   = uint32_t;
+using TransmitQueue  = club::transport::TransmitQueue<UnreliableId>;
+using Core           = club::transport::Core<UnreliableId>;
+using Transport      = club::transport::Transport<UnreliableId>;
+using udp            = boost::asio::ip::udp;
+using Graph          = club::Graph<uuid>;
 
 using TransportPtr = std::unique_ptr<Transport>;
 
@@ -60,10 +61,10 @@ namespace asio = boost::asio;
 // -------------------------------------------------------------------
 class Debug {
 public:
-  Debug() : next_map_id(0) {}
+  Debug() : next_map_id(1) {}
 
   template<class... Nodes> Debug(const Nodes&... nodes)
-    : next_map_id(0) {
+    : next_map_id(1) {
     map(nodes...);
   }
 
@@ -103,9 +104,8 @@ struct Node {
   std::function<void(uuid, const_buffer)> on_recv;
 
   void add_transport(uuid other_id, udp::socket s, udp::endpoint e) {
-    auto t = std::make_unique<Transport>(id, move(s), e, transport_core);
+    auto t = std::make_unique<Transport>(other_id, move(s), e, transport_core);
     transports.emplace(std::make_pair(other_id, move(t)));
-    transports[other_id]->add_target(other_id);
   }
 
   void broadcast_unreliable(vector<uint8_t> data) {
@@ -122,6 +122,10 @@ struct Node {
     transport_core->flush(move(on_flush));
   }
 
+  void reset_topology(const Graph& g) {
+    transport_core->reset_topology(g);
+  }
+
   Node()
     : id(boost::uuids::random_generator()())
     , transport_core(make_shared<Core>( id
@@ -130,6 +134,28 @@ struct Node {
                                         }))
   {}
 };
+
+//------------------------------------------------------------------------------
+struct edge {
+  uuid id1, id2;
+  edge(const Node& n1, const Node& n2) : id1(n1.id), id2(n2.id) {}
+};
+
+void make_graph(Graph& g) { }
+
+template<class ... T>
+void make_graph(Graph& g, edge& e, T... ts) {
+  g.add_edge(e.id1, e.id2);
+  g.add_edge(e.id2, e.id1);
+  make_graph(g, ts...);
+}
+
+template<class ... T>
+Graph make_graph(T... ts) {
+  Graph g;
+  make_graph(g, ts...);
+  return g;
+}
 
 //------------------------------------------------------------------------------
 void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
@@ -158,6 +184,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
@@ -192,6 +222,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   n1.broadcast_unreliable(big_message);
 
@@ -229,6 +263,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
 
   connect_nodes(ios, n1, n2);
 
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+
   n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
   n1.broadcast_unreliable(std::vector<uint8_t>{4,5,6,7});
 
@@ -261,6 +299,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_many_messages) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   for (uint8_t i = 0; i < N; ++i) {
     n1.broadcast_unreliable(std::vector<uint8_t>{i});
@@ -301,6 +343,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
 
   connect_nodes(ios, n1, n2);
 
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+
   n1.broadcast_unreliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
@@ -320,6 +366,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
   Node n1, n2;
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   WhenAll when_all;
 
@@ -359,9 +409,12 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
+  auto g = make_graph(edge(n1,n2), edge(n2, n3));
+
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
 
   WhenAll when_all;
 
@@ -399,14 +452,17 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_many_messages) {
   // n1 -> n2 -> n3
   Node n1, n2, n3;
 
-  //Debug d(n1, n2, n3);
+  //Debug(n1, n2, n3);
 
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
+  auto g = make_graph(edge(n1,n2), edge(n2,n3));
+
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
 
   WhenAll when_all;
 
@@ -455,12 +511,12 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_hops) {
   connect_nodes(ios, n3, n4);
 
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n1.transports[n2.id]->add_target(n4.id);
-  n2.transports[n3.id]->add_target(n4.id);
-  n3.transports[n2.id]->add_target(n1.id);
-  n4.transports[n3.id]->add_target(n1.id);
-  n4.transports[n3.id]->add_target(n2.id);
+  auto g = make_graph(edge(n1, n2), edge(n2, n3), edge(n3, n4));
+
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
+  n4.reset_topology(g);
 
   WhenAll when_all;
 
@@ -506,6 +562,11 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n1, n3);
 
+  auto g = make_graph(edge(n1,n2), edge(n1,n3));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
+
   WhenAll when_all;
 
   n2.on_recv = when_all.make_continuation([&](auto c, auto s, auto b) {
@@ -547,13 +608,13 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   connect_nodes(ios, n2, n3);
   connect_nodes(ios, n2, n4);
 
+  auto g = make_graph(edge(n1,n2), edge(n2,n4), edge(n2,n3));
+
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n1.transports[n2.id]->add_target(n4.id);
-  n3.transports[n2.id]->add_target(n1.id);
-  n3.transports[n2.id]->add_target(n4.id);
-  n4.transports[n2.id]->add_target(n1.id);
-  n4.transports[n2.id]->add_target(n3.id);
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
+  n4.reset_topology(g);
 
   size_t counter = 0;
 
@@ -599,6 +660,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
 
   connect_nodes(ios, n1, n2);
 
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+
   n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n1.flush(when_all.make_continuation());
@@ -635,6 +700,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
   n1.broadcast_reliable(std::vector<uint8_t>{4,5,6,7});
@@ -676,6 +745,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   for (size_t i = 0; i < N; ++i) {
     n1.broadcast_reliable(message);
@@ -719,6 +792,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
 
   connect_nodes(ios, n1, n2);
 
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+
   n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
   n2.flush(when_all.make_continuation());
@@ -756,8 +833,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   connect_nodes(ios, n2, n3);
 
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
+  auto g = make_graph(edge(n1, n2), edge(n2, n3));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
 
   n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
@@ -802,12 +881,11 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
   connect_nodes(ios, n2, n4);
 
   // Setup routing tables
-  n1.transports[n2.id]->add_target(n3.id);
-  n1.transports[n2.id]->add_target(n4.id);
-  n4.transports[n2.id]->add_target(n1.id);
-  n4.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
-  n3.transports[n2.id]->add_target(n4.id);
+  auto g = make_graph(edge(n1,n2), edge(n2,n4), edge(n2,n3));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
+  n4.reset_topology(g);
 
   n1.broadcast_reliable(std::vector<uint8_t>{0,1,2,3});
 
@@ -849,6 +927,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
   });
 
   connect_nodes(ios, n1, n2);
+
+  auto g = make_graph(edge(n1,n2));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
 
   for (uint8_t i = 0; i < N; ++i) {
     if (std::rand() % 2) {
@@ -896,8 +978,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable_one_hop) {
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
 
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
+  auto g = make_graph(edge(n1,n2), edge(n2,n3));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
 
   for (uint8_t i = 0; i < N; ++i) {
     if (std::rand() % 2) {
@@ -932,10 +1016,14 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_switch_transport) {
 
   Node n1, n2, n3, n4;
 
+  //Debug(n1,n2,n3,n4);
+
   connect_nodes(ios, n1, n2);
   connect_nodes(ios, n2, n3);
-  n1.transports[n2.id]->add_target(n3.id);
-  n3.transports[n2.id]->add_target(n1.id);
+  auto g = make_graph(edge(n1,n2), edge(n2,n3));
+  n1.reset_topology(g);
+  n2.reset_topology(g);
+  n3.reset_topology(g);
 
   // Destroy the path: n1 -> n2 -> n3
   n2.transports.clear();
@@ -949,8 +1037,11 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_switch_transport) {
       // Add the new path for the message to use: n1 -> n4 -> n3
       connect_nodes(ios, n1, n4);
       connect_nodes(ios, n4, n3);
-      n1.transports[n4.id]->add_target(n3.id);
-      n3.transports[n4.id]->add_target(n1.id);
+      auto g = make_graph(edge(n1,n4), edge(n4,n3));
+      n1.reset_topology(g);
+      n2.reset_topology(g);
+      n3.reset_topology(g);
+      n4.reset_topology(g);
     });
 
   bool received = false;

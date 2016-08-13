@@ -23,6 +23,7 @@
 #include "transport/ack_entry.h"
 #include "transport/outbound_acks.h"
 #include "transport/pending_message.h"
+#include "transport/dijkstra.h"
 
 #include <club/debug/ostream_uuid.h>
 #include "debug/string_tools.h"
@@ -61,6 +62,8 @@ public:
 
   const uuid& id() const { return _our_id; }
 
+  void reset_topology(const Graph<uuid>&);
+
   void flush(OnFlush);
 
   ~Core();
@@ -78,7 +81,7 @@ private:
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
-  void transport_adds_target(Transport&, uuid);
+  void add_target_to_transport(Transport&, uuid);
 
   void on_receive_part(InMessagePart);
   void on_receive_full(InMessageFull);
@@ -162,6 +165,33 @@ template<class Id> void Core<Id>::register_transport(Transport* t)
 template<class Id> void Core<Id>::unregister_transport(Transport* t)
 {
   _transports.erase(t);
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void Core<Id>::reset_topology(const Graph<uuid>& graph) {
+  for (auto tp : _transports) {
+    tp->_targets.clear();
+  }
+
+  // TODO: Big one: we only assign one transport per target, but there could
+  // be more than one 'shortest' path to the target which could allow bigger
+  // message throughput.
+  Dijkstra dijkstra(_our_id, graph);
+
+  // TODO: The following has terrible complexity
+  auto find_transport = [&](const uuid& id) -> Transport* {
+    for (auto p : _transports) if (p->_transport_id == id) return p;
+    return nullptr;
+  };
+
+  for (const auto& target : graph.nodes) {
+    if (auto opt_transport = dijkstra.first_node_to(target)) {
+      if (auto transport = find_transport(*opt_transport)) {
+        add_target_to_transport(*transport, target);
+      }
+    }
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -256,8 +286,10 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::transport_adds_target(Transport& transport, uuid new_target) {
+void Core<Id>::add_target_to_transport(Transport& transport, uuid new_target) {
   using namespace std;
+
+  if (!transport.add_target(new_target)) return;
 
   auto inserted = _targets.emplace(new_target, Target()).second;
 
