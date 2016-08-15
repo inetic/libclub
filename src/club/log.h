@@ -65,6 +65,9 @@ inline void Log::insert_entry(LogEntry&& entry_) {
   using boost::adaptors::map_values;
 
   auto tc  = message_id(entry_.message);
+
+  assert(tc > last_committed);
+
   auto pair = insert(std::make_pair(move(tc), move(entry_)));
 
   auto entry_i = pair.first;

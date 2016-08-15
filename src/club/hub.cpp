@@ -69,6 +69,14 @@ namespace ip = boost::asio::ip;
 #  define LOG_(...) log("CLUB: ", _id, " ", __VA_ARGS__)
 #endif
 
+#if USE_LOG
+namespace club {
+std::ostream& operator<<(std::ostream& os, const MessageId& o) {
+  return os << "(MId " << o.original_poster << ":" << o.timestamp << ")";
+}
+} // club namespace
+#endif // if USE_LOG
+
 // -----------------------------------------------------------------------------
 template<class Message>
 shared_ptr<vector<char>> encode_message(const Message& msg) {
