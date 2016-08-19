@@ -22,7 +22,6 @@
 #include "message.h"
 #include "net/any_size.h"
 #include "debug/string_tools.h"
-#include "transport/transmit_queue.h"
 
 #if 0
 #  include "debug/log.h"
@@ -40,7 +39,6 @@ struct Node {
   using Address       = boost::asio::ip::address;
   using Bytes         = std::vector<char>;
   using SocketPtr     = std::shared_ptr<Socket>;
-  using TransmitQueue = transport::TransmitQueue<uint64_t>;
 
   struct SharedState {
     bool                              was_destroyed;
@@ -72,7 +70,6 @@ struct Node {
   Node(club::hub* hub, uuid id)
     : id(id)
     , user_notified(hub->id() == id)
-    , transmit_queue(hub->_transport_core)
     , connect_state(ConnectState::not_connected)
     , _remote_port({0, 0})
     , _hub(hub)
@@ -86,7 +83,6 @@ struct Node {
   Node(club::hub* hub, uuid id, SocketPtr&& socket)
     : id(id)
     , user_notified(hub->id() == id)
-    , transmit_queue(hub->_transport_core)
     , connect_state(ConnectState::connected)
     , _remote_port({0, 0})
     , _hub(hub)
@@ -331,7 +327,6 @@ public:
   std::map<uuid, Peer> peers;
 
   bool user_notified;
-  transport::TransmitQueue<uint64_t> transmit_queue;
 
 private:
   ConnectState connect_state;

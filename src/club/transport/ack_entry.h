@@ -15,6 +15,7 @@
 #ifndef CLUB_TRANSPORT_ACK_ENTRY_H
 #define CLUB_TRANSPORT_ACK_ENTRY_H
 
+#include <club/uuid.h>
 #include "ack_set.h"
 
 namespace club { namespace transport {

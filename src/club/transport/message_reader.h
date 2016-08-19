@@ -19,6 +19,7 @@
 #include <binary/serialize/uuid.h>
 
 #include "ack_entry.h"
+#include "in_message_part.h"
 
 namespace club { namespace transport {
 

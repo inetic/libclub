@@ -34,7 +34,7 @@
 #include "log.h"
 #include "seen_messages.h"
 
-#include "transport/transmit_queue.h"
+#include "transport/core.h"
 
 using namespace club;
 

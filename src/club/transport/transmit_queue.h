@@ -15,312 +15,190 @@
 #ifndef CLUB_TRANSMIT_QUEUE_H
 #define CLUB_TRANSMIT_QUEUE_H
 
-#include <list>
-#include <boost/optional.hpp>
 #include <boost/variant.hpp>
-#include "binary/encoder.h"
-#include "binary/serialize/uuid.h"
-#include "transport/out_message.h"
-#include "transport/core.h"
-#include "debug/string_tools.h"
 
 namespace club { namespace transport {
 
-template<class> class Core;
-template<class> class Transport;
+template<class Message>
+class TransmitQueue {
+  using Messages = std::list<Message>;
+public:
 
-template<class UnreliableId>
-struct TransmitQueue {
-private:
-  using Core = transport::Core<UnreliableId>;
-  using uuid = boost::uuids::uuid;
+  class Cycle;
 
-  using Message    = transport::OutMessage;
-  using MessageId  = transport::MessageId<UnreliableId>;
-  using MessagePtr = std::shared_ptr<Message>;
+  using Delegate = boost::variant< typename Messages::iterator
+                                 , typename Messages::iterator* >;
 
-  struct Entry {
-    MessageId  message_id;
-    size_t     bytes_already_sent;
-    MessagePtr message;
+  //----------------------------------------------------------------------------
+  class iterator {
+  public:
+    iterator& operator++(); // Prefix
+
+    bool operator==(const iterator&) const;
+    bool operator!=(const iterator&) const;
+
+    Message& operator*();
+    Message* operator->();
+
+    // This shall become std::next(*this)
+    void erase();
+
+  private:
+    friend class Cycle;
+    template<class I> iterator(I, Cycle&);
+
+  private:
+    Delegate delegate;
+    Cycle& _cycle;
   };
 
-  using Messages = std::list<Entry>;
+  //----------------------------------------------------------------------------
+  class Cycle {
+  public:
+    Cycle(TransmitQueue&);
 
-public:
-  TransmitQueue(std::shared_ptr<Core>);
+    iterator begin();
+    iterator end();
+  private:
+    friend class iterator;
+    typename Messages::iterator _end;
+    TransmitQueue& _queue;
+  };
 
-  size_t encode_few( binary::encoder&
-                   , const std::set<uuid>& targets);
+  //----------------------------------------------------------------------------
+  Cycle cycle();
 
-  void insert_message( MessageId
-                     , MessagePtr);
-
-  Core& core() { return *_core; }
-  const Core& core() const { return *_core; }
-
-private:
-  static void set_intersection( const std::set<uuid>&
-                              , const std::set<uuid>&
-                              , std::vector<uuid>&);
-
-  static void set_difference( const std::vector<uuid>&
-                            , const std::set<uuid>&
-                            , std::vector<uuid>&);
-
-  void erase(typename Messages::iterator i);
-
-  bool try_encode( binary::encoder&
-                 , const std::vector<uuid>&
-                 , Entry&) const;
-
-  void encode( binary::encoder&
-             , const std::vector<uuid>&
-             , Entry&) const;
-
-  void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
-
-  size_t minimal_encoded_size( const std::vector<uuid>& targets
-                             , const Message& msg) const;
+  void insert(Message m);
+  bool empty() const;
+  size_t size() const;
 
 private:
-  std::shared_ptr<Core>       _core;
-  Messages                    _messages;
-  typename Messages::iterator _next;
-
-  // A cache vector so we don't have to reallocate it each time.
-  std::vector<uuid> _target_intersection;
+  Messages _messages;
 };
 
 //------------------------------------------------------------------------------
 // Implementation
 //------------------------------------------------------------------------------
-template<class Id>
-TransmitQueue<Id>::TransmitQueue(std::shared_ptr<Core> core)
-  : _core(std::move(core))
-  , _next(_messages.end())
-{}
+template<class M>
+TransmitQueue<M>::Cycle::Cycle(TransmitQueue<M>& tq)
+  : _end(tq._messages.end())
+  , _queue(tq)
+{ }
 
-//------------------------------------------------------------------------------
-template<class Id>
-void TransmitQueue<Id>::insert_message( MessageId message_id
-                                      , MessagePtr message) {
-  using std::move;
+template<class M>
+typename TransmitQueue<M>::iterator
+TransmitQueue<M>::Cycle::begin() {
+  return iterator(_queue._messages.begin(), *this);
+}
 
-  Entry entry { std::move(message_id)
-              , 0 // bytes_already_sent
-              , move(message)
-              };
-
-  auto i = _messages.insert(_next, move(entry));
-
-  if (_next == _messages.end()) {
-    _next = i;
-  }
+template<class M>
+typename TransmitQueue<M>::iterator
+TransmitQueue<M>::Cycle::end() {
+  return iterator(&_end, *this);
 }
 
 //------------------------------------------------------------------------------
-template<class Id>
-void
-TransmitQueue<Id>::erase(typename Messages::iterator i) {
-  using std::shared_ptr;
+template<class M>
+template<class I>
+TransmitQueue<M>::iterator::
+iterator(I delegate , typename TransmitQueue<M>::Cycle& cycle)
+  : delegate(delegate)
+  , _cycle(cycle)
+{ }
 
-  assert(i != _messages.end());
+template<class M>
+typename TransmitQueue<M>::iterator&
+TransmitQueue<M>::iterator::operator++() {
+  auto& list = _cycle._queue._messages;
 
-  // Tell the _core object that we're no longer using this message.
-  _core->release( std::move(i->message_id)
-                , std::move(i->message));
+  if (auto dp = boost::get<typename std::list<M>::iterator>(&delegate)) {
+    auto old = *dp;
+    ++(*dp);
+    if (*dp == list.end()) return *this;
 
-  if (i == _next) {
-    _next = _messages.erase(i);
+    list.splice(list.end(), list, old);
+
+    if (_cycle._end == list.end()) {
+      _cycle._end = old;
+    }
   }
-  else {
-    _messages.erase(i);
-  }
+
+  return *this;
 }
 
-//------------------------------------------------------------------------------
-template<class Id>
-size_t
-TransmitQueue<Id>::encode_few( binary::encoder& encoder
-                             , const std::set<uuid>& targets) {
-  size_t count = 0;
-
-  using namespace std;
-
-  if (_messages.empty()) return count;
-
-  auto current = _next;
-
-  auto last = current;
-  if (last == _messages.begin()) { last = --_messages.end(); }
-  else --last;
-
-  //for (auto i = _messages.begin(); i != _messages.end();++i) {
-  //  cout << core().id() << " >>>> " << *i->message;
-  //  if (i == current) cout << " *";
-  //  cout << endl;
-  //}
-
-  while (true) {
-    _next = std::next(current);
-
-    if (_next == _messages.end()) _next = _messages.begin();
-
-    bool is_last = current == last;
-
-    set_intersection( current->message->targets
-                    , targets
-                    , _target_intersection);
-
-    if (_target_intersection.empty()) {
-      erase(current);
-      if (is_last) break;
-      if (_messages.empty()) break;
-      current = _next;
-      continue;
-    }
-
-    if (!try_encode(encoder, _target_intersection, *current)) {
-      _next = current;
-      break;
-    }
-
-    ++count;
-
-    //cout << core().id() << " >>> " << *current->message << endl;
-
-    // Have we sent the payload in its entirety?
-    if (current->bytes_already_sent != current->message->payload_size()) {
-      _next = current;
-      break;
-    }
-
-    // Unreliable entries are sent only once to each target.
-    // TODO: Also erase the message if _target_intersection is empty.
-    if (!current->message->resend_until_acked) {
-      auto& m = *current->message;
-
-      // TODO: This can have linear time complexity.
-      for (const auto& target : _target_intersection) {
-        m.targets.erase(target);
-      }
-
-      if (m.targets.empty()) {
-        erase(current);
-        if (_messages.empty()) break;
-      }
-    }
-
-    if (is_last) break;
-    current = _next;
-  }
-
-  return count;
+template<class M>
+M& TransmitQueue<M>::iterator::operator*() {
+  auto dp = boost::get<typename Messages::iterator>(&delegate);
+  assert(dp);
+  return **dp;
 }
 
-//------------------------------------------------------------------------------
-template<class Id>
+template<class M>
+M* TransmitQueue<M>::iterator::operator->() {
+  auto dp = boost::get<typename Messages::iterator>(&delegate);
+  assert(dp);
+  return &**dp;
+}
+
+template<class M>
 bool
-TransmitQueue<Id>::try_encode( binary::encoder& encoder
-                             , const std::vector<uuid>& targets
-                             , Entry& entry) const {
+TransmitQueue<M>::iterator::operator==(const iterator& other) const {
+  using I = typename TransmitQueue<M>::Messages::iterator;
 
-  if (minimal_encoded_size(targets, *entry.message) > encoder.remaining_size()) {
-    return false;
+  if (auto dp = boost::get<I>(&delegate)) {
+    if (auto other_dp = boost::get<I>(&other.delegate)) {
+      return *dp == *other_dp;
+    }
+    return *dp == **boost::get<I*>(&other.delegate);
   }
 
-  encode(encoder, targets, entry);
+  auto dp = *boost::get<I*>(&delegate);
+  
+  if (auto other_dp = boost::get<I>(&other.delegate)) {
+    return *dp == *other_dp;
+  }
 
-  assert(!encoder.error());
+  return *dp == **boost::get<I*>(&other.delegate);
+}
 
-  return true;
+template<class M>
+bool
+TransmitQueue<M>::iterator::operator!=(const iterator& other) const {
+  return !(*this == other);
+}
+
+template<class M>
+void TransmitQueue<M>::iterator::erase() {
+  using I = typename TransmitQueue<M>::Messages::iterator;
+  auto i = *boost::get<I>(&delegate);
+  delegate = _cycle._queue._messages.erase(i);
 }
 
 //------------------------------------------------------------------------------
-template<class Id>
-void
-TransmitQueue<Id>::encode( binary::encoder& encoder
-                         , const std::vector<uuid>& targets
-                         , Entry& entry) const {
-  auto& m = *entry.message;
+template<class M>
+typename TransmitQueue<M>::Cycle TransmitQueue<M>::cycle() {
+  return Cycle(*this);
+}
 
-  encoder.put(m.source);
-  encode_targets(encoder, targets);
-
-  if (entry.bytes_already_sent == m.payload_size()) {
-    entry.bytes_already_sent = 0;
-  }
-
-  uint16_t payload_size = m.encode_header_and_payload( encoder
-                                                     , entry.bytes_already_sent);
-
-  if (encoder.error()) {
-    assert(0);
-    return;
-  }
-
-  entry.bytes_already_sent += payload_size;
+template<class M>
+void TransmitQueue<M>::insert(M m) {
+  _messages.push_back(std::move(m));
 }
 
 //------------------------------------------------------------------------------
-template<class Id>
-size_t
-TransmitQueue<Id>::minimal_encoded_size( const std::vector<uuid>& targets
-                                       , const Message& msg) const {
-  size_t sizeof_uuid = binary::encoded<uuid>::size();
+template<class M>
+bool TransmitQueue<M>::empty() const {
+  return _messages.empty();
+}
 
-  return sizeof_uuid // msg.source
-       + sizeof(uint8_t) // number of targets
-       + targets.size() * sizeof_uuid
-       + OutMessage::header_size
-       // We'd want to send at least one byte of the payload,
-       // otherwise what's the point.
-       + std::min<size_t>(1, msg.payload_size())
-       ;
+template<class M>
+size_t TransmitQueue<M>::size() const {
+  return _messages.size();
 }
 
 //------------------------------------------------------------------------------
-template<class Id>
-void
-TransmitQueue<Id>::encode_targets( binary::encoder& encoder
-                                 , const std::vector<uuid>& targets) const {
-  if (targets.size() > std::numeric_limits<uint8_t>::max()) {
-    assert(0);
-    return encoder.set_error();
-  }
 
-  encoder.put((uint8_t) targets.size());
-
-  for (const auto& id : targets) {
-    encoder.put(id);
-  }
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
-void TransmitQueue<Id>::set_intersection( const std::set<uuid>& set1
-                                        , const std::set<uuid>& set2
-                                        , std::vector<uuid>& result) {
-  result.resize(0);
-
-  std::set_intersection( set1.begin(), set1.end()
-                       , set2.begin(), set2.end()
-                       , std::back_inserter(result));
-}
-
-//------------------------------------------------------------------------------
-template<class Id>
-void TransmitQueue<Id>::set_difference( const std::vector<uuid>& set1
-                                      , const std::set<uuid>&    set2
-                                      , std::vector<uuid>&       result) {
-  result.resize(0);
-
-  std::set_difference( set1.begin(), set1.end()
-                     , set2.begin(), set2.end()
-                     , std::back_inserter(result));
-}
-
-}} // club::transport namespace
+}}
 
 #endif // ifndef CLUB_TRANSMIT_QUEUE_H
+

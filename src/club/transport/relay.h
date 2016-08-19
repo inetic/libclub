@@ -21,6 +21,9 @@
 #include <transport/transmit_queue.h>
 #include <transport/message_reader.h>
 #include <club/debug/ostream_uuid.h>
+#include <transport/out_message.h>
+#include <transport/message_id.h>
+#include <transport/core.h>
 
 namespace club { namespace transport {
 
@@ -52,9 +55,18 @@ private:
   };
 
 public:
-  using TransmitQueue = transport::TransmitQueue<UnreliableId>;
-  using Core          = transport::Core<UnreliableId>;
+  using Message       = transport::OutMessage;
   using MessageId     = transport::MessageId<UnreliableId>;
+  using MessagePtr    = std::shared_ptr<Message>;
+  using Core          = transport::Core<UnreliableId>;
+
+  struct Entry {
+    MessageId  message_id;
+    size_t     bytes_already_sent;
+    MessagePtr message;
+  };
+
+  using TransmitQueue = transport::TransmitQueue<Entry>;
 
 public:
   Relay( uuid                  id
@@ -65,10 +77,6 @@ public:
 
   Relay(Relay&&) = delete;
   Relay& operator=(Relay&&) = delete;
-
-  bool has_message(SequenceNumber sn) {
-    return _transmit_queue.has_message(sn);
-  }
 
   bool is_sending() const {
     return _send_state == SendState::sending
@@ -96,15 +104,28 @@ private:
               , size_t
               , std::shared_ptr<SocketState>);
 
-  Core& core() { return _transmit_queue.core(); }
-  const Core& core() const { return _transmit_queue.core(); }
-
   void handle_ack_entry(AckEntry);
   void handle_message(std::shared_ptr<SocketState>&, InMessagePart);
+
+  static void set_intersection( const std::set<uuid>&
+                              , const std::set<uuid>&
+                              , std::vector<uuid>&);
+
+  bool try_encode(binary::encoder&, const std::vector<uuid>&, Entry&) const;
+
+  void encode( binary::encoder&
+             , const std::vector<uuid>&
+             , Entry&) const;
+
+  void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
+
+  size_t minimal_encoded_size( const std::vector<uuid>& targets
+                             , const Message& msg) const;
 
 private:
   uuid                             _transport_id;
   uuid                             _our_id;
+  std::shared_ptr<Core>            _core;
   SendState                        _send_state;
   std::set<uuid>                   _targets;
   udp::socket                      _socket;
@@ -113,6 +134,9 @@ private:
   MessageReader                    _message_reader;
   boost::asio::steady_timer        _timer;
   std::shared_ptr<SocketState>     _socket_state;
+
+  // A cache vector so we don't have to reallocate it each time.
+  std::vector<uuid> _target_intersection;
 };
 
 //------------------------------------------------------------------------------
@@ -125,15 +149,15 @@ Relay<UnreliableId> ::Relay( uuid                  id
                            , std::shared_ptr<Core> core)
   : _transport_id(std::move(id))
   , _our_id(core->id())
+  , _core(std::move(core))
   , _send_state(SendState::pending)
   , _socket(std::move(socket))
   , _remote_endpoint(std::move(remote_endpoint))
-  , _transmit_queue(std::move(core))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
 {
   assert(_transport_id != _our_id);
-  this->core().register_relay(this);
+  _core->register_relay(this);
 
   start_receiving(_socket_state);
 }
@@ -141,7 +165,7 @@ Relay<UnreliableId> ::Relay( uuid                  id
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
 Relay<UnreliableId>::~Relay() {
-  core().unregister_relay(this);
+  _core->unregister_relay(this);
   _socket_state->was_destroyed = true;
 }
 
@@ -219,10 +243,10 @@ void Relay<Id>::handle_ack_entry(AckEntry entry) {
 
   if (entry.to == _our_id) {
     assert(entry.from != _our_id);
-    core().on_receive_acks(entry.from, entry.acks);
+    _core->on_receive_acks(entry.from, entry.acks);
   }
   else {
-    core().add_ack_entry(std::move(entry));
+    _core->add_ack_entry(std::move(entry));
   }
 }
 
@@ -240,19 +264,19 @@ void Relay<Id>::handle_message( std::shared_ptr<SocketState>& state
     msg.targets.erase(_our_id);
 
     if (!msg.targets.empty()) {
-      core().forward_message(msg);
+      _core->forward_message(msg);
     }
 
     //std::cout << _our_id << " <<< " << msg << std::endl;
 
-    core().on_receive_part(std::move(msg));
+    _core->on_receive_part(std::move(msg));
 
     if (state->was_destroyed) return;
 
     start_sending(_socket_state);
   }
   else {
-    core().forward_message(msg);
+    _core->forward_message(msg);
   }
 }
 
@@ -271,11 +295,55 @@ void Relay<Id>::start_sending(std::shared_ptr<SocketState> state) {
 
   // TODO: Should we limit the number of acks we encode here to guarantee
   //       some space for messages?
-  count += core().encode_acks(encoder, _targets);
-  count += _transmit_queue.encode_few(encoder, _targets);
+  count += _core->encode_acks(encoder, _targets);
+
+  auto cycle = _transmit_queue.cycle();
+
+  for (auto mi = cycle.begin(); mi != cycle.end();) {
+    set_intersection( mi->message->targets
+                    , _targets
+                    , _target_intersection);
+
+    if (_target_intersection.empty()) {
+      _core->release( std::move(mi->message_id)
+                    , std::move(mi->message));
+      mi.erase();
+      continue;
+    }
+
+    if (!try_encode(encoder, _target_intersection, *mi)) {
+      break;
+    }
+
+    ++count;
+
+    if (mi->bytes_already_sent != mi->message->payload_size()) {
+      break;
+    }
+
+    // Unreliable entries are sent only once to each target.
+    // TODO: Also erase the message if _target_intersection is empty.
+    if (!mi->message->resend_until_acked) {
+      auto& m = *mi->message;
+
+      // TODO: This can have linear time complexity.
+      for (const auto& target : _target_intersection) {
+        m.targets.erase(target);
+      }
+
+      if (m.targets.empty()) {
+        _core->release( std::move(mi->message_id)
+                      , std::move(mi->message));
+        mi.erase();
+        continue;
+      }
+    }
+    
+    ++mi;
+  }
 
   if (count == 0) {
-    core().try_flush();
+    _core->try_flush();
     return;
   }
 
@@ -306,7 +374,7 @@ void Relay<Id>::on_send( const boost::system::error_code& error
 
   _send_state = SendState::pending;
 
-  core().try_flush();
+  _core->try_flush();
 
   if (error) {
     if (error == boost::asio::error::operation_aborted) {
@@ -351,11 +419,100 @@ void Relay<Id>::on_send( const boost::system::error_code& error
 template<class Id>
 void Relay<Id>::insert_message( MessageId message_id
                               , std::shared_ptr<OutMessage> m) {
-  _transmit_queue.insert_message(std::move(message_id), std::move(m));
+  _transmit_queue.insert(Entry{std::move(message_id), 0, std::move(m)});
   start_sending(_socket_state);
 }
 
 //------------------------------------------------------------------------------
+
+template<class Id>
+void Relay<Id>::set_intersection( const std::set<uuid>& set1
+                                , const std::set<uuid>& set2
+                                , std::vector<uuid>& result) {
+  result.resize(0);
+
+  std::set_intersection( set1.begin(), set1.end()
+                       , set2.begin(), set2.end()
+                       , std::back_inserter(result));
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+bool
+Relay<Id>::try_encode( binary::encoder& encoder
+                     , const std::vector<uuid>& targets
+                     , Entry& entry) const {
+
+  if (minimal_encoded_size(targets, *entry.message) > encoder.remaining_size()) {
+    return false;
+  }
+
+  encode(encoder, targets, entry);
+
+  assert(!encoder.error());
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void
+Relay<Id>::encode( binary::encoder& encoder
+                 , const std::vector<uuid>& targets
+                 , Entry& entry) const {
+  auto& m = *entry.message;
+
+  encoder.put(m.source);
+  encode_targets(encoder, targets);
+
+  if (entry.bytes_already_sent == m.payload_size()) {
+    entry.bytes_already_sent = 0;
+  }
+
+  uint16_t payload_size = m.encode_header_and_payload( encoder
+                                                     , entry.bytes_already_sent);
+
+  if (encoder.error()) {
+    assert(0);
+    return;
+  }
+
+  entry.bytes_already_sent += payload_size;
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+size_t
+Relay<Id>::minimal_encoded_size( const std::vector<uuid>& targets
+                               , const Message& msg) const {
+  size_t sizeof_uuid = binary::encoded<uuid>::size();
+
+  return sizeof_uuid // msg.source
+       + sizeof(uint8_t) // number of targets
+       + targets.size() * sizeof_uuid
+       + OutMessage::header_size
+       // We'd want to send at least one byte of the payload,
+       // otherwise what's the point.
+       + std::min<size_t>(1, msg.payload_size())
+       ;
+}
+
+//------------------------------------------------------------------------------
+template<class Id>
+void
+Relay<Id>::encode_targets( binary::encoder& encoder
+                         , const std::vector<uuid>& targets) const {
+  if (targets.size() > std::numeric_limits<uint8_t>::max()) {
+    assert(0);
+    return encoder.set_error();
+  }
+
+  encoder.put((uint8_t) targets.size());
+
+  for (const auto& id : targets) {
+    encoder.put(id);
+  }
+}
 
 }} // club::transport namespace
 

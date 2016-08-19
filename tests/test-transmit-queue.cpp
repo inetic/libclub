@@ -17,15 +17,37 @@
 
 #include <debug/string_tools.h>
 #include <iostream>
-#include <transport/transmit_queue2.h>
+#include <transport/transmit_queue.h>
 
 using std::cout;
 using std::endl;
 using std::move;
 
-using TQ  = club::transport::TransmitQueue2<int>;
+using TQ  = club::transport::TransmitQueue<int>;
 
 BOOST_AUTO_TEST_CASE(test_transmit_queue) {
+  {
+    TQ tq;
+
+    int d = 0;
+    for (auto m : tq.cycle()) {
+      BOOST_REQUIRE_EQUAL(m, d++);
+    }
+    BOOST_REQUIRE_EQUAL(d, tq.size());
+  }
+
+  {
+    TQ tq;
+
+    tq.insert(0);
+
+    int d = 0;
+    for (auto m : tq.cycle()) {
+      BOOST_REQUIRE_EQUAL(m, d++);
+    }
+    BOOST_REQUIRE_EQUAL(d, tq.size());
+  }
+
   {
     TQ tq;
 
@@ -39,7 +61,7 @@ BOOST_AUTO_TEST_CASE(test_transmit_queue) {
     for (auto m : tq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
-    BOOST_REQUIRE_EQUAL(d, 5);
+    BOOST_REQUIRE_EQUAL(d, tq.size());
   }
 
   {
