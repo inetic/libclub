@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CLUB_TRANSPORT_TRANSPORT_H
-#define CLUB_TRANSPORT_TRANSPORT_H
+#ifndef CLUB_TRANSPORT_RELAY_H
+#define CLUB_TRANSPORT_RELAY_H
 
 #include <iostream>
 #include <array>
@@ -25,7 +25,7 @@
 namespace club { namespace transport {
 
 template<typename UnreliableId>
-class Transport {
+class Relay {
 private:
   enum class SendState { sending, waiting, pending };
 
@@ -57,14 +57,14 @@ public:
   using MessageId     = transport::MessageId<UnreliableId>;
 
 public:
-  Transport( uuid                  id
-           , udp::socket           socket
-           , udp::endpoint         remote_endpoint
-           , std::shared_ptr<Core> core);
+  Relay( uuid                  id
+       , udp::socket           socket
+       , udp::endpoint         remote_endpoint
+       , std::shared_ptr<Core> core);
 
 
-  Transport(Transport&&) = delete;
-  Transport& operator=(Transport&&) = delete;
+  Relay(Relay&&) = delete;
+  Relay& operator=(Relay&&) = delete;
 
   bool has_message(SequenceNumber sn) {
     return _transmit_queue.has_message(sn);
@@ -75,7 +75,7 @@ public:
         || _send_state == SendState::waiting;
   }
 
-  ~Transport();
+  ~Relay();
 
 private:
   friend class ::club::transport::Core<UnreliableId>;
@@ -119,11 +119,10 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
-Transport<UnreliableId>
-::Transport( uuid                  id
-           , udp::socket           socket
-           , udp::endpoint         remote_endpoint
-           , std::shared_ptr<Core> core)
+Relay<UnreliableId> ::Relay( uuid                  id
+                           , udp::socket           socket
+                           , udp::endpoint         remote_endpoint
+                           , std::shared_ptr<Core> core)
   : _transport_id(std::move(id))
   , _our_id(core->id())
   , _send_state(SendState::pending)
@@ -134,28 +133,28 @@ Transport<UnreliableId>
   , _socket_state(std::make_shared<SocketState>())
 {
   assert(_transport_id != _our_id);
-  this->core().register_transport(this);
+  this->core().register_relay(this);
 
   start_receiving(_socket_state);
 }
 
 //------------------------------------------------------------------------------
 template<typename UnreliableId>
-Transport<UnreliableId>::~Transport() {
-  core().unregister_transport(this);
+Relay<UnreliableId>::~Relay() {
+  core().unregister_relay(this);
   _socket_state->was_destroyed = true;
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-bool Transport<Id>::add_target(const uuid& id)
+bool Relay<Id>::add_target(const uuid& id)
 {
   return _targets.insert(id).second;
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::start_receiving(std::shared_ptr<SocketState> state)
+void Relay<Id>::start_receiving(std::shared_ptr<SocketState> state)
 {
   using boost::system::error_code;
   using std::move;
@@ -173,9 +172,9 @@ void Transport<Id>::start_receiving(std::shared_ptr<SocketState> state)
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::on_receive( boost::system::error_code    error
-                              , std::size_t                  size
-                              , std::shared_ptr<SocketState> state)
+void Relay<Id>::on_receive( boost::system::error_code    error
+                          , std::size_t                  size
+                          , std::shared_ptr<SocketState> state)
 {
   using namespace std;
   namespace asio = boost::asio;
@@ -215,7 +214,7 @@ void Transport<Id>::on_receive( boost::system::error_code    error
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::handle_ack_entry(AckEntry entry) {
+void Relay<Id>::handle_ack_entry(AckEntry entry) {
   //std::cout << _our_id << " <<< " << entry << std::endl;
 
   if (entry.to == _our_id) {
@@ -229,7 +228,7 @@ void Transport<Id>::handle_ack_entry(AckEntry entry) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
+void Relay<Id>::handle_message( std::shared_ptr<SocketState>& state
                                   , InMessagePart msg) {
   if (msg.source == _our_id) {
     assert(0 && "Our message was returned back");
@@ -259,7 +258,7 @@ void Transport<Id>::handle_message( std::shared_ptr<SocketState>& state
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
+void Relay<Id>::start_sending(std::shared_ptr<SocketState> state) {
   using boost::system::error_code;
   using std::move;
   using boost::asio::buffer;
@@ -296,9 +295,9 @@ void Transport<Id>::start_sending(std::shared_ptr<SocketState> state) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::on_send( const boost::system::error_code& error
-                           , size_t                           size
-                           , std::shared_ptr<SocketState>     state)
+void Relay<Id>::on_send( const boost::system::error_code& error
+                       , size_t                           size
+                       , std::shared_ptr<SocketState>     state)
 {
   using std::move;
   using boost::system::error_code;
@@ -350,8 +349,8 @@ void Transport<Id>::on_send( const boost::system::error_code& error
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Transport<Id>::insert_message( MessageId message_id
-                                  , std::shared_ptr<OutMessage> m) {
+void Relay<Id>::insert_message( MessageId message_id
+                              , std::shared_ptr<OutMessage> m) {
   _transmit_queue.insert_message(std::move(message_id), std::move(m));
   start_sending(_socket_state);
 }
@@ -360,4 +359,4 @@ void Transport<Id>::insert_message( MessageId message_id
 
 }} // club::transport namespace
 
-#endif // ifndef CLUB_TRANSPORT_TRANSPORT_H
+#endif // ifndef CLUB_TRANSPORT_RELAY_H

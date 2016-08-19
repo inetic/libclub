@@ -32,7 +32,7 @@
 namespace club { namespace transport {
 
 template<typename> class TransmitQueue;
-template<typename> class Transport;
+template<typename> class Relay;
 
 template<typename UnreliableId>
 class Core {
@@ -41,7 +41,7 @@ private:
   using OnFlush    = std::function<void()>;
   using Queue      = TransmitQueue<UnreliableId>;
   using OutMessage = transport::OutMessage;
-  using Transport  = transport::Transport<UnreliableId>;
+  using Relay      = transport::Relay<UnreliableId>;
   using MessageId  = transport::MessageId<UnreliableId>;
   using Messages   = std::map<MessageId, std::weak_ptr<OutMessage>>;
 
@@ -69,19 +69,19 @@ public:
   ~Core();
 
 private:
-  friend class ::club::transport::Transport<UnreliableId>;
+  friend class ::club::transport::Relay<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
   void release(MessageId, std::shared_ptr<OutMessage>&&);
 
-  void register_transport(Transport*);
-  void unregister_transport(Transport*);
+  void register_relay(Relay*);
+  void unregister_relay(Relay*);
   void forward_message(const InMessagePart&);
 
   void add_ack_entry(AckEntry);
   uint8_t encode_acks(binary::encoder& encoder, const std::set<uuid>& targets);
 
-  void add_target_to_transport(Transport&, uuid);
+  void add_target_to_transport(Relay&, uuid);
 
   void on_receive_part(InMessagePart);
   void on_receive_full(InMessageFull);
@@ -128,7 +128,7 @@ private:
   // have this number incremented.
   // TODO: The above currently doesn't hold.
   SequenceNumber         _next_message_number;
-  std::set<Transport*>   _transports;
+  std::set<Relay*>       _transports;
   Messages               _messages;
   OnFlush                _on_flush;
 
@@ -156,13 +156,13 @@ template<class Id> Core<Id>::~Core() {
   *_was_destroyed = true;
 }
 //------------------------------------------------------------------------------
-template<class Id> void Core<Id>::register_transport(Transport* t)
+template<class Id> void Core<Id>::register_relay(Relay* t)
 {
   _transports.insert(t);
 }
 
 //------------------------------------------------------------------------------
-template<class Id> void Core<Id>::unregister_transport(Transport* t)
+template<class Id> void Core<Id>::unregister_relay(Relay* t)
 {
   _transports.erase(t);
 }
@@ -174,13 +174,13 @@ void Core<Id>::reset_topology(const Graph<uuid>& graph) {
     tp->_targets.clear();
   }
 
-  // TODO: Big one: we only assign one transport per target, but there could
+  // TODO: Big one: we only assign one relay per target, but there could
   // be more than one 'shortest' path to the target which could allow bigger
   // message throughput.
   Dijkstra dijkstra(_our_id, graph);
 
   // TODO: The following has terrible complexity
-  auto find_transport = [&](const uuid& id) -> Transport* {
+  auto find_transport = [&](const uuid& id) -> Relay* {
     for (auto p : _transports) if (p->_transport_id == id) return p;
     return nullptr;
   };
@@ -286,10 +286,10 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::add_target_to_transport(Transport& transport, uuid new_target) {
+void Core<Id>::add_target_to_transport(Relay& relay, uuid new_target) {
   using namespace std;
 
-  if (!transport.add_target(new_target)) return;
+  if (!relay.add_target(new_target)) return;
 
   auto inserted = _targets.emplace(new_target, Target()).second;
 
@@ -312,14 +312,14 @@ void Core<Id>::add_target_to_transport(Transport& transport, uuid new_target) {
     }
   }
   else {
-    // The target was already there, byt a different transport is/was sending to
-    // it. The other transport may soon remove the target from its list so
+    // The target was already there, byt a different relay is/was sending to
+    // it. The other relay may soon remove the target from its list so
     // we need to take care the message gets delivered.
     for (auto& m : _messages) {
       auto m_ptr = m.second.lock();
       if (!m_ptr) continue;
       if (m_ptr->targets.count(new_target)) {
-        transport.insert_message(m.first, m_ptr);
+        relay.insert_message(m.first, m_ptr);
       }
     }
   }

@@ -18,7 +18,7 @@
 #include <boost/asio.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/functional/hash.hpp>
-#include <transport/transport.h>
+#include <transport/relay.h>
 #include <debug/string_tools.h>
 #include "when_all.h"
 
@@ -50,11 +50,11 @@ using uuid           = club::uuid;
 using UnreliableId   = uint32_t;
 using TransmitQueue  = club::transport::TransmitQueue<UnreliableId>;
 using Core           = club::transport::Core<UnreliableId>;
-using Transport      = club::transport::Transport<UnreliableId>;
+using Relay          = club::transport::Relay<UnreliableId>;
 using udp            = boost::asio::ip::udp;
 using Graph          = club::Graph<uuid>;
 
-using TransportPtr = std::unique_ptr<Transport>;
+using RelayPtr = std::unique_ptr<Relay>;
 
 namespace asio = boost::asio;
 
@@ -99,13 +99,13 @@ vector<uint8_t> buf_to_vector(const_buffer buf) {
 //------------------------------------------------------------------------------
 struct Node {
   uuid                                    id;
-  std::map<uuid, TransportPtr>            transports;
+  std::map<uuid, RelayPtr>                relays;
   shared_ptr<Core>                        transport_core;
   std::function<void(uuid, const_buffer)> on_recv;
 
-  void add_transport(uuid other_id, udp::socket s, udp::endpoint e) {
-    auto t = std::make_unique<Transport>(other_id, move(s), e, transport_core);
-    transports.emplace(std::make_pair(other_id, move(t)));
+  void add_relay(uuid other_id, udp::socket s, udp::endpoint e) {
+    auto t = std::make_unique<Relay>(other_id, move(s), e, transport_core);
+    relays.emplace(std::make_pair(other_id, move(t)));
   }
 
   void broadcast_unreliable(vector<uint8_t> data) {
@@ -165,8 +165,8 @@ void connect_nodes(asio::io_service& ios, Node& n1, Node& n2) {
   auto ep1 = s1.local_endpoint();
   auto ep2 = s2.local_endpoint();
 
-  n1.add_transport(n2.id, move(s1), move(ep2));
-  n2.add_transport(n1.id, move(s2), move(ep1));
+  n1.add_relay(n2.id, move(s1), move(ep2));
+  n2.add_relay(n1.id, move(s2), move(ep1));
 }
 
 //------------------------------------------------------------------------------
@@ -194,8 +194,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
 
   WhenAll when_all;
 
-  vector<uint8_t> big_message(3*Transport::packet_size);
+  vector<uint8_t> big_message(3*Relay::packet_size);
 
   for (size_t i = 0; i < big_message.size(); i++) {
     big_message[i] = i;
@@ -232,8 +232,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -273,8 +273,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -311,8 +311,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_many_messages) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -352,8 +352,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -392,8 +392,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -437,9 +437,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop) {
   n3.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
     });
 
   ios.run();
@@ -491,9 +491,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_many_messages) {
   n3.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
     });
 
   ios.run();
@@ -540,10 +540,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_hops) {
   n4.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-      n4.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
+      n4.relays.clear();
     });
 
   ios.run();
@@ -586,9 +586,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_targets) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
     });
 
   ios.run();
@@ -635,10 +635,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_hop_two_targets) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-      n4.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
+      n4.relays.clear();
     });
 
   ios.run();
@@ -670,8 +670,8 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -712,8 +712,8 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -731,7 +731,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
 
   WhenAll when_all;
 
-  vector<uint8_t> message(2*Transport::packet_size);
+  vector<uint8_t> message(2*Relay::packet_size);
 
   for (size_t i = 0; i < message.size(); ++i) {
     message[i] = i;
@@ -758,8 +758,8 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -801,8 +801,8 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -843,9 +843,9 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_3) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
     });
 
   ios.run();
@@ -895,10 +895,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_broadcast_4) {
   n4.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
-      n4.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
+      n4.relays.clear();
     });
 
   ios.run();
@@ -944,8 +944,8 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
   n1.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
     });
 
   ios.run();
@@ -996,9 +996,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable_one_hop) {
   n2.flush(when_all.make_continuation());
 
   when_all.on_complete([&]() {
-      n1.transports.clear();
-      n2.transports.clear();
-      n3.transports.clear();
+      n1.relays.clear();
+      n2.relays.clear();
+      n3.relays.clear();
     });
 
   ios.run();
@@ -1026,7 +1026,7 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_switch_transport) {
   n3.reset_topology(g);
 
   // Destroy the path: n1 -> n2 -> n3
-  n2.transports.clear();
+  n2.relays.clear();
 
   n1.broadcast_reliable(std::vector<uint8_t>{6});
 
@@ -1050,10 +1050,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_switch_transport) {
   n4.on_recv = [](auto s, auto b) {};
   n3.on_recv = [&](auto s, auto b) {
     received = true;
-    n1.transports.clear();
-    n2.transports.clear();
-    n3.transports.clear();
-    n4.transports.clear();
+    n1.relays.clear();
+    n2.relays.clear();
+    n3.relays.clear();
+    n4.relays.clear();
   };
 
   ios.run();
