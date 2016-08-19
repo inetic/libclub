@@ -128,7 +128,7 @@ private:
   // have this number incremented.
   // TODO: The above currently doesn't hold.
   SequenceNumber         _next_message_number;
-  std::set<Relay*>       _transports;
+  std::set<Relay*>       _relays;
   Messages               _messages;
   OnFlush                _on_flush;
 
@@ -158,20 +158,20 @@ template<class Id> Core<Id>::~Core() {
 //------------------------------------------------------------------------------
 template<class Id> void Core<Id>::register_relay(Relay* t)
 {
-  _transports.insert(t);
+  _relays.insert(t);
 }
 
 //------------------------------------------------------------------------------
 template<class Id> void Core<Id>::unregister_relay(Relay* t)
 {
-  _transports.erase(t);
+  _relays.erase(t);
 }
 
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::reset_topology(const Graph<uuid>& graph) {
-  for (auto tp : _transports) {
-    tp->_targets.clear();
+  for (auto r : _relays) {
+    r->_targets.clear();
   }
 
   // TODO: Big one: we only assign one relay per target, but there could
@@ -181,7 +181,7 @@ void Core<Id>::reset_topology(const Graph<uuid>& graph) {
 
   // TODO: The following has terrible complexity
   auto find_transport = [&](const uuid& id) -> Relay* {
-    for (auto p : _transports) if (p->_transport_id == id) return p;
+    for (auto r : _relays) if (r->_relay_id == id) return r;
     return nullptr;
   };
 
@@ -279,8 +279,8 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
   _messages.emplace(id, message);
 
-  for (auto t : _transports) {
-    t->insert_message(id, message);
+  for (auto r : _relays) {
+    r->insert_message(id, message);
   }
 }
 
@@ -307,8 +307,8 @@ void Core<Id>::add_target_to_transport(Relay& relay, uuid new_target) {
 
     _messages.emplace(id, message);
 
-    for (auto t : _transports) {
-      t->insert_message(id, message);
+    for (auto r : _relays) {
+      r->insert_message(id, message);
     }
   }
   else {
@@ -355,8 +355,8 @@ void Core<Id>::broadcast_unreliable( Id                     id
 
     _messages.emplace(mid, move(message));
 
-    for (auto t : _transports) {
-      t->insert_message(mid, message);
+    for (auto r : _relays) {
+      r->insert_message(mid, message);
     }
   }
 
@@ -385,8 +385,8 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 
   ForwardId id;
 
-  for (auto t : _transports) {
-    t->insert_message(id, message);
+  for (auto r : _relays) {
+    r->insert_message(id, message);
   }
 }
 
@@ -595,8 +595,8 @@ template<class Id> void Core<Id>::try_flush() {
   // TODO: Transports could increment and decrement some counter when sending
   // and finishing sending so that we wouldn't have to iterate here through
   // the transports.
-  for (auto t : _transports) {
-    if (t->is_sending()) return;
+  for (auto r : _relays) {
+    if (r->is_sending()) return;
   }
 
   auto on_flush = std::move(_on_flush);

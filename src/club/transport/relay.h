@@ -123,7 +123,7 @@ private:
                              , const Message& msg) const;
 
 private:
-  uuid                             _transport_id;
+  uuid                             _relay_id;
   uuid                             _our_id;
   std::shared_ptr<Core>            _core;
   SendState                        _send_state;
@@ -147,7 +147,7 @@ Relay<UnreliableId> ::Relay( uuid                  id
                            , udp::socket           socket
                            , udp::endpoint         remote_endpoint
                            , std::shared_ptr<Core> core)
-  : _transport_id(std::move(id))
+  : _relay_id(std::move(id))
   , _our_id(core->id())
   , _core(std::move(core))
   , _send_state(SendState::pending)
@@ -156,7 +156,7 @@ Relay<UnreliableId> ::Relay( uuid                  id
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
 {
-  assert(_transport_id != _our_id);
+  assert(_relay_id != _our_id);
   _core->register_relay(this);
 
   start_receiving(_socket_state);
