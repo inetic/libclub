@@ -86,8 +86,8 @@ private:
   void on_receive_part(InMessagePart);
   void on_receive_full(InMessageFull);
 
-  void on_receive_acks(const uuid&, AckSet);
-  void acknowledge(const uuid&, AckSet::Type, SequenceNumber);
+  void on_receive_acks(AckEntry&&);
+  void acknowledge(const uuid&, AckEntry::Type, SequenceNumber);
   void acknowledge(const InMessageFull&);
 
   void try_flush();
@@ -210,11 +210,11 @@ void Core<Id>::add_ack_entry(AckEntry entry) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::acknowledge(const InMessageFull& msg) {
-  AckSet::Type type;
+  AckEntry::Type type;
 
   switch (msg.type) {
-    case MessageType::reliable_broadcast: type = AckSet::Type::broadcast; break;
-    case MessageType::syn:                type = AckSet::Type::unicast; break;
+    case MessageType::reliable_broadcast: type = AckEntry::Type::broadcast; break;
+    case MessageType::syn:                type = AckEntry::Type::unicast; break;
     default:
                                           assert(0);
                                           return;
@@ -225,15 +225,17 @@ void Core<Id>::acknowledge(const InMessageFull& msg) {
 
 //------------------------------------------------------------------------------
 template<class Id>
-void Core<Id>::on_receive_acks(const uuid& target, AckSet acks) {
+void Core<Id>::on_receive_acks(AckEntry&& ack_entry) {
   bool acked_some = false;
 
-  for (auto sn : acks) {
+  const uuid& target = ack_entry.from;
+
+  for (auto sn : ack_entry.acks) {
     MessageId mid;
 
-    switch (acks.type()) {
-      case AckSet::Type::unicast:   mid = ReliableUnicastId{target, sn}; break;
-      case AckSet::Type::broadcast: mid = ReliableBroadcastId{sn};       break;
+    switch (ack_entry.type) {
+      case AckEntry::Type::unicast:   mid = ReliableUnicastId{target, sn}; break;
+      case AckEntry::Type::broadcast: mid = ReliableBroadcastId{sn};       break;
       default: assert(0); return;
     }
 
@@ -506,8 +508,7 @@ void Core<Id>::on_receive_full(InMessageFull msg) {
 
     if (!node.sync) {
       node.sync = typename Target::Sync{ msg.sequence_number-1
-                                       , AckSet( AckSet::Type::broadcast
-                                               , msg.sequence_number-1)};
+                                       , AckSet(msg.sequence_number-1)};
 
       // No need to replay pending messages here because, we've been ignoring
       // everything until now.

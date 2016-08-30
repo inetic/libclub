@@ -21,6 +21,9 @@
 namespace club { namespace transport {
 
 struct AckEntry {
+  enum class Type { broadcast, unicast, unset };
+
+  Type   type;
   uuid   to;
   uuid   from;
   AckSet acks;
@@ -29,7 +32,8 @@ struct AckEntry {
 //------------------------------------------------------------------------------
 template<typename Encoder>
 inline void encode(Encoder& e, const AckEntry& ack_entry) {
-  assert(ack_entry.acks.type() != AckSet::Type::unset);
+  assert(ack_entry.type != AckEntry::Type::unset);
+  e.put((uint8_t) ack_entry.type);
   e.put(ack_entry.to);
   e.put(ack_entry.from);
   e.put(ack_entry.acks);
@@ -37,13 +41,17 @@ inline void encode(Encoder& e, const AckEntry& ack_entry) {
 
 //------------------------------------------------------------------------------
 inline void decode(binary::decoder& d, AckEntry& ack_entry) {
+  ack_entry.type = static_cast<AckEntry::Type>(d.get<uint8_t>());
+
+  if (ack_entry.type != AckEntry::Type::broadcast
+      && ack_entry.type != AckEntry::Type::unicast) {
+    assert(0);
+    return d.set_error();
+  }
+
   ack_entry.to   = d.get<uuid>();
   ack_entry.from = d.get<uuid>();
   ack_entry.acks = d.get<AckSet>();
-
-  if (ack_entry.acks.type() == AckSet::Type::unset) {
-    d.set_error();
-  }
 
   assert(!d.error());
 }
@@ -63,7 +71,8 @@ namespace binary {
 template<>
 struct encoded<::club::transport::AckEntry> {
   static size_t size() {
-    return encoded<::club::uuid>::size()
+    return sizeof(uint8_t) // type
+         + encoded<::club::uuid>::size()
          + encoded<::club::uuid>::size()
          + encoded<::club::transport::AckSet>::size();
   }

@@ -243,7 +243,7 @@ void Relay<Id>::handle_ack_entry(AckEntry entry) {
 
   if (entry.to == _our_id) {
     assert(entry.from != _our_id);
-    _core->on_receive_acks(entry.from, entry.acks);
+    _core->on_receive_acks(std::move(entry));
   }
   else {
     _core->add_ack_entry(std::move(entry));

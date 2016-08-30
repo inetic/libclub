@@ -28,12 +28,8 @@ namespace club { namespace transport {
 
 class AckSet {
 public:
-  enum class Type { broadcast, unicast, unset };
-
-public:
   AckSet();
-  AckSet(Type);
-  AckSet(Type, SequenceNumber);
+  AckSet(SequenceNumber);
 
   bool try_add(SequenceNumber new_sn);
   bool can_add(SequenceNumber new_sn);
@@ -77,14 +73,11 @@ public:
 
   iterator end() const { return iterator(*this, 32); }
 
-  Type type() const { return _type; }
-
 private:
   friend std::ostream& operator<<(std::ostream&, const AckSet&);
   friend void decode(binary::decoder&, AckSet&);
   template<typename Encoder> friend void encode(Encoder&, const AckSet&);
 
-  Type           _type;
   SequenceNumber highest_sequence_number;
   SequenceNumber lowest_sequence_number;
 
@@ -96,24 +89,14 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 inline AckSet::AckSet()
-  : _type(Type::unset)
-  , highest_sequence_number(0)
+  : highest_sequence_number(0)
   , lowest_sequence_number(0)
   , predecessors(0)
   , is_empty(true)
 {}
 
-inline AckSet::AckSet(Type type)
-  : _type(type)
-  , highest_sequence_number(0)
-  , lowest_sequence_number(0)
-  , predecessors(0)
-  , is_empty(true)
-{}
-
-inline AckSet::AckSet(Type type, SequenceNumber sn)
-  : _type(type)
-  , highest_sequence_number(sn)
+inline AckSet::AckSet(SequenceNumber sn)
+  : highest_sequence_number(sn)
   , lowest_sequence_number(sn)
   , predecessors(0)
   , is_empty(false)
@@ -206,12 +189,6 @@ inline
 std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
   os << "(AckSet ";
 
-  switch (acks._type) {
-    case AckSet::Type::broadcast: os << "broadcast "; break;
-    case AckSet::Type::unicast:   os << "unicast "; break;
-    case AckSet::Type::unset:     os << "unset "; break;
-  }
-
   //if (!acks.is_empty) {
   //  os << acks.highest_sequence_number << " ";
   //}
@@ -242,8 +219,7 @@ std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
 namespace binary {
   template<> struct encoded<::club::transport::AckSet> {
     static size_t size() {
-      return sizeof(uint8_t) // type
-           + sizeof(::club::transport::SequenceNumber)
+      return sizeof(::club::transport::SequenceNumber)
            + sizeof(uint32_t);
     }
   };
@@ -254,10 +230,6 @@ namespace club { namespace transport {
 //------------------------------------------------------------------------------
 template<typename Encoder>
 inline void encode( Encoder& e, const AckSet& ack_set) {
-  assert(ack_set._type == AckSet::Type::broadcast
-      || ack_set._type == AckSet::Type::unicast);
-
-  e.put((uint8_t) ack_set._type);
   e.put((SequenceNumber) ack_set.highest_sequence_number);
 
   uint32_t mixed = ack_set.predecessors
@@ -268,14 +240,6 @@ inline void encode( Encoder& e, const AckSet& ack_set) {
 
 //------------------------------------------------------------------------------
 inline void decode(binary::decoder& d, AckSet& ack_set) {
-  ack_set._type = static_cast<AckSet::Type>(d.get<uint8_t>());
-
-  if (ack_set._type != AckSet::Type::broadcast
-      && ack_set._type != AckSet::Type::unicast) {
-    assert(0);
-    return d.set_error();
-  }
-
   if (d.error()) return;
 
   ack_set.highest_sequence_number = d.get<SequenceNumber>();

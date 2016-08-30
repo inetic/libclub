@@ -20,8 +20,8 @@ namespace club { namespace transport {
 class OutboundAcks {
 private:
   struct AckSetId {
-    AckSet::Type ack_type;
-    uuid         source;
+    AckEntry::Type ack_type;
+    uuid           source;
 
     bool operator < (const AckSetId& other) const {
       return std::tie(ack_type, source)
@@ -34,7 +34,7 @@ public:
 
   size_t encode_few(binary::encoder&, const std::set<uuid>& targets);
   void add_ack_entry(AckEntry);
-  void acknowledge(const uuid& from, AckSet::Type, SequenceNumber);
+  void acknowledge(const uuid& from, AckEntry::Type, SequenceNumber);
 
 private:
   uuid _our_id;
@@ -81,7 +81,7 @@ size_t OutboundAcks::encode_few( binary::encoder& encoder
     for (auto j = froms.begin(); j != froms.end();) {
       auto tmp_encoder = encoder;
 
-      auto ack_entry = AckEntry{i->first, j->first.source, j->second};
+      auto ack_entry = AckEntry{j->first.ack_type, i->first, j->first.source, j->second};
       encoder.put(ack_entry);
 
       if (encoder.error()) {
@@ -116,26 +116,26 @@ size_t OutboundAcks::encode_few( binary::encoder& encoder
 inline
 void OutboundAcks::add_ack_entry(AckEntry entry) {
   // TODO: Union with the existing AckSet.
-  AckSetId ack_set_id{entry.acks.type(), entry.from};
+  AckSetId ack_set_id{entry.type, entry.from};
   _storage[entry.to][ack_set_id] = entry.acks;
 }
 
 //------------------------------------------------------------------------------
 inline
 void OutboundAcks::acknowledge( const uuid& from
-                              , AckSet::Type type
+                              , AckEntry::Type type
                               , SequenceNumber sn) {
   AckSetId ack_set_id{type, _our_id};
 
   auto i = _storage.find(from);
 
   if (i == _storage.end()) {
-    _storage[from].emplace(ack_set_id, AckSet(type, sn));
+    _storage[from].emplace(ack_set_id, AckSet(sn));
   }
   else {
     auto j = i->second.find(ack_set_id);
     if (j == i->second.end()) {
-      _storage[from].emplace(ack_set_id, AckSet(type, sn));
+      _storage[from].emplace(ack_set_id, AckSet(sn));
     }
     else {
       j->second.try_add(sn);

@@ -75,15 +75,15 @@ boost::optional<AckEntry> MessageReader::read_one_ack_entry() {
 
   auto entry = _ack_decoder.get<AckEntry>();
 
-  assert(entry.acks.type() != AckSet::Type::unset);
+  assert(entry.type != AckEntry::Type::unset);
 
-  if (entry.acks.type() == AckSet::Type::unset) {
+  if (entry.type == AckEntry::Type::unset) {
     _ack_decoder.set_error();
   }
 
   if (_ack_decoder.error()) return boost::none;
 
-  assert(entry.acks.type() != AckSet::Type::unset);
+  assert(entry.type != AckEntry::Type::unset);
   return std::move(entry);
 }
 
