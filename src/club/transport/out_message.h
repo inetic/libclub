@@ -28,24 +28,11 @@ namespace club { namespace transport {
 
 //------------------------------------------------------------------------------
 struct OutMessage {
+private:
   /*
-   * Header:
-   *
-   *  0 1 2 3 4 5 6 7 8 9 0
-   * +-+-+-+-+-+-+-+-+-+-+-+
-   * |T|  SN   |OS |ST |CS |
-   *
-   * T:  MessageType
-   * SN: SequenceNumber
-   * OS: Original size of the message
-   * ST: Start position
-   * CS: Chunk size
-   *
    * This message may contain only a fraction of what the original poster
    * of the message sent. It is due to the message trying to fit into
    * a buffer of size min(MTU size, receiving buffer size).
-   *
-   * The number of bytes following this header is equal to CS.
    */
   struct Header {
     MessageType type;
@@ -63,8 +50,10 @@ struct OutMessage {
     }
   };
 
+public:
   static constexpr size_t header_size = 11;
 
+  // A constructor that is used when we're the original poster.
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
             , bool                   resend_until_acked
@@ -74,13 +63,14 @@ struct OutMessage {
     : source(std::move(source))
     , targets(std::move(targets))
     , resend_until_acked(resend_until_acked)
-    , data(std::move(payload))
-    , payload_start(0)
-    , header{type, sequence_number, uint16_t(data.size()), 0, uint16_t(data.size())}
+    , _payload_start(0)
+    , _header{type, sequence_number, uint16_t(payload.size()), 0, uint16_t(payload.size())}
+    , _data(std::move(payload))
     , _is_dirty(false)
   {
   }
 
+  // A constructor that is used when we're forwarding this message.
   OutMessage( uuid                   source
             , std::set<uuid>&&       targets
             , bool                   resend_until_acked
@@ -88,35 +78,31 @@ struct OutMessage {
     : source(std::move(source))
     , targets(std::move(targets))
     , resend_until_acked(resend_until_acked)
-    , data(std::move(header_and_payload))
-    , payload_start(header_size)
+    , _payload_start(header_size)
+    , _data(std::move(header_and_payload))
     , _is_dirty(false)
   {
-    assert(data.size() >= header_size);
+    assert(_data.size() >= header_size);
 
-    binary::decoder d(data);
+    binary::decoder d(_data);
 
-    header.type = d.get<MessageType>();
-    header.sequence_number = d.get<SequenceNumber>();
-    header.original_size = d.get<uint16_t>();
-    header.start_position = d.get<uint16_t>();
-    header.chunk_size = d.get<uint16_t>();
+    _header.type = d.get<MessageType>();
+    _header.sequence_number = d.get<SequenceNumber>();
+    _header.original_size = d.get<uint16_t>();
+    _header.start_position = d.get<uint16_t>();
+    _header.chunk_size = d.get<uint16_t>();
   }
 
   void reset_payload(std::vector<uint8_t>&& new_payload) {
-    // Only reset the data if no part of the message has already been sent.
+    // Only reset the _data if no part of the message has already been sent.
     if (_is_dirty) return;
 
-    payload_start = 0;
-    data = std::move(new_payload);
+    _payload_start = 0;
+    _data = std::move(new_payload);
   }
 
   size_t payload_size() const {
-    return data.size() - payload_start;
-  }
-
-  size_t header_and_payload_size() const {
-    return header_size + payload_size();
+    return _data.size() - _payload_start;
   }
 
   // Return the size of the encoded payload.
@@ -129,16 +115,16 @@ struct OutMessage {
       return 0;
     }
 
-    const auto payload_size_ = std::min( data.size() - payload_start - start
+    const auto payload_size_ = std::min( _data.size() - _payload_start - start
                                        , encoder.remaining_size() - header_size);
 
-    Header h(header);
+    Header h = _header;
     h.start_position += start;
     h.chunk_size = payload_size_;
 
     h.encode(encoder);
 
-    encoder.put_raw(data.data() + payload_start + start, payload_size_);
+    encoder.put_raw(_data.data() + _payload_start + start, payload_size_);
 
     return payload_size_;
   }
@@ -146,12 +132,12 @@ struct OutMessage {
 public:
   const uuid source;
   std::set<uuid> targets;
-  bool resend_until_acked;
-  std::vector<uint8_t> data;
-  size_t payload_start;
-  Header header;
+  const bool resend_until_acked;
 
 private:
+  size_t _payload_start;
+  Header _header;
+  std::vector<uint8_t> _data;
   // Once this message or a part of it has been sent, we must not change its
   // content (using the `reset_payload` function above). We use this flag
   // for that.
