@@ -34,8 +34,6 @@ private:
 
 public:
   static const size_t packet_size = 1452;
-  // TODO: Assertion in tests when packet_size is small
-  //static const size_t packet_size = 64;
 
 private:
   using udp = boost::asio::ip::udp;
@@ -299,6 +297,9 @@ void Relay<Id>::start_sending(std::shared_ptr<SocketState> state) {
   //       some space for messages?
   count += _core->encode_acks(encoder, _targets);
 
+  assert(!encoder.error());
+  assert(count == 0 || encoder.written() != 0);
+
   auto cycle = _transmit_queue.cycle();
 
   for (auto mi = cycle.begin(); mi != cycle.end();) {
@@ -348,6 +349,8 @@ void Relay<Id>::start_sending(std::shared_ptr<SocketState> state) {
     _core->try_flush();
     return;
   }
+
+  assert(encoder.written());
 
   _send_state = SendState::sending;
 

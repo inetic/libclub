@@ -15,6 +15,8 @@
 #ifndef CLUB_TRANSPORT_OUTBOUND_ACKS_H
 #define CLUB_TRANSPORT_OUTBOUND_ACKS_H
 
+#include "generic/defer.h"
+
 namespace club { namespace transport {
 
 class OutboundAcks {
@@ -64,9 +66,10 @@ size_t OutboundAcks::encode_few( binary::encoder& encoder
     return 0;
   }
 
-  auto count_encoder = encoder;
-
   uint8_t count = 0;
+
+  auto on_return = defer([&count, encoder]() mutable { encoder.put(count); });
+
   encoder.put(count); // Shall be rewritten later in this func.
 
   for (auto i = _storage.begin(); i != _storage.end();) {
@@ -85,19 +88,17 @@ size_t OutboundAcks::encode_few( binary::encoder& encoder
       encoder.put(ack_entry);
 
       if (encoder.error()) {
-        count_encoder.put(count);
         encoder = tmp_encoder;
-        return count;
-      }
-
-      if (count == std::numeric_limits<decltype(count)>::max()) {
-        count_encoder.put(count);
         return count;
       }
 
       ++count;
 
       j = froms.erase(j);
+
+      if (count == std::numeric_limits<decltype(count)>::max()) {
+        return count;
+      }
     }
 
     if (i->second.empty()) {
@@ -108,7 +109,6 @@ size_t OutboundAcks::encode_few( binary::encoder& encoder
     }
   }
 
-  count_encoder.put(count);
   return count;
 }
 
