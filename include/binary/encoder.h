@@ -80,14 +80,14 @@ namespace binary {
 
 inline
 encoder::encoder(const encoder& other)
-  : _current{other._current.begin, other._current.begin, other._current.end}
+  : _current{other._current.start, other._current.begin, other._current.end}
   , _was_error(other._was_error)
 {
 }
 
 inline
 encoder::encoder(encoder& other)
-  : _current{other._current.begin, other._current.begin, other._current.end}
+  : _current{other._current.start, other._current.begin, other._current.end}
   , _was_error(other._was_error)
 {
 }
@@ -197,6 +197,13 @@ void encoder::put_raw(const Iterator* iter, std::size_t size) {
   for (std::size_t i = 0; i != size; ++i) {
     *(_current.begin++) = *(iter++);
   }
+}
+
+inline std::ostream& operator<<(std::ostream& os, const encoder& e) {
+  return os << "(encoder: "
+            << reinterpret_cast<size_t>(e._current.start) << " "
+            << reinterpret_cast<size_t>(e._current.begin) << " "
+            << reinterpret_cast<size_t>(e._current.end) << ")";
 }
 
 } // binary namespace
