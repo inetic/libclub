@@ -34,6 +34,8 @@ private:
 
 public:
   static const size_t packet_size = 1452;
+  // TODO: Assertion in tests when packet_size is small
+  //static const size_t packet_size = 64;
 
 private:
   using udp = boost::asio::ip::udp;
