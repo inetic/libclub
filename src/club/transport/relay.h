@@ -55,15 +55,13 @@ private:
   };
 
 public:
-  using Message       = transport::OutMessage;
-  using MessageId     = transport::MessageId<UnreliableId>;
-  using MessagePtr    = std::shared_ptr<Message>;
-  using Core          = transport::Core<UnreliableId>;
+  using MessageId = transport::MessageId<UnreliableId>;
+  using Core      = transport::Core<UnreliableId>;
 
   struct Entry {
-    MessageId  message_id;
-    size_t     bytes_already_sent;
-    MessagePtr message;
+    MessageId message_id;
+    size_t bytes_already_sent;
+    std::shared_ptr<OutRelayMessage> message;
   };
 
   using TransmitQueue = transport::TransmitQueue<Entry>;
@@ -90,7 +88,7 @@ private:
 
   bool add_target(const uuid&);
 
-  void insert_message(MessageId, std::shared_ptr<OutMessage> m);
+  void insert_message(MessageId, std::shared_ptr<OutRelayMessage> m);
 
   void start_receiving(std::shared_ptr<SocketState>);
 
@@ -120,7 +118,7 @@ private:
   void encode_targets(binary::encoder&, const std::vector<uuid>&) const;
 
   size_t minimal_encoded_size( const std::vector<uuid>& targets
-                             , const Message& msg) const;
+                             , const OutRelayMessage& msg) const;
 
 private:
   uuid                             _relay_id;
@@ -326,7 +324,7 @@ void Relay<Id>::start_sending(std::shared_ptr<SocketState> state) {
 
     // Unreliable entries are sent only once to each target.
     // TODO: Also erase the message if _target_intersection is empty.
-    if (!mi->message->resend_until_acked) {
+    if (!mi->message->resend_until_acked()) {
       auto& m = *mi->message;
 
       // TODO: This can have linear time complexity.
@@ -423,7 +421,7 @@ void Relay<Id>::on_send( const boost::system::error_code& error
 //------------------------------------------------------------------------------
 template<class Id>
 void Relay<Id>::insert_message( MessageId message_id
-                              , std::shared_ptr<OutMessage> m) {
+                              , std::shared_ptr<OutRelayMessage> m) {
   _transmit_queue.insert(Entry{std::move(message_id), 0, std::move(m)});
   start_sending(_socket_state);
 }
@@ -474,8 +472,8 @@ Relay<Id>::encode( binary::encoder& encoder
     entry.bytes_already_sent = 0;
   }
 
-  uint16_t payload_size = m.encode_header_and_payload( encoder
-                                                     , entry.bytes_already_sent);
+  uint16_t payload_size = m.out_message.encode_header_and_payload( encoder
+                                                                 , entry.bytes_already_sent);
 
   if (encoder.error()) {
     assert(0);
@@ -489,7 +487,7 @@ Relay<Id>::encode( binary::encoder& encoder
 template<class Id>
 size_t
 Relay<Id>::minimal_encoded_size( const std::vector<uuid>& targets
-                               , const Message& msg) const {
+                               , const OutRelayMessage& msg) const {
   size_t sizeof_uuid = binary::encoded<uuid>::size();
 
   return sizeof_uuid // msg.source
@@ -498,7 +496,7 @@ Relay<Id>::minimal_encoded_size( const std::vector<uuid>& targets
        + OutMessage::header_size
        // We'd want to send at least one byte of the payload,
        // otherwise what's the point.
-       + std::min<size_t>(1, msg.payload_size())
+       + std::min<size_t>(1, msg.out_message.payload_size())
        ;
 }
 

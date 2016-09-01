@@ -18,7 +18,7 @@
 #include <map>
 #include "transport/in_message_part.h"
 #include "transport/in_message_full.h"
-#include "transport/out_message.h"
+#include "transport/out_relay_message.h"
 #include "transport/ack_set.h"
 #include "transport/ack_entry.h"
 #include "transport/outbound_acks.h"
@@ -43,7 +43,7 @@ private:
   using OutMessage = transport::OutMessage;
   using Relay      = transport::Relay<UnreliableId>;
   using MessageId  = transport::MessageId<UnreliableId>;
-  using Messages   = std::map<MessageId, std::weak_ptr<OutMessage>>;
+  using Messages   = std::map<MessageId, std::weak_ptr<OutRelayMessage>>;
 
   using UnreliableBroadcastId = transport::UnreliableBroadcastId<UnreliableId>;
 
@@ -72,7 +72,7 @@ private:
   friend class ::club::transport::Relay<UnreliableId>;
   friend class ::club::transport::TransmitQueue<UnreliableId>;
 
-  void release(MessageId, std::shared_ptr<OutMessage>&&);
+  void release(MessageId, std::shared_ptr<OutRelayMessage>&&);
 
   void register_relay(Relay*);
   void unregister_relay(Relay*);
@@ -269,13 +269,13 @@ Core<Id>::broadcast_reliable(std::vector<uint8_t>&& data) {
 
   auto type = MessageType::reliable_broadcast;
 
-  auto message = make_shared<OutMessage>( _our_id
-                                        , keys(_targets)
-                                        , true
-                                        , type
-                                        , sn
-                                        , move(data)
-                                        );
+  auto message = make_shared<OutRelayMessage>
+                 ( _our_id
+                 , keys(_targets)
+                 , OutMessage( true
+                             , type
+                             , sn
+                             , move(data)));
 
   ReliableBroadcastId id{sn};
 
@@ -298,12 +298,13 @@ void Core<Id>::add_target_to_transport(Relay& relay, uuid new_target) {
   if (inserted) {
     auto sn = _next_reliable_broadcast_number;
 
-    auto message = make_shared<OutMessage>( _our_id
-                                          , set<uuid>{new_target}
-                                          , true
-                                          , MessageType::syn
-                                          , sn
-                                          , std::vector<uint8_t>());
+    auto message = make_shared<OutRelayMessage>
+                   ( _our_id
+                   , set<uuid>{new_target}
+                   , OutMessage( true
+                               , MessageType::syn
+                               , sn
+                               , std::vector<uint8_t>()));
 
     ReliableUnicastId id{std::move(new_target), sn};
 
@@ -345,13 +346,13 @@ void Core<Id>::broadcast_unreliable( Id                     id
     auto sn   = _next_message_number++;
     auto type = MessageType::unreliable_broadcast;
 
-    auto message = make_shared<OutMessage>( _our_id
-                                          , keys(_targets)
-                                          , false
-                                          , type
-                                          , sn
-                                          , move(data)
-                                          );
+    auto message = make_shared<OutRelayMessage>
+                   ( _our_id
+                   , keys(_targets)
+                   , OutMessage( false
+                               , type
+                               , sn
+                               , move(data)));
 
     UnreliableBroadcastId mid{id};
 
@@ -374,12 +375,10 @@ void Core<Id>::forward_message(const InMessagePart& msg) {
 
   std::vector<uint8_t> data(begin, begin + size);
 
-  auto message = make_shared<OutMessage>( msg.source
-                                        , set<uuid>(msg.targets)
-                                        , false
-                                        //, msg.type
-                                        //, msg.sequence_number
-                                        , move(data) );
+  auto message = make_shared<OutRelayMessage>
+                 ( msg.source
+                 , set<uuid>(msg.targets)
+                 , OutMessage(false, move(data)));
 
   // TODO: Same as with unreliable messages, store the message in a
   // std::map so that we don't put identical messages to message queues
@@ -558,7 +557,7 @@ void Core<Id>::replay_pending_messages(Target& node) {
 //------------------------------------------------------------------------------
 template<class Id>
 void Core<Id>::release( MessageId message_id
-                      , std::shared_ptr<OutMessage>&& m) {
+                      , std::shared_ptr<OutRelayMessage>&& m) {
   // For reliable messages, we only treat as reliable those that originated
   // here. Also, we don't store unreliable messages that did not originate
   // here in _messages because we don't want this user to change

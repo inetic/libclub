@@ -54,15 +54,11 @@ public:
   static constexpr size_t header_size = 11;
 
   // A constructor that is used when we're the original poster.
-  OutMessage( uuid                   source
-            , std::set<uuid>&&       targets
-            , bool                   resend_until_acked
+  OutMessage( bool                   resend_until_acked
             , MessageType            type
             , SequenceNumber         sequence_number
             , std::vector<uint8_t>&& payload)
-    : source(std::move(source))
-    , targets(std::move(targets))
-    , resend_until_acked(resend_until_acked)
+    : resend_until_acked(resend_until_acked)
     , _payload_start(0)
     , _header{type, sequence_number, uint16_t(payload.size()), 0, uint16_t(payload.size())}
     , _data(std::move(payload))
@@ -71,13 +67,9 @@ public:
   }
 
   // A constructor that is used when we're forwarding this message.
-  OutMessage( uuid                   source
-            , std::set<uuid>&&       targets
-            , bool                   resend_until_acked
+  OutMessage( bool                   resend_until_acked
             , std::vector<uint8_t>&& header_and_payload)
-    : source(std::move(source))
-    , targets(std::move(targets))
-    , resend_until_acked(resend_until_acked)
+    : resend_until_acked(resend_until_acked)
     , _payload_start(header_size)
     , _data(std::move(header_and_payload))
     , _is_dirty(false)
@@ -115,7 +107,9 @@ public:
       return 0;
     }
 
-    const auto payload_size_ = std::min( _data.size() - _payload_start - start
+    auto s = _payload_start + start;
+
+    const auto payload_size_ = std::min( _data.size() - s
                                        , encoder.remaining_size() - header_size);
 
     Header h = _header;
@@ -124,14 +118,12 @@ public:
 
     h.encode(encoder);
 
-    encoder.put_raw(_data.data() + _payload_start + start, payload_size_);
+    encoder.put_raw(_data.data() + s, payload_size_);
 
     return payload_size_;
   }
 
 public:
-  const uuid source;
-  std::set<uuid> targets;
   const bool resend_until_acked;
 
 private:
@@ -149,8 +141,7 @@ private:
 inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
   using namespace boost::asio;
 
-  return os << "(OutMessage src:" << m.source
-            << " targets: " << str(m.targets) << ")";
+  return os << "(OutMessage)";
 }
 
 }} // club::transport namespace
