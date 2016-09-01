@@ -16,11 +16,11 @@
 #define CLUB_TRANSPORT_PENDING_MESSAGE_H
 
 #include "part_info.h"
+#include "in_message_full.h"
 
 namespace club { namespace transport {
 
 struct PendingMessage {
-  const uuid                      source;
   const MessageType               type;
   const SequenceNumber            sequence_number;
   const size_t                    size;
@@ -47,8 +47,7 @@ struct PendingMessage {
 //------------------------------------------------------------------------------
 inline
 PendingMessage::PendingMessage(InMessagePart m)
-  : source(std::move(m.source))
-  , type(m.type)
+  : type(m.type)
   , sequence_number(m.sequence_number)
   , size(m.original_size)
   , data(m.original_size)
@@ -60,8 +59,7 @@ PendingMessage::PendingMessage(InMessagePart m)
 //------------------------------------------------------------------------------
 inline
 PendingMessage::PendingMessage(InMessageFull m)
-  : source(std::move(m.source))
-  , type(m.type)
+  : type(m.type)
   , sequence_number(m.sequence_number)
   , size(m.size)
   , data( boost::asio::buffer_cast<const uint8_t*>(m.payload)
@@ -104,8 +102,7 @@ boost::optional<InMessageFull> PendingMessage::get_full_message() const {
     return boost::none;
   }
 
-  return InMessageFull( source
-                      , type
+  return InMessageFull( type
                       , sequence_number
                       , size
                       , payload);
@@ -113,7 +110,7 @@ boost::optional<InMessageFull> PendingMessage::get_full_message() const {
 
 //------------------------------------------------------------------------------
 inline std::ostream& operator<<(std::ostream& os, const PendingMessage& m) {
-  return os << "(PendingMessage source:" << m.source << " " << m.type
+  return os << "(PendingMessage " << m.type
             << " sn:" << m.sequence_number << " " << m.part_info << ")";
 }
 

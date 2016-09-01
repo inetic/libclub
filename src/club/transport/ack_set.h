@@ -15,6 +15,7 @@
 #ifndef CLUB_TRANSPORT_ACK_SET_H
 #define CLUB_TRANSPORT_ACK_SET_H
 
+#include <bitset>
 #include <binary/encoder.h>
 #include <binary/decoder.h>
 #include <binary/encoded.h>
@@ -32,19 +33,32 @@ public:
   AckSet(SequenceNumber);
 
   bool try_add(SequenceNumber new_sn);
-  bool can_add(SequenceNumber new_sn);
+  bool can_add(SequenceNumber new_sn) const;
+  bool is_in(SequenceNumber sn) const;
+  bool empty() const { return bitmask == 0; }
 
   struct iterator {
-    iterator(const AckSet& acks, size_t pos)
-      : acks(acks), pos(pos) {}
+    iterator(const AckSet& acks, int _pos)
+      : acks(acks), pos(_pos) {
+      for (;pos != -1; --pos) {
+        if (acks.get_bit(pos) == 1) {
+          break;
+        }
+      }
+    }
 
     SequenceNumber operator*() const {
-      assert(!acks.is_empty);
+      assert(!acks.empty());
       return acks.highest_sequence_number - pos;
     }
 
     iterator& operator++() {// prefix
-      while (pos < 32 && (acks.predecessors & (1 << (++pos - 1))) == 0) {}
+      --pos;
+      for (;pos >= 0; --pos) {
+        if (acks.get_bit(pos) == 1) {
+          break;
+        }
+      }
       return *this;
     }
 
@@ -63,15 +77,25 @@ public:
     }
 
     const AckSet& acks;
-    size_t pos;
+    int pos;
   };
 
   iterator begin() const {
-    if (is_empty) return end();
-    return iterator(*this, 0);
+    if (empty()) return end();
+    return iterator(*this, 31);
   }
 
-  iterator end() const { return iterator(*this, 32); }
+  iterator end() const { return iterator(*this, -1); }
+
+  void set_bit(int p) {
+    assert(0 <= p && p < 32);
+    bitmask |= 1 << p;
+  }
+
+  bool get_bit(int p) const {
+    assert(0 <= p && p < 32);
+    return bitmask & (1 << p);
+  }
 
 private:
   friend std::ostream& operator<<(std::ostream&, const AckSet&);
@@ -81,8 +105,8 @@ private:
   SequenceNumber highest_sequence_number;
   SequenceNumber lowest_sequence_number;
 
-  uint32_t predecessors : 31
-         , is_empty     : 1;
+  // i'th bit is set <=> (highest_sequence_number - i) belongs to the set
+  uint32_t bitmask;
 };
 
 //------------------------------------------------------------------------------
@@ -91,38 +115,29 @@ private:
 inline AckSet::AckSet()
   : highest_sequence_number(0)
   , lowest_sequence_number(0)
-  , predecessors(0)
-  , is_empty(true)
+  , bitmask(0)
 {}
 
 inline AckSet::AckSet(SequenceNumber sn)
   : highest_sequence_number(sn)
   , lowest_sequence_number(sn)
-  , predecessors(0)
-  , is_empty(false)
+  , bitmask(0)
 { }
 
 inline bool AckSet::try_add(SequenceNumber new_sn) {
-  if (is_empty) {
+  if (bitmask == 0) {
     highest_sequence_number = new_sn;
     lowest_sequence_number = new_sn;
-    is_empty = false;
-    predecessors = 0;
+    set_bit(0);
     return true;
   }
   else {
     auto hsn = highest_sequence_number;
 
-    if (new_sn == hsn) {
-      return true;
-    }
-
+    if (new_sn == hsn) return true;
     if (new_sn < hsn) {
-      if (new_sn < hsn - 31) {
-        return true;
-      }
-      
-      predecessors |= 1 << (hsn - new_sn - 1);
+      if (new_sn < hsn - 31) return true;
+      set_bit(hsn - new_sn);
       return true;
     }
     else {
@@ -132,39 +147,39 @@ inline bool AckSet::try_add(SequenceNumber new_sn) {
 
       auto shift = new_sn - hsn;
 
-      for (decltype(shift) i = 0; i < shift; ++i) {
-        if (!((hsn < lowest_sequence_number + 31 - i) || (predecessors & (1 << (30-i))))) {
-          return false;
+      for (decltype(shift) i = 31; i > 31 - shift; --i) {
+        if (get_bit(i) == 1 || (hsn <= lowest_sequence_number + i)) {
+          continue;
         }
+        return false;
       }
 
-      auto was_empty = is_empty;
-      is_empty = 0;
-      predecessors <<= shift;
-      predecessors |= 1 << (shift - 1);
-      is_empty = was_empty;
+      bitmask <<= shift;
+      set_bit(0);
       highest_sequence_number = new_sn;
       return true;
     }
   }
 }
 
-inline bool AckSet::can_add(SequenceNumber new_sn) {
-  if (is_empty) {
+inline bool AckSet::is_in(SequenceNumber sn) const {
+  if (empty()) return false;
+  if (sn > highest_sequence_number) return false;
+  if (sn < highest_sequence_number - 31) return true;
+  if (sn < lowest_sequence_number) return true;
+  return get_bit(highest_sequence_number - sn);
+}
+
+inline bool AckSet::can_add(SequenceNumber new_sn) const {
+  if (bitmask == 0) {
     return true;
   }
   else {
     auto hsn = highest_sequence_number;
 
-    if (new_sn == hsn) {
-      return true;
-    }
-
+    if (new_sn == hsn) return true;
     if (new_sn < hsn) {
-      if (new_sn < hsn - 31) {
-        return true;
-      }
-
+      if (new_sn < hsn - 31) return true;
       return true;
     }
     else {
@@ -174,10 +189,11 @@ inline bool AckSet::can_add(SequenceNumber new_sn) {
 
       auto shift = new_sn - hsn;
 
-      for (decltype(shift) i = 0; i < shift; ++i) {
-        if (!((hsn < lowest_sequence_number + 31 - i) || (predecessors & (1 << (30-i))))) {
-          return false;
+      for (decltype(shift) i = 31; i > 31 - shift; --i) {
+        if (get_bit(i) == 1 || (hsn <= lowest_sequence_number + i)) {
+          continue;
         }
+        return false;
       }
 
       return true;
@@ -189,28 +205,24 @@ inline
 std::ostream& operator<<(std::ostream& os, const AckSet& acks) {
   os << "(AckSet ";
 
-  //if (!acks.is_empty) {
-  //  os << acks.highest_sequence_number << " ";
-  //}
-  //else {
-  //  os << "none ";
-  //}
-
-  //os << (acks.is_empty ? "empty " : "not-empty ");
-
-  //for (int i = 0; i < 31; ++i) {
-  //  os << ((acks.predecessors & (1 << i)) ? "1" : "0");
-  //}
-
-  os << "{";
-
-  auto cnt = 0;
-  for (auto i = acks.begin(); i != acks.end(); ++i) {
-    if (cnt++) { os << ", "; }
-    os << *i;
+  if (!acks.empty()) {
+    os << "<" << acks.highest_sequence_number << ","
+       << acks.lowest_sequence_number << "> "
+       << std::bitset<32>(acks.bitmask) << " ";
+  }
+  else {
+    os << "empty ";
   }
 
-  return os << "})";
+  //os << "{";
+  //auto cnt = 0;
+  //for (auto i = acks.begin(); i != acks.end(); ++i) {
+  //  if (cnt++) { os << ", "; }
+  //  os << *i;
+  //}
+  //os << "}";
+
+  return os << ")";
 }
 
 }} // club::transport namespace
@@ -231,11 +243,7 @@ namespace club { namespace transport {
 template<typename Encoder>
 inline void encode( Encoder& e, const AckSet& ack_set) {
   e.put((SequenceNumber) ack_set.highest_sequence_number);
-
-  uint32_t mixed = ack_set.predecessors
-                 | (ack_set.is_empty << 31);
-
-  e.put(mixed);
+  e.put(ack_set.bitmask);
 }
 
 //------------------------------------------------------------------------------
@@ -243,11 +251,7 @@ inline void decode(binary::decoder& d, AckSet& ack_set) {
   if (d.error()) return;
 
   ack_set.highest_sequence_number = d.get<SequenceNumber>();
-
-  auto mixed = d.get<uint32_t>();
-
-  ack_set.predecessors = mixed;
-  ack_set.is_empty     = mixed >> 31;
+  ack_set.bitmask = d.get<uint32_t>();
 }
 
 //------------------------------------------------------------------------------

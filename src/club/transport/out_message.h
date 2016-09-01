@@ -17,9 +17,13 @@
 
 #include <set>
 #include <club/uuid.h>
+#include <binary/encoder.h>
 #include "generic/variant_tools.h"
 #include "transport/sequence_number.h"
 #include "transport/message_type.h"
+#include "transport/ack_set.h"
+#include "transport/in_message_part.h"
+#include "transport/pending_message.h"
 
 #include <club/debug/ostream_uuid.h>
 #include "debug/string_tools.h"
@@ -85,6 +89,8 @@ public:
     _header.chunk_size = d.get<uint16_t>();
   }
 
+  SequenceNumber sequence_number() const { return _header.sequence_number; }
+
   void reset_payload(std::vector<uint8_t>&& new_payload) {
     // Only reset the _data if no part of the message has already been sent.
     if (_is_dirty) return;
@@ -123,8 +129,11 @@ public:
     return payload_size_;
   }
 
+  const Header& header() const { return _header; }
+
 public:
   const bool resend_until_acked;
+  size_t bytes_already_sent = 0;
 
 private:
   size_t _payload_start;
@@ -141,7 +150,8 @@ private:
 inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
   using namespace boost::asio;
 
-  return os << "(OutMessage)";
+  return os << "(OutMessage type:" << m.header().type
+            << " sn:" << m.sequence_number() << ")";
 }
 
 }} // club::transport namespace

@@ -18,19 +18,16 @@
 namespace club { namespace transport {
 
 struct InMessageFull {
-  const uuid                      source;
   const MessageType               type;
   const SequenceNumber            sequence_number;
         size_t                    size;
         boost::asio::const_buffer payload;
 
-  InMessageFull( uuid                      source
-               , MessageType               type
+  InMessageFull( MessageType               type
                , SequenceNumber            sequence_number
                , size_t                    size
                , boost::asio::const_buffer payload)
-    : source(std::move(source))
-    , type(type)
+    : type(type)
     , sequence_number(sequence_number)
     , size(size)
     , payload(payload)

@@ -15,16 +15,19 @@
 #ifndef CLUB_TRANSPORT_MESSAGE_TYPE_H
 #define CLUB_TRANSPORT_MESSAGE_TYPE_H
 
+#include <binary/decoder.h>
+#include <binary/encoded.h>
+
 namespace club { namespace transport {
 
-enum class MessageType { unreliable_broadcast = 0
-                       , reliable_broadcast   = 1
-                       , syn                  = 2
+enum class MessageType { sync       = 0
+                       , unreliable = 1
+                       , reliable   = 2
                        };
 
 //------------------------------------------------------------------------------
 template<typename Encoder>
-inline void encode( Encoder& e, const MessageType& t) {
+inline void encode(Encoder& e, const MessageType& t) {
   e.put((uint8_t) t);
 }
 
@@ -32,7 +35,7 @@ inline void encode( Encoder& e, const MessageType& t) {
 inline void decode(binary::decoder& d, MessageType& t) {
   t = static_cast<MessageType>(d.get<uint8_t>());
 
-  if (t < MessageType::unreliable_broadcast || t > MessageType::syn) {
+  if (t < MessageType::sync || t > MessageType::reliable) {
     assert(0);
     d.set_error();
   }
@@ -41,9 +44,9 @@ inline void decode(binary::decoder& d, MessageType& t) {
 //------------------------------------------------------------------------------
 inline std::ostream& operator<<(std::ostream& os, MessageType t) {
   switch (t) {
-    case MessageType::unreliable_broadcast: return os << "unreliable_broadcast";
-    case MessageType::reliable_broadcast: return os << "reliable_broadcast";
-    case MessageType::syn: return os << "syn";
+    case MessageType::sync: return os << "sync";
+    case MessageType::unreliable: return os << "unreliable";
+    case MessageType::reliable: return os << "reliable";
   }
   return os << "unknown";
 }

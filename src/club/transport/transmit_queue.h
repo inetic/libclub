@@ -72,6 +72,8 @@ public:
   bool empty() const;
   size_t size() const;
 
+  const Messages& messages() const { return _messages; }
+
 private:
   Messages _messages;
 };

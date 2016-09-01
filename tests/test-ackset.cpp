@@ -27,10 +27,18 @@ using std::endl;
 //------------------------------------------------------------------------------
 vector<uint32_t> acks_to_vector(const AckSet& acks) {
   vector<uint32_t> ret;
-  for (auto s : acks) { ret.push_back(s); }
+  for (auto s : acks) {
+    ret.push_back(s);
+  }
   return ret;
 }
 
+//------------------------------------------------------------------------------
+vector<uint32_t> vec(uint32_t begin, uint32_t end) {
+  vector<uint32_t> v;
+  for (uint32_t i = begin; i != end; ++i) v.push_back(i);
+  return v;
+}
 //------------------------------------------------------------------------------
 namespace std {
 std::ostream& operator<<(std::ostream& os, const vector<uint32_t>& v) {
@@ -57,21 +65,21 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({11, 10}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({10, 11}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(20));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({20, 10}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({10, 20}));
   }
 
   {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(0));
     BOOST_REQUIRE(acks.try_add(31));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({31, 0}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({0, 31}));
   }
 
   {
@@ -86,7 +94,7 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
     BOOST_REQUIRE(acks.try_add(0));
     BOOST_REQUIRE(acks.try_add(1));
     BOOST_REQUIRE(acks.try_add(32));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({32, 1}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({1, 32}));
   }
 
   {
@@ -96,33 +104,64 @@ BOOST_AUTO_TEST_CASE(test_ack_set) {
     BOOST_REQUIRE(acks.try_add(32));
     BOOST_REQUIRE(acks.try_add(2));
     BOOST_REQUIRE(acks.try_add(33));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({33, 32, 2}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({2, 32, 33}));
   }
 
   {
     AckSet acks;
-    Vec vec;
+    BOOST_REQUIRE(acks.try_add(10));
+    BOOST_REQUIRE(acks.try_add(11));
+    BOOST_REQUIRE(acks.try_add(11+31));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({11, 11+31}));
+  }
+
+  {
+    AckSet acks;
 
     for (auto i = 0; i < 32; ++i) {
       BOOST_REQUIRE(acks.try_add(i));
-      vec.push_back(31 - i);
     }
 
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec(0, 32));
 
     for (auto i = 0; i < 32; ++i) {
       BOOST_REQUIRE(acks.try_add(i));
     }
 
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec(0, 32));
 
-    vec.clear();
     for (auto i = 32; i < 64; ++i) {
       BOOST_REQUIRE(acks.try_add(i));
-      vec.push_back(63 + 32 - i);
     }
 
-    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), vec(32, 64));
+  }
+
+  {
+    // Test the order.
+    AckSet acks;
+    acks.try_add(0);
+    acks.try_add(1);
+    acks.try_add(2);
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks), Vec({0,1,2}));
+  }
+
+  {
+    AckSet acks1;
+    AckSet acks2;
+    for (int i = 0; i <= 32; ++i) {
+      BOOST_REQUIRE(acks1.try_add(i));
+      BOOST_REQUIRE(acks2.try_add(i));
+    }
+    BOOST_REQUIRE(acks2.try_add(33));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks1), vec(1, 33));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks2), vec(2, 34));
+
+    for (auto n : acks2) {
+      BOOST_REQUIRE(acks1.try_add(n));
+    }
+
+    BOOST_REQUIRE_EQUAL(acks_to_vector(acks1), vec(2, 34));
   }
 }
 
@@ -152,7 +191,7 @@ BOOST_AUTO_TEST_CASE(test_ack_set_serialize) {
     AckSet acks;
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
-    BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({11, 10}));
+    BOOST_REQUIRE(acks_to_vector(encode_decode(acks)) == Vec({10, 11}));
   }
 
   {
@@ -160,7 +199,7 @@ BOOST_AUTO_TEST_CASE(test_ack_set_serialize) {
     BOOST_REQUIRE(acks.try_add(10));
     BOOST_REQUIRE(acks.try_add(11));
     BOOST_REQUIRE(acks.try_add(11+31));
-    BOOST_REQUIRE_EQUAL(acks_to_vector(encode_decode(acks)), Vec({11+31, 11}));
+    BOOST_REQUIRE_EQUAL(acks_to_vector(encode_decode(acks)), Vec({11, 11+31}));
   }
 }
 
