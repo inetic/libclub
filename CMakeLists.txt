@@ -22,7 +22,8 @@ include_directories(
 file(GLOB sources
   "${CMAKE_SOURCE_DIR}/src/club/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/club/net/*.cpp"
-  "${CMAKE_SOURCE_DIR}/src/club/net/PL/*.cpp")
+  "${CMAKE_SOURCE_DIR}/src/club/net/PL/*.cpp"
+  "${CMAKE_SOURCE_DIR}/src/club/transport/*.cpp")
 
 add_library(club ${sources})
 

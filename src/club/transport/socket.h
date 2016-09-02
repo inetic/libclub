@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CLUB_TRANSPORT_RELAY_H
-#define CLUB_TRANSPORT_RELAY_H
+#ifndef CLUB_TRANSPORT_SOCKET_H
+#define CLUB_TRANSPORT_SOCKET_H
 
 #include <iostream>
 #include <array>
@@ -22,6 +22,7 @@
 #include <club/debug/ostream_uuid.h>
 #include <transport/out_message.h>
 #include <async/alarm.h>
+#include "error.h"
 
 namespace club { namespace transport {
 
@@ -84,7 +85,7 @@ public:
   void close();
 
 private:
-  void handle_error();
+  void handle_error(const boost::system::error_code&);
 
   void start_receiving(SocketStatePtr);
 
@@ -273,6 +274,19 @@ inline void SocketImpl::close() {
 
 //------------------------------------------------------------------------------
 inline
+void SocketImpl::handle_error(const boost::system::error_code& err) {
+  auto state = _socket_state;
+
+  close();
+
+  auto r1 = std::move(_on_receive_unreliable);
+  auto r2 = std::move(_on_receive_reliable);
+  if (r1) r1(err, boost::asio::const_buffer());
+  if (r2) r2(err, boost::asio::const_buffer());
+}
+
+//------------------------------------------------------------------------------
+inline
 void SocketImpl::on_receive( boost::system::error_code error
                            , std::size_t               size
                            , SocketStatePtr            state)
@@ -303,7 +317,7 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   auto ack_set = decoder.get<AckSet>();
 
-  if (decoder.error()) { return handle_error(); }
+  if (decoder.error()) { return handle_error(transport::error::parse_error); }
 
   handle_acks(ack_set);
 
@@ -313,19 +327,13 @@ void SocketImpl::on_receive( boost::system::error_code error
   for (uint16_t i = 0; i < message_count; ++i) {
     auto m = decoder.get<InMessagePart>();
     if (decoder.error()) {
-      return handle_error();
+      return handle_error(transport::error::parse_error);
     }
     handle_message(state, std::move(m));
     if (state->was_destroyed) return;
   }
 
   start_receiving(move(state));
-}
-
-//------------------------------------------------------------------------------
-inline
-void SocketImpl::handle_error() {
-  assert(0 && "TODO");
 }
 
 //------------------------------------------------------------------------------
@@ -344,7 +352,7 @@ void SocketImpl::handle_message(SocketStatePtr& state, InMessagePart msg) {
     case MessageType::keep_alive: break;
     case MessageType::unreliable: handle_unreliable_message(state, msg); break;
     case MessageType::reliable:   handle_reliable_message(state, msg); break;
-    default: return handle_error();
+    default: return handle_error(error::parse_error);
   }
 
   if (!state->was_destroyed) {
@@ -438,7 +446,6 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
     opm = boost::none;
     return;
   }
-
 
   if (!opm || opm->sequence_number < msg.sequence_number) {
     opm.emplace(msg);
@@ -640,7 +647,7 @@ SocketImpl::encode( binary::encoder& encoder, OutMessage& message) const {
 }
 
 inline void SocketImpl::on_recv_timeout_alarm() {
-  close();
+  handle_error(error::timed_out);
 }
 
 inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
@@ -717,4 +724,4 @@ public:
 
 }} // club::transport namespace
 
-#endif // ifndef CLUB_TRANSPORT_RELAY_H
+#endif // ifndef CLUB_TRANSPORT_SOCKET_H

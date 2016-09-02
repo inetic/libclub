@@ -495,7 +495,7 @@ BOOST_AUTO_TEST_CASE(test_transport_timeout) {
 
   s1.receive_reliable([&](auto err, auto) {
     ++count;
-    BOOST_REQUIRE(err);
+    BOOST_REQUIRE_EQUAL(err, club::transport::error::timed_out);
   });
 
   s2.receive_reliable([&](auto err, auto b) {
