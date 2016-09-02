@@ -113,7 +113,7 @@ private:
 
   template<typename ...Ts>
   void add_message(Ts&&... params) {
-    _transmit_queue.insert(OutMessage(std::forward<Ts>(params)...));
+    _transmit_queue.emplace(std::forward<Ts>(params)...);
   }
 
 private:

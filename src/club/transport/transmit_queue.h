@@ -69,6 +69,7 @@ public:
   Cycle cycle();
 
   void insert(Message m);
+  template<typename... Ts> void emplace(Ts&&... params);
   bool empty() const;
   size_t size() const;
 
@@ -185,6 +186,13 @@ typename TransmitQueue<M>::Cycle TransmitQueue<M>::cycle() {
 template<class M>
 void TransmitQueue<M>::insert(M m) {
   _messages.push_back(std::move(m));
+}
+
+//------------------------------------------------------------------------------
+template<class M>
+template<typename... Ts>
+void TransmitQueue<M>::emplace(Ts&&... params) {
+  insert(M(std::forward<Ts>(params)...));
 }
 
 //------------------------------------------------------------------------------
