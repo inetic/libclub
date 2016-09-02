@@ -21,6 +21,7 @@
 #include <transport/transmit_queue.h>
 #include <club/debug/ostream_uuid.h>
 #include <transport/out_message.h>
+#include <async/alarm.h>
 
 namespace club { namespace transport {
 
@@ -51,6 +52,8 @@ private:
       , tx_buffer(packet_size)
     {}
   };
+
+  using SocketStatePtr = std::shared_ptr<SocketState>;
 
 public:
   using TransmitQueue = transport::TransmitQueue<OutMessage>;
@@ -83,37 +86,47 @@ public:
 private:
   void handle_error();
 
-  void start_receiving(std::shared_ptr<SocketState>);
+  void start_receiving(SocketStatePtr);
 
   void on_receive( boost::system::error_code
                  , std::size_t
-                 , std::shared_ptr<SocketState>);
+                 , SocketStatePtr);
 
-  void start_sending(std::shared_ptr<SocketState>);
+  void start_sending(SocketStatePtr);
 
   void on_send( const boost::system::error_code&
               , size_t
-              , std::shared_ptr<SocketState>);
+              , SocketStatePtr);
 
   void handle_acks(AckSet);
-  void handle_message(std::shared_ptr<SocketState>&, InMessagePart);
+  void handle_message(SocketStatePtr&, InMessagePart);
 
   bool try_encode(binary::encoder&, OutMessage&) const;
 
   void encode(binary::encoder&, OutMessage&) const;
 
   void handle_sync_message(const InMessagePart&);
-  void handle_unreliable_message(std::shared_ptr<SocketState>&, const InMessagePart&);
-  void handle_reliable_message(std::shared_ptr<SocketState>&, const InMessagePart&);
+  void handle_unreliable_message(SocketStatePtr&, const InMessagePart&);
+  void handle_reliable_message(SocketStatePtr&, const InMessagePart&);
 
-  void replay_pending_messages(std::shared_ptr<SocketState>&);
+  void replay_pending_messages(SocketStatePtr&);
 
-  bool user_handle_reliable_msg( std::shared_ptr<SocketState>&
-                               , InMessageFull&);
+  bool user_handle_reliable_msg(SocketStatePtr&, InMessageFull&);
 
   template<typename ...Ts>
   void add_message(Ts&&... params) {
     _transmit_queue.emplace(std::forward<Ts>(params)...);
+  }
+
+  void on_recv_timeout_alarm();
+  void on_send_keepalive_alarm(SocketStatePtr);
+
+  async::alarm::duration recv_timeout_duration() const {
+    return keepalive_period() * 5;
+  }
+
+  async::alarm::duration keepalive_period() const {
+    return std::chrono::milliseconds(200);
   }
 
 private:
@@ -129,7 +142,7 @@ private:
   udp::endpoint                    _remote_endpoint;
   TransmitQueue                    _transmit_queue;
   boost::asio::steady_timer        _timer;
-  std::shared_ptr<SocketState>     _socket_state;
+  SocketStatePtr                   _socket_state;
   // If this is nonet, then we haven't yet received sync
   boost::optional<Sync>            _sync;
   PendingMessages                  _pending_reliable_messages;
@@ -145,6 +158,9 @@ private:
   OnReceive _on_receive_unreliable;
 
   OnFlush _on_flush;
+
+  async::alarm                     _recv_timeout_alarm;
+  async::alarm                     _send_keepalive_alarm;
 };
 
 //------------------------------------------------------------------------------
@@ -155,13 +171,12 @@ SocketImpl::SocketImpl( udp::socket   socket
                       , udp::endpoint remote_endpoint)
   : _send_state(SendState::pending)
   , _socket(std::move(socket))
-  , _remote_endpoint(std::move(remote_endpoint))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
+  , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
+  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
 {
-  add_message(true, MessageType::sync, _next_reliable_sn++, std::vector<uint8_t>());
-  start_sending(_socket_state);
-  start_receiving(_socket_state);
+  rendezvous_connect(remote_endpoint);
 }
 
 //------------------------------------------------------------------------------
@@ -171,6 +186,8 @@ SocketImpl::SocketImpl(boost::asio::io_service& ios)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
+  , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
+  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
 {
 }
 
@@ -223,12 +240,14 @@ void SocketImpl::send_reliable(std::vector<uint8_t> data) {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::start_receiving(std::shared_ptr<SocketState> state)
+void SocketImpl::start_receiving(SocketStatePtr state)
 {
   using boost::system::error_code;
   using std::move;
 
   auto s = state.get();
+
+  _recv_timeout_alarm.start(recv_timeout_duration());
 
   _socket.async_receive_from( boost::asio::buffer(s->rx_buffer)
                             , s->rx_endpoint
@@ -248,18 +267,22 @@ inline void SocketImpl::flush(OnFlush on_flush) {
 inline void SocketImpl::close() {
   _timer.cancel();
   _socket.close();
+  _recv_timeout_alarm.stop();
+  _send_keepalive_alarm.stop();
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::on_receive( boost::system::error_code    error
-                           , std::size_t                  size
-                           , std::shared_ptr<SocketState> state)
+void SocketImpl::on_receive( boost::system::error_code error
+                           , std::size_t               size
+                           , SocketStatePtr            state)
 {
   using namespace std;
   namespace asio = boost::asio;
 
   if (state->was_destroyed) return;
+
+  _recv_timeout_alarm.stop();
 
   if (error) {
     auto r1 = std::move(_on_receive_unreliable);
@@ -308,15 +331,17 @@ void SocketImpl::handle_error() {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_acks(AckSet acks) {
+  // TODO: If we receive an older packet than we've already received, this
+  // is going to reduce our information.
   _received_message_ids_by_peer = acks;
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_message( std::shared_ptr<SocketState>& state
-                               , InMessagePart msg) {
+void SocketImpl::handle_message(SocketStatePtr& state, InMessagePart msg) {
   switch (msg.type) {
     case MessageType::sync:       handle_sync_message(msg); break;
+    case MessageType::keep_alive: break;
     case MessageType::unreliable: handle_unreliable_message(state, msg); break;
     case MessageType::reliable:   handle_reliable_message(state, msg); break;
     default: return handle_error();
@@ -339,7 +364,7 @@ void SocketImpl::handle_sync_message(const InMessagePart& msg) {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_reliable_message( std::shared_ptr<SocketState>& state
+void SocketImpl::handle_reliable_message( SocketStatePtr& state
                                         , const InMessagePart& msg) {
   _schedule_sending_acks = true;
   if (!_sync) return;
@@ -365,7 +390,7 @@ void SocketImpl::handle_reliable_message( std::shared_ptr<SocketState>& state
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::replay_pending_messages(std::shared_ptr<SocketState>& state) {
+void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
   auto& pms = _pending_reliable_messages;
 
   for (auto i = pms.begin(); i != pms.end();) {
@@ -385,7 +410,7 @@ void SocketImpl::replay_pending_messages(std::shared_ptr<SocketState>& state) {
 
 //------------------------------------------------------------------------------
 inline
-bool SocketImpl::user_handle_reliable_msg( std::shared_ptr<SocketState>& state
+bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
                                          , InMessageFull& msg) {
   auto f = std::move(_on_receive_reliable);
   f(boost::system::error_code(), msg.payload);
@@ -397,7 +422,7 @@ bool SocketImpl::user_handle_reliable_msg( std::shared_ptr<SocketState>& state
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_unreliable_message( std::shared_ptr<SocketState>& state
+void SocketImpl::handle_unreliable_message( SocketStatePtr& state
                                           , const InMessagePart& msg) {
   if (!_on_receive_unreliable) return;
   if (!_sync) return;
@@ -441,7 +466,7 @@ void SocketImpl::handle_unreliable_message( std::shared_ptr<SocketState>& state
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::start_sending(std::shared_ptr<SocketState> state) {
+void SocketImpl::start_sending(SocketStatePtr state) {
   using boost::system::error_code;
   using boost::asio::buffer;
 
@@ -452,7 +477,6 @@ void SocketImpl::start_sending(std::shared_ptr<SocketState> state) {
 
   // Encode acks
   encoder.put(_received_message_ids);
-
 
   assert(!encoder.error());
 
@@ -476,6 +500,7 @@ void SocketImpl::start_sending(std::shared_ptr<SocketState> state) {
     ++count;
 
     if (mi->bytes_already_sent != mi->payload_size()) {
+      // It means we've exhausted the buffer in encoder.
       break;
     }
 
@@ -491,11 +516,12 @@ void SocketImpl::start_sending(std::shared_ptr<SocketState> state) {
   if (count == 0 && !_schedule_sending_acks) {
     if (_on_flush) {
       auto f = std::move(_on_flush);
-      _on_flush = nullptr;
       f();
       if (state->was_destroyed) return;
       if (!_socket.is_open()) return;
     }
+    _send_keepalive_alarm.start(keepalive_period());
+    return;
   }
 
   count_encoder.put<uint16_t>(count);
@@ -522,7 +548,7 @@ void SocketImpl::start_sending(std::shared_ptr<SocketState> state) {
 inline
 void SocketImpl::on_send( const boost::system::error_code& error
                         , size_t                           size
-                        , std::shared_ptr<SocketState>     state)
+                        , SocketStatePtr                   state)
 {
   using std::move;
   using boost::system::error_code;
@@ -611,6 +637,15 @@ SocketImpl::encode( binary::encoder& encoder, OutMessage& message) const {
   }
 
   m.bytes_already_sent += payload_size;
+}
+
+inline void SocketImpl::on_recv_timeout_alarm() {
+  close();
+}
+
+inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
+  add_message(false, MessageType::keep_alive, 0, std::vector<uint8_t>());
+  start_sending(std::move(state));
 }
 
 //------------------------------------------------------------------------------

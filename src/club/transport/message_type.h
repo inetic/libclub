@@ -21,8 +21,9 @@
 namespace club { namespace transport {
 
 enum class MessageType { sync       = 0
-                       , unreliable = 1
-                       , reliable   = 2
+                       , keep_alive = 1
+                       , unreliable = 2
+                       , reliable   = 3
                        };
 
 //------------------------------------------------------------------------------
@@ -45,6 +46,7 @@ inline void decode(binary::decoder& d, MessageType& t) {
 inline std::ostream& operator<<(std::ostream& os, MessageType t) {
   switch (t) {
     case MessageType::sync: return os << "sync";
+    case MessageType::keep_alive: return os << "keepalive";
     case MessageType::unreliable: return os << "unreliable";
     case MessageType::reliable: return os << "reliable";
   }

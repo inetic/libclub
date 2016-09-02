@@ -481,3 +481,34 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
 
   ios.run();
 }
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_timeout) {
+  asio::io_service ios;
+
+  Socket s1(ios), s2(ios);
+
+  s1.rendezvous_connect(s2.local_endpoint());
+  s2.rendezvous_connect(s1.local_endpoint());
+
+  unsigned count = 0;
+
+  s1.receive_reliable([&](auto err, auto) {
+    ++count;
+    BOOST_REQUIRE(err);
+  });
+
+  s2.receive_reliable([&](auto err, auto b) {
+    ++count;
+    BOOST_REQUIRE(!err);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    s2.flush([&s2] { s2.close(); });
+  });
+
+  s1.send_reliable(std::vector<uint8_t>{0,1,2,3});
+
+  ios.run();
+
+  BOOST_REQUIRE_EQUAL(count, 2);
+}
+
