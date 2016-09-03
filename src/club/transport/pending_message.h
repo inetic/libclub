@@ -37,9 +37,9 @@ struct PendingMessage {
 
   void update_payload(size_t start, boost::asio::const_buffer);
 
-  bool is_full() const;
+  bool is_complete() const;
 
-  boost::optional<InMessageFull> get_full_message() const;
+  boost::optional<InMessageFull> get_complete_message() const;
 };
 
 //------------------------------------------------------------------------------
@@ -89,7 +89,7 @@ void PendingMessage::update_payload(size_t start, boost::asio::const_buffer b) {
 
 //------------------------------------------------------------------------------
 inline
-bool PendingMessage::is_full() const {
+bool PendingMessage::is_complete() const {
   if (part_info.empty()) return false;
   auto pi = *part_info.begin();
   return pi.first == 0 && pi.second == size;
@@ -97,8 +97,8 @@ bool PendingMessage::is_full() const {
 
 //------------------------------------------------------------------------------
 inline
-boost::optional<InMessageFull> PendingMessage::get_full_message() const {
-  if (!is_full()) {
+boost::optional<InMessageFull> PendingMessage::get_complete_message() const {
+  if (!is_complete()) {
     return boost::none;
   }
 

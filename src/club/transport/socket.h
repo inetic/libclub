@@ -270,6 +270,7 @@ void SocketImpl::start_receiving(SocketStatePtr state)
 //------------------------------------------------------------------------------
 inline void SocketImpl::flush(OnFlush on_flush) {
   _on_flush = on_flush;
+  // TODO: If there is nothing to flush, post _on_flush for execution.
 }
 
 //------------------------------------------------------------------------------
@@ -328,7 +329,7 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   auto ack_set = decoder.get<AckSet>();
 
-  if (decoder.error()) { return handle_error(transport::error::parse_error); }
+  if (decoder.error()) return handle_error(transport::error::parse_error);
 
   handle_acks(ack_set);
 
@@ -399,7 +400,7 @@ void SocketImpl::handle_reliable_message( SocketStatePtr& state
   if (!_received_message_ids.can_add(msg.sequence_number)) return;
 
   if (msg.sequence_number == _sync->last_used_reliable_sn + 1) {
-    if (auto full_msg = msg.get_full_message()) {
+    if (auto full_msg = msg.get_complete_message()) {
       if (!user_handle_reliable_msg(state, *full_msg)) return;
       return replay_pending_messages(state);
     }
@@ -425,7 +426,7 @@ void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
     auto& pm = i->second;
 
     if (pm.sequence_number == _sync->last_used_reliable_sn + 1) {
-      auto full_message = pm.get_full_message();
+      auto full_message = pm.get_complete_message();
       if (!full_message) return;
       if (!user_handle_reliable_msg(state, *full_message)) return;
       i = pms.erase(i);
@@ -458,7 +459,7 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
 
   auto& opm = _pending_unreliable_message;
 
-  if (msg.is_full()) {
+  if (msg.is_complete()) {
     auto r = std::move(_on_receive_unreliable);
     r(boost::system::error_code(), msg.payload);
     if (state->was_destroyed) return;
@@ -482,7 +483,7 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
 
   pm.update_payload(msg.chunk_start, msg.payload);
 
-  if (pm.is_full()) {
+  if (pm.is_complete()) {
     auto r = std::move(_on_receive_unreliable);
     r(boost::system::error_code(), pm.payload);
     if (state->was_destroyed) return;

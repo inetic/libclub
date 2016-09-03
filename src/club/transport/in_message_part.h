@@ -36,8 +36,8 @@ struct InMessagePart {
   boost::asio::const_buffer payload;
   boost::asio::const_buffer header_and_payload;
 
-  bool is_full() const;
-  boost::optional<InMessageFull> get_full_message() const;
+  bool is_complete() const;
+  boost::optional<InMessageFull> get_complete_message() const;
 
   InMessagePart() {};
 
@@ -60,14 +60,14 @@ struct InMessagePart {
 
 //------------------------------------------------------------------------------
 inline
-bool InMessagePart::is_full() const {
+bool InMessagePart::is_complete() const {
   return chunk_start == 0 && original_size == chunk_size;
 }
 
 //------------------------------------------------------------------------------
 inline
-boost::optional<InMessageFull> InMessagePart::get_full_message() const {
-  if (!is_full()) return boost::none;
+boost::optional<InMessageFull> InMessagePart::get_complete_message() const {
+  if (!is_complete()) return boost::none;
   return InMessageFull(type, sequence_number, chunk_size, payload);
 }
 
