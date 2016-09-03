@@ -502,7 +502,44 @@ BOOST_AUTO_TEST_CASE(test_transport_timeout) {
     ++count;
     BOOST_REQUIRE(!err);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-    s2.flush([&s2] { s2.close(); });
+    s2.flush([&s2] {
+        // Close the udp::socket directly not to give the transport::socket
+        // an opportunity to close gracefuly.
+        s2.get_socket_impl().close();
+      });
+  });
+
+  s1.send_reliable(std::vector<uint8_t>{0,1,2,3});
+
+  ios.run();
+
+  BOOST_REQUIRE_EQUAL(count, 2);
+}
+
+//------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(test_transport_close) {
+  asio::io_service ios;
+
+  Socket s1(ios), s2(ios);
+
+  s1.rendezvous_connect(s2.local_endpoint());
+  s2.rendezvous_connect(s1.local_endpoint());
+
+  unsigned count = 0;
+
+  s1.receive_reliable([&](auto err, auto) {
+    ++count;
+    BOOST_REQUIRE_EQUAL(err, boost::asio::error::connection_reset);
+  });
+
+  s2.receive_reliable([&](auto err, auto b) {
+    ++count;
+    BOOST_REQUIRE(!err);
+    BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+    s2.flush([&s2] {
+        // Close gracefuly.
+        s2.close();
+      });
   });
 
   s1.send_reliable(std::vector<uint8_t>{0,1,2,3});

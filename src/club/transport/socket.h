@@ -84,6 +84,10 @@ public:
   void flush(OnFlush);
   void close();
 
+  udp::socket& get_socket_impl() {
+    return _socket;
+  }
+
 private:
   void handle_error(const boost::system::error_code&);
 
@@ -107,6 +111,7 @@ private:
   void encode(binary::encoder&, OutMessage&) const;
 
   void handle_sync_message(const InMessagePart&);
+  void handle_close_message();
   void handle_unreliable_message(SocketStatePtr&, const InMessagePart&);
   void handle_reliable_message(SocketStatePtr&, const InMessagePart&);
 
@@ -129,6 +134,9 @@ private:
   async::alarm::duration keepalive_period() const {
     return std::chrono::milliseconds(200);
   }
+
+  size_t encode_payload(binary::encoder& encoder);
+  void sync_send_close_message();
 
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
@@ -267,7 +275,10 @@ inline void SocketImpl::flush(OnFlush on_flush) {
 //------------------------------------------------------------------------------
 inline void SocketImpl::close() {
   _timer.cancel();
-  _socket.close();
+  if (_socket.is_open()) {
+    sync_send_close_message();
+    _socket.close();
+  }
   _recv_timeout_alarm.stop();
   _send_keepalive_alarm.stop();
 }
@@ -331,6 +342,7 @@ void SocketImpl::on_receive( boost::system::error_code error
     }
     handle_message(state, std::move(m));
     if (state->was_destroyed) return;
+    if (!_socket.is_open()) return;
   }
 
   start_receiving(move(state));
@@ -352,12 +364,20 @@ void SocketImpl::handle_message(SocketStatePtr& state, InMessagePart msg) {
     case MessageType::keep_alive: break;
     case MessageType::unreliable: handle_unreliable_message(state, msg); break;
     case MessageType::reliable:   handle_reliable_message(state, msg); break;
+    case MessageType::close:      handle_close_message(); break;
     default: return handle_error(error::parse_error);
   }
 
   if (!state->was_destroyed) {
     start_sending(_socket_state);
   }
+}
+
+//------------------------------------------------------------------------------
+inline
+void SocketImpl::handle_close_message() {
+  _socket.close();
+  handle_error(boost::asio::error::connection_reset);
 }
 
 //------------------------------------------------------------------------------
@@ -487,12 +507,72 @@ void SocketImpl::start_sending(SocketStatePtr state) {
 
   assert(!encoder.error());
 
-  // Encode payload
-  auto cycle = _transmit_queue.cycle();
+  size_t count = encode_payload(encoder);
 
+  if (count == 0 && !_schedule_sending_acks) {
+    // If no payload was encoded and there is no need to
+    // re-send acks, then flush end return.
+    if (_on_flush) {
+      auto f = std::move(_on_flush);
+      f();
+      if (state->was_destroyed) return;
+      if (!_socket.is_open()) return;
+    }
+    _send_keepalive_alarm.start(keepalive_period());
+    return;
+  }
+
+  _schedule_sending_acks = false;
+
+  assert(encoder.written());
+
+  _send_state = SendState::sending;
+
+  // Get the pointer here because `state` is moved from in arguments below
+  // (and order of argument evaluation is undefined).
+  auto s = state.get();
+
+  _socket.async_send_to( buffer(s->tx_buffer.data(), encoder.written())
+                       , _remote_endpoint
+                       , [this, state = std::move(state)]
+                         (const error_code& error, std::size_t size) {
+                           on_send(error, size, std::move(state));
+                         });
+}
+
+//------------------------------------------------------------------------------
+inline
+void SocketImpl::sync_send_close_message() {
+  using boost::asio::buffer;
+
+  std::vector<uint8_t> data(packet_size);
+  binary::encoder encoder(data);
+
+  encoder.put(_received_message_ids);
+  encoder.put<uint16_t>(1); // We're sending just one message.
+
+  OutMessage m( false
+              , MessageType::close
+              , 0
+              , std::vector<uint8_t>());
+
+  if (!try_encode(encoder, m)) {
+    assert(0 && "Shouldn't happen");
+    return;
+  }
+
+  _socket.send_to(buffer(data.data(), encoder.written()), _remote_endpoint);
+}
+
+//------------------------------------------------------------------------------
+inline
+size_t SocketImpl::encode_payload(binary::encoder& encoder) {
   size_t count = 0;
+
   auto count_encoder = encoder;
   encoder.put<uint16_t>(0);
+
+  auto cycle = _transmit_queue.cycle();
 
   for (auto mi = cycle.begin(); mi != cycle.end();) {
     if (_received_message_ids_by_peer.is_in(mi->sequence_number())) {
@@ -520,35 +600,9 @@ void SocketImpl::start_sending(SocketStatePtr state) {
     ++mi;
   }
 
-  if (count == 0 && !_schedule_sending_acks) {
-    if (_on_flush) {
-      auto f = std::move(_on_flush);
-      f();
-      if (state->was_destroyed) return;
-      if (!_socket.is_open()) return;
-    }
-    _send_keepalive_alarm.start(keepalive_period());
-    return;
-  }
-
   count_encoder.put<uint16_t>(count);
 
-  _schedule_sending_acks = false;
-
-  assert(encoder.written());
-
-  _send_state = SendState::sending;
-
-  // Get the pointer here because `state` is moved from in arguments below
-  // (and order of argument evaluation is undefined).
-  auto s = state.get();
-
-  _socket.async_send_to( buffer(s->tx_buffer.data(), encoder.written())
-                       , _remote_endpoint
-                       , [this, state = std::move(state)]
-                         (const error_code& error, std::size_t size) {
-                           on_send(error, size, std::move(state));
-                         });
+  return count;
 }
 
 //------------------------------------------------------------------------------
@@ -719,6 +773,10 @@ public:
 
   void close() {
     _impl->close();
+  }
+
+  udp::socket& get_socket_impl() {
+    return _impl->get_socket_impl();
   }
 };
 

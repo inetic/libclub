@@ -24,6 +24,7 @@ enum class MessageType { sync       = 0
                        , keep_alive = 1
                        , unreliable = 2
                        , reliable   = 3
+                       , close      = 4
                        };
 
 //------------------------------------------------------------------------------
@@ -36,7 +37,7 @@ inline void encode(Encoder& e, const MessageType& t) {
 inline void decode(binary::decoder& d, MessageType& t) {
   t = static_cast<MessageType>(d.get<uint8_t>());
 
-  if (t < MessageType::sync || t > MessageType::reliable) {
+  if (t < MessageType::sync || t > MessageType::close) {
     assert(0);
     d.set_error();
   }
@@ -49,6 +50,7 @@ inline std::ostream& operator<<(std::ostream& os, MessageType t) {
     case MessageType::keep_alive: return os << "keepalive";
     case MessageType::unreliable: return os << "unreliable";
     case MessageType::reliable: return os << "reliable";
+    case MessageType::close: return os << "close";
   }
   return os << "unknown";
 }
