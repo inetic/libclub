@@ -33,6 +33,7 @@
 #include "broadcast_routing_table.h"
 #include "log.h"
 #include "seen_messages.h"
+#include "transport/socket.h"
 
 using namespace club;
 
@@ -69,14 +70,14 @@ namespace ip = boost::asio::ip;
 
 // -----------------------------------------------------------------------------
 template<class Message>
-shared_ptr<vector<char>> encode_message(const Message& msg) {
-  binary::dynamic_encoder<char> e;
+shared_ptr<vector<uint8_t>> encode_message(const Message& msg) {
+  binary::dynamic_encoder<uint8_t> e;
   e.put(Message::type());
   e.put(msg);
-  return make_shared<vector<char>>(e.move_data());
+  return make_shared<vector<uint8_t>>(e.move_data());
 }
 
-shared_ptr<vector<char>> encode_message(const LogMessage& msg) {
+shared_ptr<vector<uint8_t>> encode_message(const LogMessage& msg) {
   return match( msg
               , [](const Fuse& m)           { return encode_message(m); }
               , [](const PortOffer& m)      { return encode_message(m); }
@@ -114,22 +115,25 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
   using boost::asio::buffer;
   using namespace boost::asio::error;
 
+  // Even though Socket is movable, asio makes copies of the handlers, thus
+  // causing compilation errors because Sockets aren't copyable.
   auto socket = make_shared<Socket>(move(xsocket));
 
   static const size_t buffer_size = sizeof(NET_PROTOCOL_VERSION) + sizeof(_id);
 
-  binary::dynamic_encoder<char> e(buffer_size);
+  binary::dynamic_encoder<uint8_t> e(buffer_size);
   e.put(NET_PROTOCOL_VERSION);
   e.put(_id);
 
-  auto tx_bytes = make_shared<Bytes>(e.move_data());
   auto was_destroyed = _was_destroyed;
 
   LOG("fusing ", _nodes | map_keys);
 
-  async_exchange(*socket, buffer(*tx_bytes), 10000,
-      [this, tx_bytes, socket, on_fused, was_destroyed]
-      (error_code error, Bytes&& rx_bytes) {
+  socket->send_reliable(e.move_data());
+
+  // TODO: Add timeout for this operation.
+  socket->receive_reliable([this, socket, on_fused, was_destroyed]
+      (error_code error, boost::asio::const_buffer buffer) {
 
         if (*was_destroyed) return;
 
@@ -140,7 +144,9 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
 
         if (error) return fusion_failed(error, "socket error");
 
-        binary::decoder d(reinterpret_cast<uint8_t*>(rx_bytes.data()), rx_bytes.size());
+        binary::decoder d( boost::asio::buffer_cast<const uint8_t*>(buffer)
+                         , boost::asio::buffer_size(buffer));
+
         auto his_protocol_version = d.get<decltype(NET_PROTOCOL_VERSION)>();
         auto his_id               = d.get<uuid>();
 
@@ -163,10 +169,10 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
         auto n = find_node(his_id);
 
         if (n) {
-          n->assign_socket(socket);
+          n->assign_socket(move(socket));
         }
         else {
-          n = &insert_node(his_id, socket);
+          n = &insert_node(his_id, move(socket));
         }
 
         auto sync = construct<Sync>(his_id);
@@ -396,8 +402,9 @@ void hub::parse_message(Node& proxy, binary::decoder& decoder) {
 }
 
 // -----------------------------------------------------------------------------
-void hub::on_recv_raw(Node& proxy, const Bytes& data) {
-  binary::decoder decoder(data.data(), data.size());
+void hub::on_recv_raw(Node& proxy, boost::asio::const_buffer& buffer) {
+  binary::decoder decoder( boost::asio::buffer_cast<const uint8_t*>(buffer)
+                         , boost::asio::buffer_size(buffer));
 
   auto msg_type = decoder.get<MessageType>();
 
@@ -619,6 +626,7 @@ template<class Message> void hub::broadcast(const Message& msg) {
 
 // -----------------------------------------------------------------------------
 void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
+  LOG_("Sending unreliable");
   using std::make_pair;
   using boost::asio::const_buffer;
 
@@ -639,7 +647,7 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
 
     const_buffer b(bytes->data(), bytes->size());
 
-    node.send_unreliable(move(b), [counter, bytes, handler]() {
+    node.send_unreliable(b, [counter, bytes, handler]() {
         if (--(*counter) == 0) handler();
       });
   }
@@ -650,17 +658,23 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
 }
 
 // -----------------------------------------------------------------------------
-void hub::node_received_unreliable_broadcast(const Bytes& bytes) {
+void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
+  LOG_("Received unreliable");
+  namespace asio = boost::asio;
   using boost::asio::const_buffer;
 
-  binary::decoder d(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+  auto start = asio::buffer_cast<const uint8_t*>(buffer);
+  auto size  = asio::buffer_size(buffer);
+
+  binary::decoder d(start, size);
+
   auto source = d.get<uuid>();
 
   if (d.error() || _nodes.count(source) == 0) {
     return;
   }
 
-  auto shared_bytes = make_shared<Bytes>(bytes);
+  auto shared_bytes = make_shared<Bytes>(start, start + size);
 
   // Rebroadcast
   for (const auto& id : _broadcast_routing_table->get_targets(source)) {
@@ -702,64 +716,64 @@ boost::container::flat_set<uuid> hub::local_quorum() const {
 }
 
 // -----------------------------------------------------------------------------
-void hub::broadcast_port_offer_to(Node& node, Address addr) {
-  auto was_destroyed = _was_destroyed;
-
-  auto node_id = node.id;
-
-  if (addr.is_loopback()) {
-    // If the remote address is on our PC, then there is no need
-    // to send him our external address.
-    // TODO: Remove code duplication.
-    // TODO: Similar optimization when the node is on local LAN.
-    _io_service.post([=]{
-          if (*was_destroyed) return;
-
-          auto node = find_node(node_id);
-
-          if (!node || node->is_connected()) return;
-
-          udp::socket udp_socket(_io_service, udp::endpoint(udp::v4(), 0));
-          uint16_t internal_port = udp_socket.local_endpoint().port();
-          uint16_t external_port = 0;
-
-          auto socket = make_shared<Socket>(std::move(udp_socket));
-          node->set_remote_address(move(socket), addr);
-
-          broadcast(construct<PortOffer>( node_id
-                                        , internal_port
-                                        , external_port));
-        });
-    return;
-  }
-
-  _stun_requests.emplace_back(nullptr);
-  auto iter = std::prev(_stun_requests.end());
-
-  iter->reset(new GetExternalPort(_io_service
-                                 , std::chrono::seconds(2)
-                                 , [=] ( error_code error
-                                       , udp::socket udp_socket
-                                       , udp::endpoint reflexive_ep) {
-          if (*was_destroyed) return;
-
-          _stun_requests.erase(iter);
-
-          auto node = find_node(node_id);
-
-          if (!node || node->is_connected()) return;
-
-          uint16_t internal_port = udp_socket.local_endpoint().port();
-          uint16_t external_port = reflexive_ep.port();
-
-          auto socket = make_shared<Socket>(std::move(udp_socket));
-          node->set_remote_address(move(socket), addr);
-
-          broadcast(construct<PortOffer>( node_id
-                                        , internal_port
-                                        , external_port));
-        }));
-}
+//void hub::broadcast_port_offer_to(Node& node, Address addr) {
+//  auto was_destroyed = _was_destroyed;
+//
+//  auto node_id = node.id;
+//
+//  if (addr.is_loopback()) {
+//    // If the remote address is on our PC, then there is no need
+//    // to send him our external address.
+//    // TODO: Remove code duplication.
+//    // TODO: Similar optimization when the node is on local LAN.
+//    _io_service.post([=]{
+//          if (*was_destroyed) return;
+//
+//          auto node = find_node(node_id);
+//
+//          if (!node || node->is_connected()) return;
+//
+//          udp::socket udp_socket(_io_service, udp::endpoint(udp::v4(), 0));
+//          uint16_t internal_port = udp_socket.local_endpoint().port();
+//          uint16_t external_port = 0;
+//
+//          auto socket = make_shared<Socket>(std::move(udp_socket));
+//          node->set_remote_address(move(socket), addr);
+//
+//          broadcast(construct<PortOffer>( node_id
+//                                        , internal_port
+//                                        , external_port));
+//        });
+//    return;
+//  }
+//
+//  _stun_requests.emplace_back(nullptr);
+//  auto iter = std::prev(_stun_requests.end());
+//
+//  iter->reset(new GetExternalPort(_io_service
+//                                 , std::chrono::seconds(2)
+//                                 , [=] ( error_code error
+//                                       , udp::socket udp_socket
+//                                       , udp::endpoint reflexive_ep) {
+//          if (*was_destroyed) return;
+//
+//          _stun_requests.erase(iter);
+//
+//          auto node = find_node(node_id);
+//
+//          if (!node || node->is_connected()) return;
+//
+//          uint16_t internal_port = udp_socket.local_endpoint().port();
+//          uint16_t external_port = reflexive_ep.port();
+//
+//          auto socket = make_shared<Socket>(std::move(udp_socket));
+//          node->set_remote_address(move(socket), addr);
+//
+//          broadcast(construct<PortOffer>( node_id
+//                                        , internal_port
+//                                        , external_port));
+//        }));
+//}
 
 // -----------------------------------------------------------------------------
 template<class F>

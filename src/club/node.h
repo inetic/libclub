@@ -17,7 +17,8 @@
 
 #include <map>
 #include <club/uuid.h>
-#include "club/socket.h"
+//#include "club/socket.h"
+#include "transport/socket.h"
 #include "club/hub.h"
 #include "message.h"
 #include "net/any_size.h"
@@ -37,7 +38,8 @@ namespace club {
 struct Node {
   using Error         = boost::system::error_code;
   using Address       = boost::asio::ip::address;
-  using Bytes         = std::vector<char>;
+  using Bytes         = std::vector<uint8_t>;
+  using Socket        = transport::Socket;
   using SocketPtr     = std::shared_ptr<Socket>;
 
   struct SharedState {
@@ -45,16 +47,9 @@ struct Node {
     // Our sockets don't like being destroyed while waiting
     // on callbacks.
     std::shared_ptr<Socket>           socket;
-    Bytes                             rx_buffer;
-    Bytes                             rx_unreliable_buffer;
-    std::list<std::shared_ptr<Bytes>> tx_buffers;
-
-    // TODO: This shouldn't be a fixed value.
-    static size_t max_unreliable_buffer() { return 65536; }
 
     SharedState()
       : was_destroyed(false)
-      , rx_unreliable_buffer(max_unreliable_buffer())
     { }
   };
 
@@ -74,7 +69,6 @@ struct Node {
     , _remote_port({0, 0})
     , _hub(hub)
     , _debug_hub_id(_hub->id())
-    , _is_sending(false)
     , _contact_sent(false)
     , _shared_state(std::make_shared<SharedState>())
   {
@@ -87,7 +81,6 @@ struct Node {
     , _remote_port({0, 0})
     , _hub(hub)
     , _debug_hub_id(_hub->id())
-    , _is_sending(false)
     , _contact_sent(false)
     , _shared_state(std::make_shared<SharedState>())
   {
@@ -120,8 +113,10 @@ struct Node {
 
   void send(std::shared_ptr<Bytes> data) {
     if (is(ConnectState::disconnected)) return;
-    _shared_state->tx_buffers.push_back(std::move(data));
-    send_front();
+    // TODO: Socket should take asio::const_buffer as an argument
+    // and a callback to preserve it's lifetime
+    _shared_state->socket->send_reliable(*data);
+    //send_front();
   }
 
   template<class Handler>
@@ -131,15 +126,21 @@ struct Node {
       ASSERT(0);
       return;
     }
+
     auto state = _shared_state;
-    state->socket->async_send
-        ( CHANNEL_UNR()
-        , b
-        , 0
-        , [state, handler](const Error&) { 
-            if (state->was_destroyed) return;
-            handler();
-          });
+
+    // TODO: Don't copy data
+    // TODO: Socket should tell us when it's OK to call the handler
+    //       (to indicate more data can be sent).
+    auto begin = boost::asio::buffer_cast<const uint8_t*>(b);
+    std::vector<uint8_t> data( begin
+                             , begin + boost::asio::buffer_size(b));
+    _shared_state->socket->send_unreliable(std::move(data));
+    _shared_state->socket->get_io_service()
+      .post([state, handler]() {
+          if (state->was_destroyed) return;
+          handler();
+        });
   }
 
   Address address() const {
@@ -169,6 +170,7 @@ struct Node {
   void contact_sent(bool v) { _contact_sent = v; }
 
   void disconnect() {
+    NODE_LOG("disconnect()");
     if (is(ConnectState::disconnected)) return;
     set_state(ConnectState::disconnected);
     if (auto& s = _shared_state->socket) s.reset();
@@ -188,80 +190,51 @@ private:
   }
 
   void connect() {
-    using namespace boost::asio;
-    typedef boost::asio::ip::udp udp;
+    assert(0 && "TODO");
+    //using namespace boost::asio;
+    //typedef boost::asio::ip::udp udp;
 
-    if (!is(ConnectState::not_connected) || !_shared_state->socket || !has_endpoint()) {
-      return;
-    }
+    //if (!is(ConnectState::not_connected) || !_shared_state->socket || !has_endpoint()) {
+    //  return;
+    //}
 
-    NODE_LOG( "Connect ", id
-            , " socket:", ((bool)_shared_state->socket)
-            , " address:", _remote_address
-            , " remote_port:", _remote_port.internal
-            , "/", _remote_port.external);
+    //NODE_LOG( "Connect ", id
+    //        , " socket:", ((bool)_shared_state->socket)
+    //        , " address:", _remote_address
+    //        , " remote_port:", _remote_port.internal
+    //        , "/", _remote_port.external);
 
-    set_state(ConnectState::connecting);
+    //set_state(ConnectState::connecting);
 
-    udp::endpoint internal_ep(_remote_address, _remote_port.internal);
-    udp::endpoint external_ep(_remote_address, _remote_port.external);
+    //udp::endpoint internal_ep(_remote_address, _remote_port.internal);
+    //udp::endpoint external_ep(_remote_address, _remote_port.external);
 
-    auto state = _shared_state;
-    state->socket->async_p2p_connect(30000, internal_ep, external_ep,
-        [this, state]( Error error
-                     , const udp::endpoint&
-                     , const udp::endpoint&) {
-          if (state->was_destroyed) return;
-          if (is(ConnectState::disconnected)) return;
+    //auto state = _shared_state;
+    //state->socket->async_p2p_connect(30000, internal_ep, external_ep,
+    //    [this, state]( Error error
+    //                 , const udp::endpoint&
+    //                 , const udp::endpoint&) {
+    //      if (state->was_destroyed) return;
+    //      if (is(ConnectState::disconnected)) return;
 
-          NODE_LOG("OnConnect to ", id, " (error=", error.message(), ")");
+    //      NODE_LOG("OnConnect to ", id, " (error=", error.message(), ")");
 
-          if (error) {
-            ASSERT(is(ConnectState::connecting));
-            set_state(ConnectState::not_connected);
-            // TODO: Set up timer after which we try to reconnect.
-            return;
-          }
+    //      if (error) {
+    //        ASSERT(is(ConnectState::connecting));
+    //        set_state(ConnectState::not_connected);
+    //        // TODO: Set up timer after which we try to reconnect.
+    //        return;
+    //      }
 
-          if (is(ConnectState::connecting)) {
-            set_state(ConnectState::connected);
-          }
+    //      if (is(ConnectState::connecting)) {
+    //        set_state(ConnectState::connected);
+    //      }
 
-          start_recv_loops();
-          send_front();
+    //      start_recv_loops();
+    //      send_front();
 
-          _hub->on_peer_connected(*this);
-        });
-  }
-
-  void send_front() {
-    if (!_shared_state->socket || !_shared_state->socket->is_connected()) {
-      return;
-    }
-    if (_shared_state->tx_buffers.empty() || _is_sending) {
-      return;
-    }
-    _is_sending = true;
-
-    auto state = _shared_state;
-    auto buffer_ptr = state->tx_buffers.front();
-    state->tx_buffers.pop_front();
-
-    send_any_size( *_shared_state->socket
-                 , boost::asio::buffer(*buffer_ptr)
-                 , 30000,
-      [this, state, buffer_ptr](Error error) {
-        if (state->was_destroyed) return;
-        _is_sending = false;
-
-        if (error) {
-          auto debug_msg = std::string("send_any_size error ") + error.message();
-          on_socket_error(std::move(debug_msg), error);
-          return;
-        }
-
-        send_front();
-      });
+    //      _hub->on_peer_connected(*this);
+    //    });
   }
 
   void start_recv_loops() {
@@ -271,33 +244,27 @@ private:
 
   void start_reliable_recv_loop() {
     auto state = _shared_state;
-    recv_any_size(*state->socket, state->rx_buffer, -1,
-        [this, state](Error error) {
-          if (state->was_destroyed) return;
-          if (is(ConnectState::disconnected)) return;
+    _shared_state->socket->receive_reliable(
+      [this, state](auto err, auto buffer) {
+        if (state->was_destroyed) return;
+        if (this->is(ConnectState::disconnected)) return;
 
-          if (error) {
-            auto debug_msg = std::string("recv_any_size error ") + error.message();
-            on_socket_error(std::move(debug_msg), error);
-            return;
-          }
+        if (err) {
+          auto debug_msg = std::string("reliable_recv") + err.message();
+          return this->on_socket_error(std::move(debug_msg), err);
+        }
 
-          _hub->on_recv_raw(*this, state->rx_buffer);
-
-          if (state->was_destroyed) return;
-          start_reliable_recv_loop();
-        });
+        _hub->on_recv_raw(*this, buffer);
+        if (state->was_destroyed) return;
+        this->start_reliable_recv_loop();
+      });
   }
 
   void start_unreliable_recv_loop() {
     auto state = _shared_state;
-    state->rx_unreliable_buffer.resize(SharedState::max_unreliable_buffer());
 
-    state->socket->async_receive
-        ( CHANNEL_UNR()
-        , boost::asio::buffer(state->rx_unreliable_buffer)
-        , -1
-        , [this, state](const Error& error, size_t size) {
+    state->socket->receive_unreliable
+        ([this, state](const Error& error, boost::asio::const_buffer buffer) {
             if (state->was_destroyed) return;
             if (is(ConnectState::disconnected)) return;
 
@@ -305,8 +272,7 @@ private:
               return on_socket_error("unreliable recv", error);
             }
 
-            state->rx_unreliable_buffer.resize(size);
-            _hub->node_received_unreliable_broadcast(state->rx_unreliable_buffer);
+            _hub->node_received_unreliable_broadcast(buffer);
 
             if (!state->was_destroyed) {
               start_unreliable_recv_loop();
@@ -314,7 +280,8 @@ private:
           });
   }
 
-  void on_socket_error(std::string debug_str, Error) {
+  void on_socket_error(std::string debug_str, Error e) {
+    NODE_LOG("on socket error ", e.message());
     if (is(ConnectState::disconnected)) return;
     set_state(ConnectState::disconnected);
     _shared_state->socket.reset();
@@ -340,7 +307,6 @@ private:
 
   club::hub* _hub;
   uuid _debug_hub_id;
-  bool _is_sending;
   bool _contact_sent;
 
   std::shared_ptr<SharedState> _shared_state;

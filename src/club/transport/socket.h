@@ -18,6 +18,7 @@
 #include <iostream>
 #include <array>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/asio/ip/udp.hpp>
 #include <transport/transmit_queue.h>
 #include <club/debug/ostream_uuid.h>
 #include <transport/out_message.h>
@@ -76,6 +77,7 @@ public:
   ~SocketImpl();
 
   udp::endpoint local_endpoint() const;
+  boost::optional<udp::endpoint> remote_endpoint() const;
   void rendezvous_connect(udp::endpoint);
   void receive_unreliable(OnReceive);
   void receive_reliable(OnReceive);
@@ -93,6 +95,10 @@ public:
   // error.
   async::alarm::duration recv_timeout_duration() const {
     return keepalive_period() * 5;
+  }
+
+  boost::asio::io_service& get_io_service() {
+    return _socket.get_io_service();
   }
 
 private:
@@ -216,6 +222,13 @@ void SocketImpl::rendezvous_connect(udp::endpoint remote_ep) {
 inline
 boost::asio::ip::udp::endpoint SocketImpl::local_endpoint() const {
   return _socket.local_endpoint();
+}
+
+//------------------------------------------------------------------------------
+inline
+boost::optional<boost::asio::ip::udp::endpoint>
+SocketImpl::remote_endpoint() const {
+  return _remote_endpoint;
 }
 
 //------------------------------------------------------------------------------
@@ -756,6 +769,10 @@ public:
     return _impl->local_endpoint();
   }
 
+  boost::optional<udp::endpoint> remote_endpoint() const {
+    return _impl->remote_endpoint();
+  }
+
   void rendezvous_connect(udp::endpoint remote_ep) {
     _impl->rendezvous_connect(std::move(remote_ep));
   }
@@ -790,6 +807,10 @@ public:
 
   async::alarm::duration recv_timeout_duration() const {
     return _impl->recv_timeout_duration();
+  }
+
+  boost::asio::io_service& get_io_service() {
+    return _impl->get_io_service();
   }
 };
 

@@ -24,12 +24,14 @@
 #include <club/graph.h>
 #include "when_all.h"
 #include "async_loop.h"
-#include "make_connected_sockets.h"
+#include "transport/socket.h"
+#include "util/socket.h"
 #include "binary/dynamic_encoder.h"
 #include "binary/decoder.h"
 #include "debug/string_tools.h"
 
-using SocketPtr = std::shared_ptr<club::Socket>;
+using Socket = club::transport::Socket;
+using SocketPtr = std::shared_ptr<club::transport::Socket>;
 using std::cout;
 using std::endl;
 using std::make_shared;
@@ -131,14 +133,14 @@ BOOST_AUTO_TEST_CASE(club_leave_and_remove) {
 
       for (auto pair : {make_pair(&r1, s1), make_pair(&r2, s2) }) {
         auto& r = *pair.first;
-        auto& s = pair.second;
+        auto& s = *pair.second;
 
         r->on_insert.connect(when_all.make_continuation(
               [](auto c, set<club::hub::node>) {
                 c();
               }));
 
-        r->fuse(move(*s), when_all.make_continuation(
+        r->fuse(move(s), when_all.make_continuation(
             [](auto c, error_code e, uuid) {
               BOOST_CHECK_MESSAGE(!e, e.message());
               c();
