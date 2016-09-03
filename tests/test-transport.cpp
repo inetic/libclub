@@ -502,6 +502,17 @@ BOOST_AUTO_TEST_CASE(test_transport_timeout) {
     ++count;
     BOOST_REQUIRE(!err);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+
+    s2.receive_reliable([&](auto err, auto b) {
+        ++count;
+        BOOST_REQUIRE_EQUAL(err, boost::asio::error::operation_aborted);
+      });
+
+    s2.receive_unreliable([&](auto err, auto b) {
+        ++count;
+        BOOST_REQUIRE_EQUAL(err, boost::asio::error::operation_aborted);
+      });
+
     s2.flush([&s2] {
         // Close the udp::socket directly not to give the transport::socket
         // an opportunity to close gracefuly.
@@ -513,7 +524,7 @@ BOOST_AUTO_TEST_CASE(test_transport_timeout) {
 
   ios.run();
 
-  BOOST_REQUIRE_EQUAL(count, 2);
+  BOOST_REQUIRE_EQUAL(count, 4);
 }
 
 //------------------------------------------------------------------------------
@@ -536,6 +547,17 @@ BOOST_AUTO_TEST_CASE(test_transport_close) {
     ++count;
     BOOST_REQUIRE(!err);
     BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+
+    s2.receive_reliable([&](auto err, auto b) {
+        ++count;
+        BOOST_REQUIRE_EQUAL(err, boost::asio::error::operation_aborted);
+      });
+
+    s2.receive_unreliable([&](auto err, auto b) {
+        ++count;
+        BOOST_REQUIRE_EQUAL(err, boost::asio::error::operation_aborted);
+      });
+
     s2.flush([&s2] {
         // Close gracefuly.
         s2.close();
@@ -546,6 +568,6 @@ BOOST_AUTO_TEST_CASE(test_transport_close) {
 
   ios.run();
 
-  BOOST_REQUIRE_EQUAL(count, 2);
+  BOOST_REQUIRE_EQUAL(count, 4);
 }
 
