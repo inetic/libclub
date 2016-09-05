@@ -88,6 +88,13 @@ public:
     return _socket;
   }
 
+  // If we don't receive any packet during this duration, the socket
+  // close shall be called and handler shall execute with timed_out
+  // error.
+  async::alarm::duration recv_timeout_duration() const {
+    return keepalive_period() * 5;
+  }
+
 private:
   void handle_error(const boost::system::error_code&);
 
@@ -126,10 +133,6 @@ private:
 
   void on_recv_timeout_alarm();
   void on_send_keepalive_alarm(SocketStatePtr);
-
-  async::alarm::duration recv_timeout_duration() const {
-    return keepalive_period() * 5;
-  }
 
   async::alarm::duration keepalive_period() const {
     return std::chrono::milliseconds(200);
@@ -576,7 +579,7 @@ size_t SocketImpl::encode_payload(binary::encoder& encoder) {
   auto cycle = _transmit_queue.cycle();
 
   for (auto mi = cycle.begin(); mi != cycle.end();) {
-    if (_received_message_ids_by_peer.is_in(mi->sequence_number())) {
+    if (mi->resend_until_acked && _received_message_ids_by_peer.is_in(mi->sequence_number())) {
       mi.erase();
       continue;
     }
@@ -778,6 +781,10 @@ public:
 
   udp::socket& get_socket_impl() {
     return _impl->get_socket_impl();
+  }
+
+  async::alarm::duration recv_timeout_duration() const {
+    return _impl->recv_timeout_duration();
   }
 };
 

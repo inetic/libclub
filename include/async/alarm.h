@@ -82,7 +82,7 @@ public:
 
 private:
   void on_timeout(error_code) {
-    std::function<void()> on_expire;
+    bool run_on_expire = false;
 
     {
       std::lock_guard<std::mutex> lock(_storage->mutex);
@@ -93,7 +93,7 @@ private:
           break;
         case running:
           _state = idle;
-          on_expire = std::move(_on_expire);
+          run_on_expire = true;
           break;
         case canceling:
           _state = idle;
@@ -105,7 +105,7 @@ private:
       }
     }
 
-    if (on_expire) on_expire();
+    if (run_on_expire) _on_expire();
   }
 
   void start_locked(duration timeout) {
