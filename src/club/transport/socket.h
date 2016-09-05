@@ -444,8 +444,13 @@ void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
 inline
 bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
                                          , InMessageFull& msg) {
-  auto f = std::move(_on_receive_reliable);
-  f(boost::system::error_code(), msg.payload);
+  // The callback may hold a shared_ptr to this, so I placed the scope
+  // here so that 'f' would get destroyed and thus state->was_destroyed
+  // would be relevant in the line below.
+  {
+    auto f = std::move(_on_receive_reliable);
+    f(boost::system::error_code(), msg.payload);
+  }
   if (state->was_destroyed) return false;
   _received_message_ids.try_add(msg.sequence_number);
   _sync->last_used_reliable_sn = msg.sequence_number;
