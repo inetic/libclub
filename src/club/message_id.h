@@ -18,6 +18,7 @@
 #include <club/uuid.h>
 #include <club/detail/time_stamp.h>
 #include <boost/uuid/nil_generator.hpp>
+#include <club/debug/ostream_uuid.h>
 
 namespace club {
 
@@ -66,7 +67,10 @@ struct MessageId {
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const MessageId& o);
+inline
+std::ostream& operator<<(std::ostream& os, const MessageId& o) {
+  return os << "(MId " << o.original_poster << ":" << o.timestamp << ")";
+}
 
 } // club namespace
 
