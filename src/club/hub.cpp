@@ -23,8 +23,7 @@
 #include "binary/serialize/uuid.h"
 #include "binary/serialize/list.h"
 #include "message.h"
-#include "net/async_exchange.h"
-#include "net/protocol_versions.h"
+#include "protocol_versions.h"
 #include "stun_client.h"
 #include <chrono>
 #include <iostream>
