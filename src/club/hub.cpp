@@ -626,7 +626,6 @@ template<class Message> void hub::broadcast(const Message& msg) {
 
 // -----------------------------------------------------------------------------
 void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
-  LOG_("Sending unreliable");
   using std::make_pair;
   using boost::asio::const_buffer;
 
@@ -659,7 +658,6 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
 
 // -----------------------------------------------------------------------------
 void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
-  LOG_("Received unreliable");
   namespace asio = boost::asio;
   using boost::asio::const_buffer;
 

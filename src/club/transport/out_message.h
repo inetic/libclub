@@ -57,7 +57,6 @@ private:
 public:
   static constexpr size_t header_size = 11;
 
-  // A constructor that is used when we're the original poster.
   OutMessage( bool                   resend_until_acked
             , MessageType            type
             , SequenceNumber         sequence_number
@@ -70,24 +69,9 @@ public:
   {
   }
 
-  // A constructor that is used when we're forwarding this message.
-  OutMessage( bool                   resend_until_acked
-            , std::vector<uint8_t>&& header_and_payload)
-    : resend_until_acked(resend_until_acked)
-    , _payload_start(header_size)
-    , _data(std::move(header_and_payload))
-    , _is_dirty(false)
-  {
-    assert(_data.size() >= header_size);
-
-    binary::decoder d(_data);
-
-    _header.type = d.get<MessageType>();
-    _header.sequence_number = d.get<SequenceNumber>();
-    _header.original_size = d.get<uint16_t>();
-    _header.start_position = d.get<uint16_t>();
-    _header.chunk_size = d.get<uint16_t>();
-  }
+  OutMessage(OutMessage&&) = default;
+  OutMessage& operator=(OutMessage&&) = default;
+  OutMessage(const OutMessage&) = delete;
 
   SequenceNumber sequence_number() const { return _header.sequence_number; }
 

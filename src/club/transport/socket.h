@@ -24,6 +24,7 @@
 #include <transport/out_message.h>
 #include <async/alarm.h>
 #include "error.h"
+#include "punch_hole.h"
 
 namespace club { namespace transport {
 
@@ -78,7 +79,10 @@ public:
 
   udp::endpoint local_endpoint() const;
   boost::optional<udp::endpoint> remote_endpoint() const;
-  void rendezvous_connect(udp::endpoint);
+
+  template<class OnConnect>
+  void rendezvous_connect(udp::endpoint, OnConnect);
+
   void receive_unreliable(OnReceive);
   void receive_reliable(OnReceive);
   void send_unreliable(std::vector<uint8_t>);
@@ -147,6 +151,11 @@ private:
   size_t encode_payload(binary::encoder& encoder);
   void sync_send_close_message();
 
+  // TODO: The parameter should be const.
+  std::vector<uint8_t>
+  construct_packet_with_one_message(OutMessage& m);
+
+  static udp::endpoint sanitize_address(udp::endpoint);
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
 
@@ -185,20 +194,6 @@ private:
 // Implementation
 //------------------------------------------------------------------------------
 inline
-SocketImpl::SocketImpl( udp::socket   socket
-                      , udp::endpoint remote_endpoint)
-  : _send_state(SendState::pending)
-  , _socket(std::move(socket))
-  , _timer(_socket.get_io_service())
-  , _socket_state(std::make_shared<SocketState>())
-  , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
-  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
-{
-  rendezvous_connect(remote_endpoint);
-}
-
-//------------------------------------------------------------------------------
-inline
 SocketImpl::SocketImpl(boost::asio::io_service& ios)
   : _send_state(SendState::pending)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
@@ -210,12 +205,60 @@ SocketImpl::SocketImpl(boost::asio::io_service& ios)
 }
 
 //------------------------------------------------------------------------------
+template<class OnConnect>
 inline
-void SocketImpl::rendezvous_connect(udp::endpoint remote_ep) {
-  _remote_endpoint = std::move(remote_ep);
+void SocketImpl::rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connect) {
+  using std::move;
+  using boost::system::error_code;
+
+  namespace asio = boost::asio;
+
+  remote_ep = sanitize_address(remote_ep);
+
+#if 0 // Simple connect without hole punching
+  _remote_endpoint = remote_ep;
   add_message(true, MessageType::sync, _next_reliable_sn++, std::vector<uint8_t>());
   start_sending(_socket_state);
   start_receiving(_socket_state);
+
+  auto state = _socket_state;
+
+  _socket.get_io_service().post([h = std::move(on_connect), state]() {
+      if (state->was_destroyed) {
+        h(boost::asio::error::operation_aborted);
+      }
+      else {
+        h(error_code());
+      }
+    });
+#else
+  auto state = _socket_state;
+
+  auto syn_message = OutMessage( true
+                               , MessageType::sync
+                               , _next_reliable_sn++
+                               , std::vector<uint8_t>());
+
+  auto packet = construct_packet_with_one_message(syn_message);
+
+  // TODO: Optimization: When hole punch receives a package from the remote
+  //       we should add it's sequence number into _received_message_ids_by_peer
+  //       so that we can acknowledge it asap.
+  auto on_punch = [ this
+                  , on_connect = move(on_connect)
+                  , state = move(state)
+                  , syn_message = move(syn_message)]
+                  (error_code error, udp::endpoint remote_ep) mutable {
+    if (error) return on_connect(error);
+    _remote_endpoint = remote_ep;
+    _transmit_queue.insert(std::move(syn_message));
+    start_sending(_socket_state);
+    start_receiving(_socket_state);
+    return on_connect(error);
+  };
+
+  punch_hole(_socket, remote_ep, std::move(packet), std::move(on_punch));
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -564,26 +607,34 @@ void SocketImpl::start_sending(SocketStatePtr state) {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::sync_send_close_message() {
-  using boost::asio::buffer;
-
+std::vector<uint8_t>
+SocketImpl::construct_packet_with_one_message(OutMessage& m) {
   std::vector<uint8_t> data(packet_size);
   binary::encoder encoder(data);
 
   encoder.put(_received_message_ids);
   encoder.put<uint16_t>(1); // We're sending just one message.
 
+  if (!try_encode(encoder, m)) {
+    assert(0 && "Shouldn't happen");
+  }
+
+  data.resize(encoder.written());
+
+  return data;
+}
+
+//------------------------------------------------------------------------------
+inline
+void SocketImpl::sync_send_close_message() {
   OutMessage m( false
               , MessageType::close
               , 0
               , std::vector<uint8_t>());
 
-  if (!try_encode(encoder, m)) {
-    assert(0 && "Shouldn't happen");
-    return;
-  }
+  auto data = construct_packet_with_one_message(m);
 
-  _socket.send_to(buffer(data.data(), encoder.written()), _remote_endpoint);
+  _socket.send_to(boost::asio::buffer(data), _remote_endpoint);
 }
 
 //------------------------------------------------------------------------------
@@ -660,7 +711,7 @@ void SocketImpl::on_send( const boost::system::error_code& error
    *
    * TODO: Proper congestion control
    */
-  if (_remote_endpoint.address().is_unspecified()) {
+  if (_remote_endpoint.address().is_loopback()) {
     // No need to wait when we're on the same PC. Would have been nicer
     // if we didn't use timer at all in this case, but this is gonna
     // have to be refactored due to proper congestion control.
@@ -731,6 +782,23 @@ inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
   start_sending(std::move(state));
 }
 
+inline
+boost::asio::ip::udp::endpoint
+SocketImpl::sanitize_address(udp::endpoint ep) {
+  namespace ip = boost::asio::ip;
+
+  if (ep.address().is_unspecified()) {
+    if (ep.address().is_v4()) {
+      ep = udp::endpoint(ip::address_v4::loopback(), ep.port());
+    }
+    else {
+      ep = udp::endpoint(ip::address_v6::loopback(), ep.port());
+    }
+  }
+
+  return ep;
+}
+
 //------------------------------------------------------------------------------
 // Socket
 //------------------------------------------------------------------------------
@@ -751,12 +819,6 @@ public:
     : _impl(std::make_unique<SocketImpl>(ios))
   {}
 
-  Socket( udp::socket   socket
-        , udp::endpoint remote_endpoint)
-    : _impl(std::make_unique<SocketImpl>( std::move(socket)
-                                        , std::move(remote_endpoint)))
-  {}
-
   Socket(Socket&& other)
     : _impl(std::move(other._impl)) {}
 
@@ -773,8 +835,9 @@ public:
     return _impl->remote_endpoint();
   }
 
-  void rendezvous_connect(udp::endpoint remote_ep) {
-    _impl->rendezvous_connect(std::move(remote_ep));
+  template<class OnConnect>
+  void rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connect) {
+    _impl->rendezvous_connect(std::move(remote_ep), std::move(on_connect));
   }
 
   void receive_unreliable(OnReceive _1) {

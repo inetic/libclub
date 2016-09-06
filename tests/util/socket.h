@@ -16,20 +16,36 @@
 #define TEST_UTIL_SOCKET_H
 
 #include "transport/socket.h"
+#include "../when_all.h"
 
 // -------------------------------------------------------------------
 template<class Handler>
 void make_connected_sockets(boost::asio::io_service& ios, Handler handler) {
+  using std::move;
   using Socket = club::transport::Socket;
 
-  Socket s1(ios);
-  Socket s2(ios);
+  auto s1 = std::make_shared<Socket>(ios);
+  auto s2 = std::make_shared<Socket>(ios);
 
-  s1.rendezvous_connect(s2.local_endpoint());
-  s2.rendezvous_connect(s1.local_endpoint());
+  WhenAll when_all;
 
-  handler( std::make_shared<Socket>(std::move(s1))
-         , std::make_shared<Socket>(std::move(s2)));
+  s1->rendezvous_connect(s2->local_endpoint(), when_all.make_continuation(
+      [](auto c, auto error) {
+        BOOST_REQUIRE(!error);
+        c();
+      }));
+
+  s2->rendezvous_connect(s1->local_endpoint(), when_all.make_continuation(
+      [](auto c, auto error) {
+        BOOST_REQUIRE(!error);
+        c();
+      }));
+
+  when_all.on_complete([ handler = move(handler)
+                       , s1 = move(s1)
+                       , s2 = move(s2)]() {
+      handler(move(s1), move(s2));
+    });
 }
 
 // -------------------------------------------------------------------
