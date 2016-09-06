@@ -63,6 +63,7 @@ public:
 
 public:
   SocketImpl(boost::asio::io_service&);
+  SocketImpl(udp::socket);
 
   SocketImpl( udp::socket   socket
             , udp::endpoint remote_endpoint);
@@ -197,6 +198,17 @@ inline
 SocketImpl::SocketImpl(boost::asio::io_service& ios)
   : _send_state(SendState::pending)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
+  , _timer(_socket.get_io_service())
+  , _socket_state(std::make_shared<SocketState>())
+  , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
+  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
+{
+}
+
+inline
+SocketImpl::SocketImpl(udp::socket udp_socket)
+  : _send_state(SendState::pending)
+  , _socket(std::move(udp_socket))
   , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
@@ -817,6 +829,10 @@ public:
 public:
   Socket(boost::asio::io_service& ios)
     : _impl(std::make_unique<SocketImpl>(ios))
+  {}
+
+  Socket(udp::socket udp_socket)
+    : _impl(std::make_unique<SocketImpl>(std::move(udp_socket)))
   {}
 
   Socket(Socket&& other)

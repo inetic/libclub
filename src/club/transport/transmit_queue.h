@@ -15,6 +15,7 @@
 #ifndef CLUB_TRANSMIT_QUEUE_H
 #define CLUB_TRANSMIT_QUEUE_H
 
+#include <list>
 #include <boost/variant.hpp>
 
 namespace club { namespace transport {
