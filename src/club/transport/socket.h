@@ -71,11 +71,6 @@ public:
   SocketImpl(SocketImpl&&) = delete;
   SocketImpl& operator=(SocketImpl&&) = delete;
 
-  bool is_sending() const {
-    return _send_state == SendState::sending
-        || _send_state == SendState::waiting;
-  }
-
   ~SocketImpl();
 
   udp::endpoint local_endpoint() const;
@@ -152,7 +147,6 @@ private:
   size_t encode_payload(binary::encoder& encoder);
   void sync_send_close_message();
 
-  // TODO: The parameter should be const.
   std::vector<uint8_t>
   construct_packet_with_one_message(OutMessage& m);
 

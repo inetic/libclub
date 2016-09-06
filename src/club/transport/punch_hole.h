@@ -146,14 +146,12 @@ void punch_hole( boost::asio::ip::udp::socket& socket
                                             , remote_endpoint
                                             , std::move(syn_packet));
 
-  // TODO: Handler can't be moved into std::function<...>. A nicer solution
-  //       would be if the PunchHole class stored this handler directly
-  //       as Handler (PunchHole would need to be templated).
+  // TODO: Handler can't be moved into std::function<...>.
   auto handler_ptr = std::make_shared<Handler>(std::move(handler));
 
   auto on_punch = [ handler_ptr = std::move(handler_ptr)
                   , puncher]( boost::system::error_code error
-                            , boost::asio::ip::udp::endpoint remote_endpoint) mutable {
+                            , boost::asio::ip::udp::endpoint remote_endpoint) {
     (*handler_ptr)(error, remote_endpoint);
   };
 
