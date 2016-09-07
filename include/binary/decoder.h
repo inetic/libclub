@@ -227,6 +227,46 @@ inline std::int32_t decoder::get<std::int32_t>() {
   return result;
 }
 
+template <>
+inline std::int64_t decoder::get<std::int64_t>() {
+  std::int64_t result;
+  if (size() < sizeof(result)) _was_error = true;
+  if (_was_error) return 0;
+
+  uint8_t*r = reinterpret_cast<uint8_t*>(&result);
+  *r++ = _current.begin[7];
+  *r++ = _current.begin[6];
+  *r++ = _current.begin[5];
+  *r++ = _current.begin[4];
+  *r++ = _current.begin[3];
+  *r++ = _current.begin[2];
+  *r++ = _current.begin[1];
+  *r++ = _current.begin[0];
+
+  _current.begin += sizeof(result);
+  return result;
+}
+
+template <>
+inline std::uint64_t decoder::get<std::uint64_t>() {
+  std::uint64_t result;
+  if (size() < sizeof(result)) _was_error = true;
+  if (_was_error) return 0;
+
+  uint8_t*r = reinterpret_cast<uint8_t*>(&result);
+  *r++ = _current.begin[7];
+  *r++ = _current.begin[6];
+  *r++ = _current.begin[5];
+  *r++ = _current.begin[4];
+  *r++ = _current.begin[3];
+  *r++ = _current.begin[2];
+  *r++ = _current.begin[1];
+  *r++ = _current.begin[0];
+
+  _current.begin += sizeof(result);
+  return result;
+}
+
 inline void decoder::get_raw(std::uint8_t* iter, std::size_t size) {
   if (this->size() < size) _was_error = true;
   if (_was_error) return;

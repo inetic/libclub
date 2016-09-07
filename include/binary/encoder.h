@@ -176,6 +176,44 @@ inline void encode(encoder& e, uint32_t value) {
   *(e._current.begin++) = value         & 0xff;
 }
 
+inline void encode(encoder& e, int32_t value) {
+  if (e._current.begin + sizeof(value) > e._current.end) e._was_error = true;
+  if (e._was_error) return;
+
+  *(e._current.begin++) = (value >> 24) & 0xff;
+  *(e._current.begin++) = (value >> 16) & 0xff;
+  *(e._current.begin++) = (value >> 8)  & 0xff;
+  *(e._current.begin++) = value         & 0xff;
+}
+
+inline void encode(encoder& e, int64_t value) {
+  if (e._current.begin + sizeof(value) > e._current.end) e._was_error = true;
+  if (e._was_error) return;
+
+  *(e._current.begin++) = (value >> 56) & 0xff;
+  *(e._current.begin++) = (value >> 48) & 0xff;
+  *(e._current.begin++) = (value >> 40) & 0xff;
+  *(e._current.begin++) = (value >> 32) & 0xff;
+  *(e._current.begin++) = (value >> 24) & 0xff;
+  *(e._current.begin++) = (value >> 16) & 0xff;
+  *(e._current.begin++) = (value >> 8)  & 0xff;
+  *(e._current.begin++) = value         & 0xff;
+}
+
+inline void encode(encoder& e, uint64_t value) {
+  if (e._current.begin + sizeof(value) > e._current.end) e._was_error = true;
+  if (e._was_error) return;
+
+  *(e._current.begin++) = (value >> 56) & 0xff;
+  *(e._current.begin++) = (value >> 48) & 0xff;
+  *(e._current.begin++) = (value >> 40) & 0xff;
+  *(e._current.begin++) = (value >> 32) & 0xff;
+  *(e._current.begin++) = (value >> 24) & 0xff;
+  *(e._current.begin++) = (value >> 16) & 0xff;
+  *(e._current.begin++) = (value >> 8)  & 0xff;
+  *(e._current.begin++) = value         & 0xff;
+}
+
 template<typename T>
 inline
 void encoder::put(T&& value) {

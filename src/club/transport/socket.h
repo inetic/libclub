@@ -25,6 +25,7 @@
 #include <async/alarm.h>
 #include "error.h"
 #include "punch_hole.h"
+#include "quality_of_service.h"
 
 namespace club { namespace transport {
 
@@ -33,7 +34,7 @@ private:
   enum class SendState { sending, waiting, pending };
 
 public:
-  static const size_t packet_size = 1452;
+  static constexpr size_t packet_size = QualityOfService::MSS();
 
   using OnReceive = std::function<void( const boost::system::error_code&
                                       , boost::asio::const_buffer )>;
@@ -94,7 +95,7 @@ public:
   // close shall be called and handler shall execute with timed_out
   // error.
   async::alarm::duration recv_timeout_duration() const {
-    return keepalive_period() * 5;
+    return keepalive_period() * 10;
   }
 
   boost::asio::io_service& get_io_service() {
@@ -141,10 +142,13 @@ private:
   void on_send_keepalive_alarm(SocketStatePtr);
 
   async::alarm::duration keepalive_period() const {
-    return std::chrono::milliseconds(200);
+    return std::chrono::milliseconds(500);
   }
 
   size_t encode_payload(binary::encoder& encoder);
+  bool encode_acks(binary::encoder& encoder);
+  void decode_acks(binary::decoder& decoder);
+
   void sync_send_close_message();
 
   std::vector<uint8_t>
@@ -165,11 +169,10 @@ private:
   TransmitQueue                    _transmit_queue;
   boost::asio::steady_timer        _timer;
   SocketStatePtr                   _socket_state;
-  // If this is nonet, then we haven't yet received sync
+  // If this is not set, then we haven't yet received sync
   boost::optional<Sync>            _sync;
   PendingMessages                  _pending_reliable_messages;
   boost::optional<PendingMessage>  _pending_unreliable_message;
-  bool                             _schedule_sending_acks = false;
   AckSet _received_message_ids_by_peer;
   AckSet _received_message_ids;
 
@@ -183,6 +186,8 @@ private:
 
   async::alarm                     _recv_timeout_alarm;
   async::alarm                     _send_keepalive_alarm;
+
+  QualityOfService _qos;
 };
 
 //------------------------------------------------------------------------------
@@ -289,14 +294,14 @@ SocketImpl::~SocketImpl() {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::receive_unreliable(OnReceive on_receive) {
-  _on_receive_unreliable = std::move(on_receive);
+void SocketImpl::receive_unreliable(OnReceive on_recv) {
+  _on_receive_unreliable = std::move(on_recv);
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::receive_reliable(OnReceive on_receive) {
-  _on_receive_reliable = std::move(on_receive);
+void SocketImpl::receive_reliable(OnReceive on_recv) {
+  _on_receive_reliable = std::move(on_recv);
 }
 
 //------------------------------------------------------------------------------
@@ -351,16 +356,17 @@ inline void SocketImpl::close() {
 }
 
 //------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_error(const boost::system::error_code& err) {
-  auto state = _socket_state;
-
   close();
 
   auto r1 = std::move(_on_receive_unreliable);
   auto r2 = std::move(_on_receive_reliable);
   if (r1) r1(err, boost::asio::const_buffer());
   if (r2) r2(err, boost::asio::const_buffer());
+
+  // TODO: Should probably execute send handler as well.
 }
 
 //------------------------------------------------------------------------------
@@ -377,11 +383,7 @@ void SocketImpl::on_receive( boost::system::error_code error
   _recv_timeout_alarm.stop();
 
   if (error) {
-    auto r1 = std::move(_on_receive_unreliable);
-    auto r2 = std::move(_on_receive_reliable);
-    if (r1) r1(error, asio::const_buffer());
-    if (r2) r2(error, asio::const_buffer());
-    return;
+    return handle_error(error);
   }
 
   // Ignore packets from unknown sources.
@@ -393,26 +395,30 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   binary::decoder decoder(state->rx_buffer);
 
-  auto ack_set = decoder.get<AckSet>();
+  decode_acks(decoder);
 
   if (decoder.error()) return handle_error(transport::error::parse_error);
 
-  handle_acks(ack_set);
-
   auto message_count = decoder.get<uint16_t>();
-  assert(!decoder.error());
 
-  for (uint16_t i = 0; i < message_count; ++i) {
-    auto m = decoder.get<InMessagePart>();
-    if (decoder.error()) {
-      return handle_error(transport::error::parse_error);
+  if (decoder.error()) return handle_error(transport::error::parse_error);
+
+  if (message_count) {
+    _qos.decode_header(decoder);
+
+    for (uint16_t i = 0; i < message_count; ++i) {
+      auto m = decoder.get<InMessagePart>();
+      if (decoder.error()) {
+        return handle_error(transport::error::parse_error);
+      }
+      handle_message(state, std::move(m));
+      if (state->was_destroyed) return;
+      if (!_socket.is_open()) return;
     }
-    handle_message(state, std::move(m));
-    if (state->was_destroyed) return;
-    if (!_socket.is_open()) return;
   }
 
-  start_receiving(move(state));
+  start_receiving(state);
+  start_sending(move(state));
 }
 
 //------------------------------------------------------------------------------
@@ -434,10 +440,6 @@ void SocketImpl::handle_message(SocketStatePtr& state, InMessagePart msg) {
     case MessageType::close:      handle_close_message(); break;
     default: return handle_error(error::parse_error);
   }
-
-  if (!state->was_destroyed) {
-    start_sending(_socket_state);
-  }
 }
 
 //------------------------------------------------------------------------------
@@ -450,7 +452,6 @@ void SocketImpl::handle_close_message() {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_sync_message(const InMessagePart& msg) {
-  _schedule_sending_acks = true;
   if (!_sync) {
     _received_message_ids.try_add(msg.sequence_number);
     _sync = Sync{msg.sequence_number, msg.sequence_number};
@@ -461,7 +462,6 @@ void SocketImpl::handle_sync_message(const InMessagePart& msg) {
 inline
 void SocketImpl::handle_reliable_message( SocketStatePtr& state
                                         , const InMessagePart& msg) {
-  _schedule_sending_acks = true;
   if (!_sync) return;
   if (!_received_message_ids.can_add(msg.sequence_number)) return;
 
@@ -565,6 +565,28 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
 }
 
 //------------------------------------------------------------------------------
+inline bool SocketImpl::encode_acks(binary::encoder& encoder) {
+  if (_qos.acks().empty()) {
+    encoder.put<uint8_t>(0);
+    return false;
+  }
+  encoder.put<uint8_t>(1);
+  _qos.encode_acks(encoder);
+  encoder.put(_received_message_ids);
+  return true;
+}
+
+//------------------------------------------------------------------------------
+inline void SocketImpl::decode_acks(binary::decoder& decoder) {
+  bool has_acks = decoder.get<uint8_t>() != 0;
+
+  if (!has_acks) return;
+  _qos.decode_acks(decoder);
+  auto ack_set = decoder.get<AckSet>();
+  handle_acks(ack_set);
+}
+
+//------------------------------------------------------------------------------
 inline
 void SocketImpl::start_sending(SocketStatePtr state) {
   using boost::system::error_code;
@@ -573,21 +595,32 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   if (!_socket.is_open()) return;
   if (_send_state != SendState::pending) return;
 
+  state->tx_buffer.resize(_qos.next_packet_max_size());
   binary::encoder encoder(state->tx_buffer);
 
-  // Encode acks
-  encoder.put(_received_message_ids);
+  bool has_acks = encode_acks(encoder);
 
-  assert(!encoder.error());
+  auto count_encoder = encoder;
+  encoder.skip(sizeof(uint16_t));
 
-  size_t count = encode_payload(encoder);
+  if (encoder.error()) {
+    // Too many bytes in flight, need to wait for acks.
+    return;
+  }
 
-  if (count == 0 && !_schedule_sending_acks) {
+  // We can only encode qos header after we've known the
+  // total size of this packet, so we do it below.
+  binary::encoder qos_encoder = encoder;
+  encoder.skip(_qos.header_size());
+
+  auto count = encode_payload(encoder);
+
+  // TODO: I think flushing should be done in `on_send`?
+  if (count == 0 && !has_acks) {
     // If no payload was encoded and there is no need to
     // re-send acks, then flush end return.
     if (_on_flush) {
-      auto f = std::move(_on_flush);
-      f();
+      move_exec(_on_flush);
       if (state->was_destroyed) return;
       if (!_socket.is_open()) return;
     }
@@ -595,11 +628,13 @@ void SocketImpl::start_sending(SocketStatePtr state) {
     return;
   }
 
-  _schedule_sending_acks = false;
-
-  assert(encoder.written());
-
   _send_state = SendState::sending;
+
+  count_encoder.put<uint16_t>(count);
+
+  if (count) {
+    _qos.encode_header(qos_encoder, encoder.written());
+  }
 
   // Get the pointer here because `state` is moved from in arguments below
   // (and order of argument evaluation is undefined).
@@ -615,18 +650,48 @@ void SocketImpl::start_sending(SocketStatePtr state) {
 
 //------------------------------------------------------------------------------
 inline
+void SocketImpl::on_send( const boost::system::error_code& error
+                        , size_t                           size
+                        , SocketStatePtr                   state)
+{
+  using std::move;
+  using boost::system::error_code;
+
+  if (state->was_destroyed) return;
+
+  _send_state = SendState::pending;
+
+  if (error) {
+    if (error == boost::asio::error::operation_aborted) {
+      return;
+    }
+    assert(0);
+  }
+
+  start_sending(move(state));
+}
+
+//------------------------------------------------------------------------------
+inline
 std::vector<uint8_t>
 SocketImpl::construct_packet_with_one_message(OutMessage& m) {
   std::vector<uint8_t> data(packet_size);
   binary::encoder encoder(data);
 
-  encoder.put(_received_message_ids);
+  encode_acks(encoder);
+  assert(!encoder.error());
   encoder.put<uint16_t>(1); // We're sending just one message.
+
+  // We can only encode qos header after we've known the
+  // total size of this packet, so we do it below.
+  binary::encoder qos_encoder = encoder;
+  encoder.skip(_qos.header_size());
 
   if (!try_encode(encoder, m)) {
     assert(0 && "Shouldn't happen");
   }
 
+  _qos.encode_header(qos_encoder, encoder.written());
   data.resize(encoder.written());
 
   return data;
@@ -646,12 +711,8 @@ void SocketImpl::sync_send_close_message() {
 }
 
 //------------------------------------------------------------------------------
-inline
-size_t SocketImpl::encode_payload(binary::encoder& encoder) {
+inline size_t SocketImpl::encode_payload(binary::encoder& encoder) {
   size_t count = 0;
-
-  auto count_encoder = encoder;
-  encoder.put<uint16_t>(0);
 
   auto cycle = _transmit_queue.cycle();
 
@@ -681,61 +742,7 @@ size_t SocketImpl::encode_payload(binary::encoder& encoder) {
     ++mi;
   }
 
-  count_encoder.put<uint16_t>(count);
-
   return count;
-}
-
-//------------------------------------------------------------------------------
-inline
-void SocketImpl::on_send( const boost::system::error_code& error
-                        , size_t                           size
-                        , SocketStatePtr                   state)
-{
-  using std::move;
-  using boost::system::error_code;
-
-  if (state->was_destroyed) return;
-
-  _send_state = SendState::pending;
-
-  if (error) {
-    if (error == boost::asio::error::operation_aborted) {
-      return;
-    }
-    assert(0);
-  }
-
-  _send_state = SendState::waiting;
-
-  /*
-   * Wikipedia says [1] that in practice 2G/GPRS capacity is 40kbit/s.
-   * [1] https://en.wikipedia.org/wiki/2G
-   *
-   * We calculate delay:
-   *   delay_s  = size / (40000/8)
-   *   delay_us = 1000000 * size / (40000/8)
-   *   delay_us = 200 * size
-   *
-   * TODO: Proper congestion control
-   */
-  if (_remote_endpoint.address().is_loopback()) {
-    // No need to wait when we're on the same PC. Would have been nicer
-    // if we didn't use timer at all in this case, but this is gonna
-    // have to be refactored due to proper congestion control.
-    _timer.expires_from_now(std::chrono::microseconds(0));
-  }
-  else {
-    _timer.expires_from_now(std::chrono::microseconds(200*size));
-  }
-
-  _timer.async_wait([this, state = move(state)]
-                    (const error_code error) {
-                      if (state->was_destroyed) return;
-                      _send_state = SendState::pending;
-                      if (error) return;
-                      start_sending(move(state));
-                    });
 }
 
 //------------------------------------------------------------------------------
@@ -743,8 +750,8 @@ inline
 bool
 SocketImpl::try_encode(binary::encoder& encoder, OutMessage& message) const {
 
-  auto minimal_encoded_size =
-      OutMessage::header_size
+  auto minimal_encoded_size
+      = OutMessage::header_size
       // We'd want to send at least one byte of the payload,
       // otherwise what's the point.
       + std::min<size_t>(1, message.payload_size()) ;

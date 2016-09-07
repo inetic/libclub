@@ -35,6 +35,7 @@ using std::shared_ptr;
 using std::unique_ptr;
 
 static constexpr uint16_t DEFAULT_SERVER_PORT = 6379;
+static constexpr int NUMBER_OF_ROUNDS = 10;
 
 //------------------------------------------------------------------------------
 static udp::endpoint resolve(asio::io_service& ios, const string& str) {
@@ -106,9 +107,12 @@ struct Server : public Stopable {
   }
 
   void on_connect() {
-    using clock = std::chrono::steady_clock;
+    start_round(0);
+  }
 
-    auto start = clock::now();
+  void start_round(int round_number) {
+    cout << "-------------- round " << round_number << " ---------------" << endl;
+    using clock = std::chrono::steady_clock;
 
     size_t size = 65535;
     vector<uint8_t> data(size);
@@ -120,16 +124,25 @@ struct Server : public Stopable {
     cout << "Sending reliable" << endl;
     socket->send_reliable(move(data));
 
+    auto start = clock::now();
+
     socket->receive_reliable([=](auto error, auto buffer) {
         if (error) {
-          cout << "Error receiving recv ack" << endl;
+          cout << "Error receiving recv ack: " << error.message() << endl;
+          return this->stop();
         }
         using namespace std::chrono;
         auto ms = duration_cast<milliseconds>(clock::now() - start).count();
         cout << "Time elapsed: " << ms << "ms" << endl;
         cout << "Average speed: " << (size / (float(ms) / 1000)) << "Bps" << endl;
-        return this->stop();
-        });
+
+        if (round_number < NUMBER_OF_ROUNDS) {
+          this->start_round(round_number+1);
+        }
+        else {
+          return this->stop();
+        }
+      });
   }
 
   void stop() override {
@@ -177,21 +190,34 @@ struct Client : public Stopable {
 
   void on_connect() {
     cout << "Rendezvous connect success to " << server_ep << endl;
+    start_round(0);
+  }
 
+  void start_round(int round_number) {
+    cout << "-------------- round " << round_number << " ---------------" << endl;
     cout << "Receiving" << endl;
     socket->receive_reliable([=](auto error, auto buffer) {
         if (error) {
           cout << "Error receiving data from server: " << error.message() << endl;
           return this->stop();
         }
-        cout << "Success receiving " << asio::buffer_size(buffer) << " bytes of data" << endl;
+        cout << "Success receiving " << asio::buffer_size(buffer) << " bytes of data " << " " << error.message() << endl;
 
         socket->send_reliable({1});
-        this->stop();
+
+        socket->flush([=]() {
+          if (round_number < NUMBER_OF_ROUNDS) {
+            this->start_round(round_number+1);
+          }
+          else {
+            this->stop();
+          }
+        });
       });
   }
 
   void stop() override {
+    std::cout << "!!!!!!!!!!! stop" << std::endl;
     if (udp_socket.is_open()) udp_socket.close();
     if (socket) socket->close();
     socket.reset();
