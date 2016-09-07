@@ -506,6 +506,7 @@ void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
 inline
 bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
                                          , InMessageFull& msg) {
+  if (!_on_receive_reliable) return false;
   // The callback may hold a shared_ptr to this, so I placed the scope
   // here so that 'f' would get destroyed and thus state->was_destroyed
   // would be relevant in the line below.
