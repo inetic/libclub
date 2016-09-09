@@ -284,6 +284,7 @@ SocketImpl::remote_endpoint() const {
 inline
 SocketImpl::~SocketImpl() {
   _socket_state->was_destroyed = true;
+  close();
 }
 
 //------------------------------------------------------------------------------
