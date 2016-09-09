@@ -67,6 +67,8 @@ public:
     , _data(std::move(payload))
     , _is_dirty(false)
   {
+    // Currently limited to size 65535 because of Header::original_size
+    assert(_data.size() <= std::numeric_limits<uint16_t>::max());
   }
 
   OutMessage(OutMessage&&) = default;
