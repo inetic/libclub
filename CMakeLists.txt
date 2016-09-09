@@ -82,3 +82,21 @@ add_executable(club-chat ${sources})
 target_link_libraries(club-chat ${Boost_LIBRARIES} club)
 
 ################################################################################
+project (transport-speed-bench)
+
+set(Boost_USE_STATIC_LIBS ON)
+find_package(Boost ${BOOST_VERSION} COMPONENTS system program_options REQUIRED)
+find_package(Threads)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread")
+
+include_directories(
+  "${Boost_INCLUDE_DIR}"
+  "${CMAKE_SOURCE_DIR}/include")
+
+file(GLOB sources "${CMAKE_SOURCE_DIR}/demo/transport-speed-bench.cpp")
+
+add_executable(transport-speed-bench ${sources})
+target_link_libraries(transport-speed-bench ${Boost_LIBRARIES} club)
+
+################################################################################
