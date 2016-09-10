@@ -20,7 +20,7 @@
 namespace club { namespace transport {
 
 enum class error {
-  parse_error,
+  parse_error = 1,
   timed_out,
 };
 
