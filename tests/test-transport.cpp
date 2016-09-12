@@ -238,7 +238,7 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
         s1->send_unreliable(std::vector<uint8_t>{4,5,6,7});
         s1->flush(on_flush);
 
-        s2->receive_unreliable([&](auto err, auto b) {
+        s2->receive_unreliable([&, on_all_recv](auto err, auto b) {
           ++test_count;
           BOOST_REQUIRE(!err);
           BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({4,5,6,7}));
