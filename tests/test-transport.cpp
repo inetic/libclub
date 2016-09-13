@@ -83,9 +83,12 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_message) {
         c();
       }));
 
-      s1->send_unreliable(std::vector<uint8_t>{0,1,2,3});
+      auto on_flush = when_all.make_continuation();
 
-      s1->flush(when_all.make_continuation());
+      s1->send_unreliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+          BOOST_REQUIRE(!err);
+          s1->flush(on_flush);
+        });
 
       when_all.on_complete([s1, s2]() {
           s1->close();
@@ -118,9 +121,13 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_one_big_message) {
         c();
       }));
 
-      s1->send_unreliable(big_message);
+      auto on_flush = when_all.make_continuation();
 
-      s1->flush(when_all.make_continuation());
+      s1->send_unreliable(big_message, [=](auto err) {
+          BOOST_REQUIRE(!err);
+          s1->flush(on_flush);
+        });
+
 
       when_all.on_complete([&, s1, s2]() {
           ++counter;
@@ -157,10 +164,16 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages) {
           });
     });
 
-    s1->send_unreliable(std::vector<uint8_t>{0,1,2,3});
-    s1->send_unreliable(std::vector<uint8_t>{4,5,6,7});
+    auto on_flush = when_all.make_continuation();
 
-    s1->flush(when_all.make_continuation());
+    s1->send_unreliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+        BOOST_REQUIRE(!err);
+        s1->send_unreliable(std::vector<uint8_t>{4,5,6,7}, [=](auto err) {
+            BOOST_REQUIRE(!err);
+            s1->flush(on_flush);
+          });
+      });
+
 
     when_all.on_complete([s1, s2, &test_count]() {
         ++test_count;
@@ -200,11 +213,18 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_many_messages) {
         });
       });
 
-      for (uint8_t i = 0; i < N; ++i) {
-        s1->send_unreliable(std::vector<uint8_t>{i});
-      }
+      auto on_flush = when_all.make_continuation();
 
-      s1->flush(when_all.make_continuation());
+      async_loop([=](unsigned int i, auto cont) {
+          if (i == N) {
+            return s1->flush(on_flush);
+          }
+
+          s1->send_unreliable(std::vector<uint8_t>{uint8_t(i)}, [=](auto err) {
+              BOOST_REQUIRE(!err);
+              cont();
+            });
+        });
 
       when_all.on_complete([s1, s2, &test_count]() {
           ++test_count;
@@ -235,8 +255,10 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
         BOOST_REQUIRE(!err);
         BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
 
-        s1->send_unreliable(std::vector<uint8_t>{4,5,6,7});
-        s1->flush(on_flush);
+        s1->send_unreliable(std::vector<uint8_t>{4,5,6,7}, [=](auto err) {
+            BOOST_REQUIRE(!err);
+            s1->flush(on_flush);
+          });
 
         s2->receive_unreliable([&, on_all_recv](auto err, auto b) {
           ++test_count;
@@ -246,7 +268,9 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_two_messages_causal) {
         });
       });
 
-      s1->send_unreliable(std::vector<uint8_t>{0,1,2,3});
+      s1->send_unreliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+          BOOST_REQUIRE(!err);
+        });
 
       when_all.on_complete([s1, s2, &test_count]() {
           ++test_count;
@@ -270,21 +294,26 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_exchange) {
     WhenAll when_all;
 
     s1->receive_unreliable(when_all.make_continuation([&, s1](auto c, auto err, auto b) {
-      ++test_count;
-      BOOST_REQUIRE(!err);
-      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({2,3,4,5}));
-      s1->flush(c);
-    }));
+        ++test_count;
+        BOOST_REQUIRE(!err);
+        BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({2,3,4,5}));
+        s1->flush(c);
+      }));
 
     s2->receive_unreliable(when_all.make_continuation([&, s2](auto c, auto err, auto b) {
-      ++test_count;
-      BOOST_REQUIRE(!err);
-      BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
-      s2->flush(c);
-    }));
+        ++test_count;
+        BOOST_REQUIRE(!err);
+        BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
+        s2->flush(c);
+      }));
 
-    s1->send_unreliable(std::vector<uint8_t>{0,1,2,3});
-    s2->send_unreliable(std::vector<uint8_t>{2,3,4,5});
+    s1->send_unreliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+        BOOST_REQUIRE(!err);
+      });
+
+    s2->send_unreliable(std::vector<uint8_t>{2,3,4,5}, [=](auto err) {
+        BOOST_REQUIRE(!err);
+      });
 
     when_all.on_complete([s1, s2, &test_count]() {
         ++test_count;
@@ -316,9 +345,12 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_one_message) {
             c();
           }));
 
-      s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
+      auto on_flush = when_all.make_continuation();
 
-      s1->flush(when_all.make_continuation());
+      s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+          s1->flush(on_flush);
+        });
+
       s2->flush(when_all.make_continuation());
 
       when_all.on_complete([s1, s2, &test_count]() {
@@ -357,10 +389,15 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages) {
       });
     });
 
-    s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
-    s1->send_reliable(std::vector<uint8_t>{4,5,6,7});
+    auto on_flush = when_all.make_continuation();
 
-    s1->flush(when_all.make_continuation());
+    s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [=](auto err) {
+        BOOST_REQUIRE(!err);
+        s1->send_reliable(std::vector<uint8_t>{4,5,6,7}, [=](auto err) {
+            BOOST_REQUIRE(!err);
+            s1->flush(on_flush);
+          });
+      });
 
     when_all.on_complete([s1, s2, &test_count]() {
         ++test_count;
@@ -406,11 +443,18 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_big_messages) {
       });
     });
 
-    for (size_t i = 0; i < N; ++i) {
-      s1->send_reliable(message);
-    }
+    auto on_flush = when_all.make_continuation();
 
-    s1->flush(when_all.make_continuation());
+    async_loop([=](auto i, auto cont) {
+        if (i == N) {
+          return s1->flush(on_flush);
+        }
+
+        s1->send_reliable(message, [=](auto err) {
+            BOOST_REQUIRE(!err);
+            cont();
+          });
+      });
 
     when_all.on_complete([s1, s2, &test_count]() {
         ++test_count;
@@ -440,8 +484,10 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
       BOOST_REQUIRE(!err);
       BOOST_REQUIRE_EQUAL(buf_to_vector(b), vector<uint8_t>({0,1,2,3}));
 
-      s1->send_reliable(std::vector<uint8_t>{4,5,6,7});
-      s1->flush(on_s1_flush);
+      s1->send_reliable(std::vector<uint8_t>{4,5,6,7}, [=](auto err) {
+          BOOST_REQUIRE(!err);
+          s1->flush(on_s1_flush);
+        });
 
       s2->receive_reliable([=, &test_count](auto err, auto b) {
         ++test_count;
@@ -451,7 +497,9 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
       });
     });
 
-    s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
+    s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [s1](auto err) {
+        BOOST_REQUIRE(!err);
+      });
 
     when_all.on_complete([=, &test_count]() {
         ++test_count;
@@ -500,14 +548,21 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
       });
     });
 
-    for (uint8_t i = 0; i < N; ++i) {
-      if (std::rand() % 2) {
-        s1->send_reliable(std::vector<uint8_t>{0, i});
-      }
-      else {
-        s1->send_unreliable(std::vector<uint8_t>{1, i});
-      }
-    }
+    async_loop([=](auto i, auto cont) {
+        if (i == N) {
+          return;
+        }
+
+        auto on_send = [cont, s1](auto err) {
+          BOOST_REQUIRE(!err);
+          cont();
+        };
+
+        if (std::rand() % 2)
+          s1->send_reliable(std::vector<uint8_t>{0, uint8_t(i)}, on_send);
+        else
+          s1->send_unreliable(std::vector<uint8_t>{1, uint8_t(i)}, on_send);
+      });
   });
 
   ios.run();
@@ -549,7 +604,9 @@ BOOST_AUTO_TEST_CASE(test_transport_timeout) {
         });
     });
 
-    s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
+    s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [s1](auto err) {
+        BOOST_REQUIRE(!err);
+      });
   });
 
   ios.run();
@@ -590,7 +647,9 @@ BOOST_AUTO_TEST_CASE(test_transport_close) {
         });
     });
 
-    s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
+    s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [s1](auto err) {
+        BOOST_REQUIRE(!err);
+      });
   });
 
   ios.run();
@@ -638,7 +697,9 @@ BOOST_AUTO_TEST_CASE(test_transport_keepalive) {
         });
     });
 
-    s1->send_reliable(std::vector<uint8_t>{0,1,2,3});
+    s1->send_reliable(std::vector<uint8_t>{0,1,2,3}, [s1](auto err) {
+        BOOST_REQUIRE(!err);
+      });
   });
 
   ios.run();

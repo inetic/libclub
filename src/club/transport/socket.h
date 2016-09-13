@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <array>
+#include <queue>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <transport/transmit_queue.h>
@@ -38,6 +39,7 @@ public:
 
   using OnReceive = std::function<void( const boost::system::error_code&
                                       , boost::asio::const_buffer )>;
+  using OnSend = std::function<void(const boost::system::error_code&)>;
   using OnFlush = std::function<void()>;
 
 private:
@@ -82,8 +84,8 @@ public:
 
   void receive_unreliable(OnReceive);
   void receive_reliable(OnReceive);
-  void send_unreliable(std::vector<uint8_t>);
-  void send_reliable(std::vector<uint8_t>);
+  void send_unreliable(std::vector<uint8_t>, OnSend);
+  void send_reliable(std::vector<uint8_t>, OnSend);
   void flush(OnFlush);
   void close();
 
@@ -181,6 +183,7 @@ private:
 
   OnReceive _on_receive_reliable;
   OnReceive _on_receive_unreliable;
+  std::queue<OnSend> _on_send;
 
   OnFlush _on_flush;
 
@@ -306,14 +309,16 @@ void SocketImpl::receive_reliable(OnReceive on_recv) {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::send_unreliable(std::vector<uint8_t> data) {
+void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
+  _on_send.push(std::move(on_send));
   add_message(false, MessageType::unreliable, _next_unreliable_sn++, std::move(data));
   start_sending(_socket_state);
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::send_reliable(std::vector<uint8_t> data) {
+void SocketImpl::send_reliable(std::vector<uint8_t> data, OnSend on_send) {
+  _on_send.push(std::move(on_send));
   add_message(true, MessageType::reliable, _next_reliable_sn++, std::move(data));
   start_sending(_socket_state);
 }
@@ -661,11 +666,27 @@ void SocketImpl::on_send( const boost::system::error_code& error
 
   _send_state = SendState::pending;
 
-  if (error) {
-    if (error == boost::asio::error::operation_aborted) {
-      return;
+  auto exec_on_send = [=]() {
+    auto fs = move(_on_send);
+    while (!fs.empty()) {
+      auto f = std::move(fs.front());
+      f(error);
+      if (!state->was_destroyed) {
+        if (_qos.next_packet_max_size() == 0) {
+          break;
+        }
+      }
+      fs.pop();
     }
-    assert(0);
+  };
+
+  if (error) {
+    assert(error == boost::asio::error::operation_aborted);
+    return exec_on_send();
+  }
+
+  if (_qos.next_packet_max_size() != 0) {
+    exec_on_send();
   }
 
   start_sending(move(state));
@@ -867,12 +888,14 @@ public:
     _impl->receive_reliable(std::move(_1));
   }
 
-  void send_unreliable(std::vector<uint8_t> _1) {
-    _impl->send_unreliable(std::move(_1));
+  template<class OnSend>
+  void send_unreliable(std::vector<uint8_t> _1, OnSend&& on_send) {
+    _impl->send_unreliable(std::move(_1), std::forward<OnSend>(on_send));
   }
 
-  void send_reliable(std::vector<uint8_t> _1) {
-    _impl->send_reliable(std::move(_1));
+  template<class OnSend>
+  void send_reliable(std::vector<uint8_t> _1, OnSend&& on_send) {
+    _impl->send_reliable(std::move(_1), std::forward<OnSend>(on_send));
   }
 
   void flush(OnFlush _1) {

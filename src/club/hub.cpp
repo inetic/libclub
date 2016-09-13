@@ -110,12 +110,51 @@ hub::hub(boost::asio::io_service& ios)
 }
 
 // -----------------------------------------------------------------------------
+template<class Handler>
+void reliable_exchange( std::vector<uint8_t> data
+                      , club::transport::Socket& socket
+                      , Handler handler) {
+  using boost::system::error_code;
+  using club::transport::Socket;
+
+  struct State {
+    Socket& socket;
+    boost::asio::const_buffer buffer;
+    boost::optional<error_code> first_error;
+
+    State(Socket& socket) : socket(socket) {}
+  };
+
+  auto state = std::make_shared<State>(socket);
+
+  state->socket.send_reliable(move(data), [=](auto error) {
+      if (state->first_error) {
+        handler(*state->first_error, state->buffer);
+      }
+      else {
+        state->first_error = error;
+        if (error) state->socket.close();
+      }
+    });
+
+  state->socket.receive_reliable([=](auto error, auto buffer) {
+      state->buffer = buffer;
+
+      if (state->first_error) {
+        handler(*state->first_error, state->buffer);
+      }
+      else {
+        state->first_error = error;
+        if (error) state->socket.close();
+      }
+    });
+}
+
+// -----------------------------------------------------------------------------
 void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
   using boost::asio::buffer;
   using namespace boost::asio::error;
 
-  // Even though Socket is movable, asio makes copies of the handlers, thus
-  // causing compilation errors because Sockets aren't copyable.
   auto socket = make_shared<Socket>(move(xsocket));
 
   static const size_t buffer_size = sizeof(NET_PROTOCOL_VERSION) + sizeof(_id);
@@ -128,12 +167,9 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
 
   LOG("fusing ", _nodes | map_keys);
 
-  socket->send_reliable(e.move_data());
-
-  // TODO: Add timeout for this operation.
-  socket->receive_reliable([this, socket, on_fused, was_destroyed]
+  reliable_exchange(e.move_data(), *socket,
+      [this, socket, on_fused, was_destroyed]
       (error_code error, boost::asio::const_buffer buffer) {
-
         if (*was_destroyed) return;
 
         auto fusion_failed = [&](error_code error, const char* /*msg*/) {
@@ -187,6 +223,14 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
 
         commit_what_was_seen_by_everyone();
       });
+
+  //socket->send_reliable(e.move_data(), [](auto) { assert(0 && "TODO"); });
+
+  //// TODO: Add timeout for this operation.
+  //socket->receive_reliable([this, socket, on_fused, was_destroyed]
+  //    (error_code error, boost::asio::const_buffer buffer) {
+
+  //    });
 }
 
 // -----------------------------------------------------------------------------
@@ -645,7 +689,7 @@ void hub::unreliable_broadcast(Bytes payload, std::function<void()> handler) {
 
     const_buffer b(bytes->data(), bytes->size());
 
-    node.send_unreliable(b, [counter, bytes, handler]() {
+    node.send_unreliable(b, [counter, bytes, handler](auto /* error */) {
         if (--(*counter) == 0) handler();
       });
   }
@@ -681,7 +725,7 @@ void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
 
     node->send_unreliable( const_buffer( shared_bytes->data()
                                        , shared_bytes->size() )
-                         , [shared_bytes]() {});
+                         , [shared_bytes](auto /* error */) {});
   }
 
   on_receive_unreliable(source, const_buffer(d.current() + 4, d.size() - 4));

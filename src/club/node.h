@@ -113,32 +113,34 @@ struct Node {
     if (is(ConnectState::disconnected)) return;
     // TODO: Socket should take asio::const_buffer as an argument
     // and a callback to preserve it's lifetime
-    _shared_state->socket->send_reliable(*data);
-    //send_front();
+    auto state = _shared_state;
+    _shared_state->socket->send_reliable(*data, [=](auto error) {
+        if (state->was_destroyed) return;
+        if (error) {
+          return this->on_socket_error("unreliable recv", error);
+        }
+      });
   }
 
   template<class Handler>
   void send_unreliable(boost::asio::const_buffer b, Handler handler) {
     if (!is(ConnectState::connected)) {
-      // TODO: Should post the handler to io_service.
-      ASSERT(0);
-      return;
+      return _shared_state->socket->get_io_service().post([handler]() {
+          handler(boost::asio::error::broken_pipe);
+        });
     }
 
     auto state = _shared_state;
 
     // TODO: Don't copy data
-    // TODO: Socket should tell us when it's OK to call the handler
-    //       (to indicate more data can be sent).
     auto begin = boost::asio::buffer_cast<const uint8_t*>(b);
     std::vector<uint8_t> data( begin
                              , begin + boost::asio::buffer_size(b));
-    _shared_state->socket->send_unreliable(std::move(data));
-    _shared_state->socket->get_io_service()
-      .post([state, handler]() {
-          if (state->was_destroyed) return;
-          handler();
-        });
+
+    _shared_state->socket->send_unreliable(std::move(data), [=](auto error) {
+        if (state->was_destroyed) return;
+        handler(error);
+      });
   }
 
   Address address() const {
