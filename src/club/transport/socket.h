@@ -104,6 +104,15 @@ public:
     return _socket.get_io_service();
   }
 
+  async::alarm::duration keepalive_period() const {
+    return _keepalive_period;
+  }
+
+  void keepalive_period(async::alarm::duration d) {
+    _keepalive_period = d;
+    _send_keepalive_alarm.start(_keepalive_period);
+  }
+
 private:
   void handle_error(const boost::system::error_code&);
 
@@ -143,10 +152,6 @@ private:
   void on_recv_timeout_alarm();
   void on_send_keepalive_alarm(SocketStatePtr);
 
-  async::alarm::duration keepalive_period() const {
-    return std::chrono::milliseconds(500);
-  }
-
   size_t encode_payload(binary::encoder& encoder);
   bool encode_acks(binary::encoder& encoder);
   void decode_acks(binary::decoder& decoder);
@@ -165,11 +170,11 @@ private:
     SequenceNumber last_used_unreliable_sn;
   };
 
+  async::alarm::duration           _keepalive_period = std::chrono::milliseconds(500);
   SendState                        _send_state;
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
   TransmitQueue                    _transmit_queue;
-  boost::asio::steady_timer        _timer;
   SocketStatePtr                   _socket_state;
   // If this is not set, then we haven't yet received sync
   boost::optional<Sync>            _sync;
@@ -200,7 +205,6 @@ inline
 SocketImpl::SocketImpl(boost::asio::io_service& ios)
   : _send_state(SendState::pending)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
-  , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
   , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
@@ -211,7 +215,6 @@ inline
 SocketImpl::SocketImpl(udp::socket udp_socket)
   : _send_state(SendState::pending)
   , _socket(std::move(udp_socket))
-  , _timer(_socket.get_io_service())
   , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
   , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
@@ -268,6 +271,7 @@ void SocketImpl::rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connec
     _transmit_queue.insert(std::move(syn_message));
     start_sending(_socket_state);
     start_receiving(_socket_state);
+    _send_keepalive_alarm.start(_keepalive_period);
     return on_connect(error);
   };
 
@@ -351,7 +355,6 @@ inline void SocketImpl::flush(OnFlush on_flush) {
 
 //------------------------------------------------------------------------------
 inline void SocketImpl::close() {
-  _timer.cancel();
   if (_socket.is_open()) {
     sync_send_close_message();
     _socket.close();
@@ -629,7 +632,7 @@ void SocketImpl::start_sending(SocketStatePtr state) {
       if (state->was_destroyed) return;
       if (!_socket.is_open()) return;
     }
-    _send_keepalive_alarm.start(keepalive_period());
+    _send_keepalive_alarm.start(_keepalive_period);
     return;
   }
 
@@ -917,6 +920,15 @@ public:
   boost::asio::io_service& get_io_service() {
     return _impl->get_io_service();
   }
+
+  async::alarm::duration keepalive_period() const {
+    return _impl->keepalive_period();
+  }
+
+  void keepalive_period(async::alarm::duration d) {
+    _impl->keepalive_period(d);
+  }
+
 };
 
 }} // club::transport namespace

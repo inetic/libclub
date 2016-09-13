@@ -571,11 +571,16 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
 
 //------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_timeout) {
+  using namespace std::chrono_literals;
+
   asio::io_service ios;
 
   unsigned count = 0;
 
   make_connected_sockets(ios, [&count](SocketPtr s1, SocketPtr s2) {
+
+    s1->keepalive_period(20ms);
+    s2->keepalive_period(20ms);
 
     s1->receive_reliable([&, s1](auto err, auto) {
       ++count;
@@ -659,12 +664,17 @@ BOOST_AUTO_TEST_CASE(test_transport_close) {
 
 //------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_keepalive) {
+  using namespace std::chrono_literals;
+
   asio::io_service ios;
 
   unsigned count = 0;
   asio::steady_timer timer(ios);
 
   make_connected_sockets(ios, [&](SocketPtr s1, SocketPtr s2) {
+    s1->keepalive_period(20ms);
+    s2->keepalive_period(20ms);
+
     s1->receive_reliable([&, s1](auto err, auto) {
       ++count;
       BOOST_REQUIRE_EQUAL(err, asio::error::operation_aborted);
