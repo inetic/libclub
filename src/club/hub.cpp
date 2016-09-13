@@ -32,7 +32,7 @@
 #include "broadcast_routing_table.h"
 #include "log.h"
 #include "seen_messages.h"
-#include "transport/socket.h"
+#include <club/socket.h>
 
 using namespace club;
 
@@ -112,10 +112,10 @@ hub::hub(boost::asio::io_service& ios)
 // -----------------------------------------------------------------------------
 template<class Handler>
 void reliable_exchange( std::vector<uint8_t> data
-                      , club::transport::Socket& socket
+                      , club::Socket& socket
                       , Handler handler) {
   using boost::system::error_code;
-  using club::transport::Socket;
+  using club::Socket;
 
   struct State {
     Socket& socket;

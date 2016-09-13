@@ -18,6 +18,8 @@
 #include <boost/variant.hpp>
 #include "overload.h"
 
+namespace club {
+
 ////////////////////////////////////////////////////////////////////////////////
 // This is apply_visitor from boost::variant, but this one accepts the
 // variant object via const reference. This seems to be missing in the
@@ -90,5 +92,6 @@ match(V& variant, F... f) {
   return apply_visitor(detail::MatchWrapper<V, F...>(f...), variant);
 }
 
+} // club namespace
 
 #endif // CLUB_VARIANT_TOOLS_H

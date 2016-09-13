@@ -16,14 +16,15 @@
 #include <boost/test/unit_test.hpp>
 
 #include <iostream>
-#include <transport/part_info.h>
-#include <debug/string_tools.h>
+#include <club/transport/part_info.h>
+#include <club/debug/string_tools.h>
 
 using PartInfo = club::transport::PartInfo;
 using std::vector;
 using std::pair;
 using std::cout;
 using std::endl;
+using club::str;
 
 using PartV = std::vector<pair<size_t, size_t>>;
 

@@ -18,15 +18,15 @@
 #include <set>
 #include <club/uuid.h>
 #include <binary/encoder.h>
-#include "generic/variant_tools.h"
-#include "transport/sequence_number.h"
-#include "transport/message_type.h"
-#include "transport/ack_set.h"
-#include "transport/in_message_part.h"
-#include "transport/pending_message.h"
+#include <club/generic/variant_tools.h>
+#include <club/transport/sequence_number.h>
+#include <club/transport/message_type.h>
+#include <club/transport/ack_set.h>
+#include <club/transport/in_message_part.h>
+#include <club/transport/pending_message.h>
 
 #include <club/debug/ostream_uuid.h>
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 
 namespace club { namespace transport {
 

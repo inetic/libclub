@@ -12,30 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CLUB_TRANSPORT_SOCKET_H
-#define CLUB_TRANSPORT_SOCKET_H
+#ifndef CLUB_SOCKET_H
+#define CLUB_SOCKET_H
 
 #include <iostream>
 #include <array>
 #include <queue>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/ip/udp.hpp>
-#include <transport/transmit_queue.h>
+#include <club/transport/transmit_queue.h>
 #include <club/debug/ostream_uuid.h>
-#include <transport/out_message.h>
+#include <club/transport/out_message.h>
 #include <async/alarm.h>
-#include "error.h"
-#include "punch_hole.h"
-#include "quality_of_service.h"
+#include <club/transport/error.h>
+#include <club/transport/punch_hole.h>
+#include <club/transport/quality_of_service.h>
 
-namespace club { namespace transport {
+namespace club {
 
 class SocketImpl {
 private:
   enum class SendState { sending, waiting, pending };
 
 public:
-  static constexpr size_t packet_size = QualityOfService::MSS();
+  static constexpr size_t packet_size = transport::QualityOfService::MSS();
 
   using OnReceive = std::function<void( const boost::system::error_code&
                                       , boost::asio::const_buffer )>;
@@ -62,7 +62,15 @@ private:
   using SocketStatePtr = std::shared_ptr<SocketState>;
 
 public:
-  using TransmitQueue = transport::TransmitQueue<OutMessage>;
+  using TransmitQueue = transport::TransmitQueue<transport::OutMessage>;
+  using OutMessage = transport::OutMessage;
+  using InMessagePart = transport::InMessagePart;
+  using InMessageFull = transport::InMessageFull;
+  using PendingMessage = transport::PendingMessage;
+  using SequenceNumber = transport::SequenceNumber;
+  using AckSet = transport::AckSet;
+  using MessageType = transport::MessageType;
+  using error = transport::error;
 
 public:
   SocketImpl(boost::asio::io_service&);
@@ -128,7 +136,7 @@ private:
               , size_t
               , SocketStatePtr);
 
-  void handle_acks(AckSet);
+  void handle_acks(transport::AckSet);
   void handle_message(SocketStatePtr&, InMessagePart);
 
   bool try_encode(binary::encoder&, OutMessage&) const;
@@ -195,7 +203,7 @@ private:
   async::alarm                     _recv_timeout_alarm;
   async::alarm                     _send_keepalive_alarm;
 
-  QualityOfService _qos;
+  transport::QualityOfService _qos;
 };
 
 //------------------------------------------------------------------------------
@@ -275,7 +283,7 @@ void SocketImpl::rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connec
     return on_connect(error);
   };
 
-  punch_hole(_socket, remote_ep, std::move(packet), std::move(on_punch));
+  transport::punch_hole(_socket, remote_ep, std::move(packet), std::move(on_punch));
 #endif
 }
 
@@ -931,6 +939,6 @@ public:
 
 };
 
-}} // club::transport namespace
+} // namespace
 
-#endif // ifndef CLUB_TRANSPORT_SOCKET_H
+#endif // ifndef CLUB_SOCKET_H

@@ -17,12 +17,12 @@
 
 #include <set>
 #include <club/uuid.h>
-#include "transport/sequence_number.h"
-#include "transport/message_type.h"
-#include "transport/in_message_full.h"
+#include <club/transport/sequence_number.h>
+#include <club/transport/message_type.h>
+#include <club/transport/in_message_full.h>
 
 #include <club/debug/ostream_uuid.h>
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 
 namespace club { namespace transport {
 

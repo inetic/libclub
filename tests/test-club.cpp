@@ -24,14 +24,14 @@
 #include <club/graph.h>
 #include "when_all.h"
 #include "async_loop.h"
-#include "transport/socket.h"
+#include <club/socket.h>
 #include "util/socket.h"
 #include "binary/dynamic_encoder.h"
 #include "binary/decoder.h"
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 
-using Socket = club::transport::Socket;
-using SocketPtr = std::shared_ptr<club::transport::Socket>;
+using Socket = club::Socket;
+using SocketPtr = std::shared_ptr<Socket>;
 using std::cout;
 using std::endl;
 using std::make_shared;
@@ -48,6 +48,7 @@ using HubPtr = unique_ptr<club::hub>;
 using club::uuid;
 using boost::adaptors::indirected;
 using std::function;
+using club::str;
 namespace asio = boost::asio;
 
 // -------------------------------------------------------------------

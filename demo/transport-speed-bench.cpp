@@ -17,8 +17,7 @@
 
 #include <iostream>
 #include <boost/asio.hpp>
-// TODO: no relative paths
-#include "../src/club/transport/socket.h"
+#include <club/socket.h>
 #include <boost/program_options.hpp>
 
 using udp = boost::asio::ip::udp;
@@ -29,7 +28,7 @@ using std::vector;
 using std::cout;
 using std::endl;
 using std::string;
-using ClubSocket = club::transport::Socket;
+using ClubSocket = club::Socket;
 using boost::system::error_code;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -122,7 +121,8 @@ struct Server : public Stopable {
     }
 
     cout << "Sending reliable" << endl;
-    socket->send_reliable(move(data));
+    socket->send_reliable(move(data), [=](auto error) {
+        });
 
     auto start = clock::now();
 
@@ -203,16 +203,21 @@ struct Client : public Stopable {
         }
         cout << "Success receiving " << asio::buffer_size(buffer) << " bytes of data " << " " << error.message() << endl;
 
-        socket->send_reliable({1});
+        socket->send_reliable({1}, [=](auto error) {
+            if (error) {
+              cout << "Error sending ack: " << error.message() << endl;
+              return this->stop();
+            }
+            socket->flush([=]() {
+                if (round_number < NUMBER_OF_ROUNDS) {
+                  this->start_round(round_number+1);
+                }
+                else {
+                  this->stop();
+                }
+              });
+          });
 
-        socket->flush([=]() {
-          if (round_number < NUMBER_OF_ROUNDS) {
-            this->start_round(round_number+1);
-          }
-          else {
-            this->stop();
-          }
-        });
       });
   }
 

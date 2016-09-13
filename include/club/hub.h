@@ -16,6 +16,7 @@
 #define CLUB_HUB_H
 
 #include <map>
+#include <boost/asio.hpp>
 #include <boost/signals2.hpp>
 #include <boost/container/flat_map.hpp>
 #include <binary/decoder.h>
@@ -24,15 +25,12 @@
 #include "club/uuid.h"
 #include "club/node_impl.h"
 
-//#include <club/socket.h>
-//#include "transport/socket.h"
 #include <club/detail/time_stamp.h>
 #include "log.h"
 
 namespace club {
 
-namespace transport { class Socket; }
-
+class Socket;
 struct Node;
 class GetExternalPort;
 class BroadcastRoutingTable;
@@ -54,7 +52,6 @@ private:
   using ID = club::uuid;
   using Bytes = std::vector<char>;
   using Address = boost::asio::ip::address;
-  using Socket = transport::Socket;
 
   typedef boost::asio::io_service::work    Work;
   typedef boost::container::flat_map<uuid, std::unique_ptr<Node>> Nodes;

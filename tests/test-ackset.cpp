@@ -16,13 +16,14 @@
 #include <boost/test/unit_test.hpp>
 
 #include <iostream>
-#include <transport/ack_set.h>
-#include <debug/string_tools.h>
+#include <club/transport/ack_set.h>
+#include <club/debug/string_tools.h>
 
 using AckSet = club::transport::AckSet;
 using std::vector;
 using std::cout;
 using std::endl;
+using club::str;
 
 //------------------------------------------------------------------------------
 vector<uint32_t> acks_to_vector(const AckSet& acks) {

@@ -15,14 +15,14 @@
 #ifndef TEST_UTIL_SOCKET_H
 #define TEST_UTIL_SOCKET_H
 
-#include "transport/socket.h"
+#include <club/socket.h>
 #include "../when_all.h"
 
 // -------------------------------------------------------------------
 template<class Handler>
 void make_connected_sockets(boost::asio::io_service& ios, Handler handler) {
   using std::move;
-  using Socket = club::transport::Socket;
+  using Socket = club::Socket;
 
   auto s1 = std::make_shared<Socket>(ios);
   auto s2 = std::make_shared<Socket>(ios);
@@ -53,7 +53,7 @@ template<class H> void make_n_connected_socket_pairs
                          ( boost::asio::io_service& ios
                          , size_t n
                          , H handler) {
-  using Socket = club::transport::Socket;
+  using Socket = club::Socket;
   using SocketPtr = std::shared_ptr<Socket>;
   using std::vector;
   using std::pair;

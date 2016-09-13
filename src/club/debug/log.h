@@ -18,7 +18,7 @@
 // Logging.
 // #ifndef NDEBUG
 #include "log_output.h"
-#include "string_tools.h"
+#include <club/debug/string_tools.h>
 
 template<typename... Ts>
 void log(const Ts&... args) {

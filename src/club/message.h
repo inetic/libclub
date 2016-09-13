@@ -31,9 +31,9 @@
 #include "serialize/net.h"
 #include "serialize/message_id.h"
 
-#include "generic/variant_tools.h"
+#include <club/generic/variant_tools.h>
 
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 #include "club/debug/ostream_uuid.h"
 
 namespace club {

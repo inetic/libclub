@@ -18,8 +18,8 @@
 #include <boost/asio.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/functional/hash.hpp>
-#include <transport/socket.h>
-#include <debug/string_tools.h>
+#include <club/socket.h>
+#include <club/debug/string_tools.h>
 #include "when_all.h"
 #include "async_loop.h"
 #include "util/socket.h"
@@ -47,9 +47,10 @@ using std::set;
 using std::vector;
 using boost::system::error_code;
 using boost::asio::const_buffer;
+using club::str;
 
 using uuid   = club::uuid;
-using Socket = club::transport::Socket;
+using Socket = club::Socket;
 using SocketPtr = std::shared_ptr<Socket>;
 using udp    = boost::asio::ip::udp;
 

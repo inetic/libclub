@@ -18,8 +18,7 @@
 #include <boost/program_options.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/asio/signal_set.hpp>
-// TODO: no relative paths
-#include "../src/club/transport/socket.h"
+#include <club/socket.h>
 #include <rendezvous/client.h>
 #include <club/hub.h>
 
@@ -33,7 +32,7 @@ using std::unique_ptr;
 using std::make_unique;
 using udp = boost::asio::ip::udp;
 using Error = boost::system::error_code;
-using club::transport::Socket;
+using club::Socket;
 
 namespace po = boost::program_options;
 namespace ip = boost::asio::ip;

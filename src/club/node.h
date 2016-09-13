@@ -17,10 +17,10 @@
 
 #include <map>
 #include <club/uuid.h>
-#include "transport/socket.h"
-#include "club/hub.h"
+#include <club/socket.h>
+#include <club/hub.h>
 #include "message.h"
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 
 #if 0
 #  include "debug/log.h"
@@ -37,7 +37,6 @@ struct Node {
   using Error         = boost::system::error_code;
   using Address       = boost::asio::ip::address;
   using Bytes         = std::vector<uint8_t>;
-  using Socket        = transport::Socket;
   using SocketPtr     = std::shared_ptr<Socket>;
 
   struct SharedState {

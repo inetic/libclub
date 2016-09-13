@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <boost/system/error_code.hpp>
-#include "error.h"
+#include <club/transport/error.h>
 
 namespace club { namespace transport {
 

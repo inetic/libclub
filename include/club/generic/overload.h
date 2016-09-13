@@ -29,7 +29,7 @@
 // f(1.0f) // returns "float"
 //
 
-namespace detail {
+namespace club { namespace detail {
 
 template<typename...>
 struct Overloader;
@@ -53,11 +53,11 @@ struct Overloader<F0, Fs...> : public F0, public Overloader<Fs...>
   using F0::operator ();
 };
 
-} // namespace detail
+}} // namespaces
 
 template<typename... F>
-detail::Overloader<F...> overload(const F&... f) {
-  return detail::Overloader<F...>(f...);
+club::detail::Overloader<F...> overload(const F&... f) {
+  return club::detail::Overloader<F...>(f...);
 }
 
 #endif // CLUB_OVERLOAD_H

@@ -15,9 +15,9 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
-#include <debug/string_tools.h>
+#include <club/debug/string_tools.h>
 #include <iostream>
-#include <transport/transmit_queue.h>
+#include <club/transport/transmit_queue.h>
 
 using std::cout;
 using std::endl;

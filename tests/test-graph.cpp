@@ -17,7 +17,7 @@
 
 #include <iostream>
 #include "club/graph.h"
-#include "debug/string_tools.h"
+#include <club/debug/string_tools.h>
 
 // -------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(graph) {

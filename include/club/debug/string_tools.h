@@ -23,6 +23,8 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/optional.hpp>
 
+namespace club {
+
 // Convert (almost) anything to string.
 template<typename T>
 std::string str(const T& a) {
@@ -143,5 +145,7 @@ std::string str(const boost::optional<T>& a) {
     return "none";
   }
 }
+
+} // club namespace
 
 #endif // CLUB_STRING_TOOLS_H
