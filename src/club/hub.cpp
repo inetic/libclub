@@ -53,18 +53,18 @@ using boost::system::error_code;
 
 namespace ip = boost::asio::ip;
 
-#include "debug/log.h"
+#include <club/debug/log.h>
 
 #define USE_LOG 0
 
 #if USE_LOG
 #  define IF_USE_LOG(a) a
-#  define LOG(...)  log("CLUB: ", _id, " ", __VA_ARGS__)
-#  define LOG_(...) log("CLUB: ", _id, " ", __VA_ARGS__)
+#  define LOG(...)  club::log("CLUB: ", _id, " ", __VA_ARGS__)
+#  define LOG_(...) club::log("CLUB: ", _id, " ", __VA_ARGS__)
 #else
 #  define IF_USE_LOG(a)
 #  define LOG(...) do {} while(0)
-#  define LOG_(...) log("CLUB: ", _id, " ", __VA_ARGS__)
+#  define LOG_(...) club::log("CLUB: ", _id, " ", __VA_ARGS__)
 #endif
 
 // -----------------------------------------------------------------------------

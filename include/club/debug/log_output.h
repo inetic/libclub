@@ -17,8 +17,19 @@
 
 #include <iostream>
 
+namespace club {
+
+#ifndef __ANDROID__
 inline void log(const std::string& s) { 
-  std::cerr << s << std::endl;
+  std::cout << s << std::endl;
 }
+#else
+#include <android/log.h>
+inline void log(const std::string& s) {
+  __android_log_print(ANDROID_LOG_DEBUG, "Club", "%s", s.c_str());
+}
+#endif
+
+} // namespace
 
 #endif // CLUB_LOG_OUTPUT_H

@@ -23,12 +23,12 @@
 #include <club/debug/string_tools.h>
 
 #if 0
-#  include "debug/log.h"
-#  define NODE_LOG(...) log("NODE: ", _debug_hub_id, " ", __VA_ARGS__)
+#  include <club/debug/log.h>
+#  define NODE_LOG(...) club::log("NODE: ", _debug_hub_id, " ", __VA_ARGS__)
 #else
-#  include "debug/log.h"
+#  include <club/debug/log.h>
 #  define NODE_LOG(...) do {} while(0)
-#  define NODE_LOG_(...) log("NODE: ", _debug_hub_id, " ", __VA_ARGS__)
+#  define NODE_LOG_(...) club::log("NODE: ", _debug_hub_id, " ", __VA_ARGS__)
 #endif
 
 namespace club {

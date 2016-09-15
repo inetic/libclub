@@ -16,18 +16,16 @@
 #define CLUB_DEBUG_LOG_H
 
 // Logging.
-// #ifndef NDEBUG
 #include "log_output.h"
 #include <club/debug/string_tools.h>
 
+namespace club {
+
 template<typename... Ts>
 void log(const Ts&... args) {
-  log(str(args...));
+  club::log(str(args...));
 }
 
-// #else
-// template<typename... Ts>
-// void log(const Ts&... args) { }
-// #endif // ifndef NDEBUG
+} // namespace
 
 #endif // CLUB_DEBUG_LOG_H

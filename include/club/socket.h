@@ -27,6 +27,7 @@
 #include <club/transport/error.h>
 #include <club/transport/punch_hole.h>
 #include <club/transport/quality_of_service.h>
+#include <club/debug/log.h>
 
 namespace club {
 
@@ -375,6 +376,7 @@ inline void SocketImpl::close() {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_error(const boost::system::error_code& err) {
+  club::log(time(), " handle error", err.message());
   close();
 
   auto r1 = std::move(_on_receive_unreliable);
