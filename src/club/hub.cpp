@@ -210,10 +210,11 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
           n = &insert_node(his_id, move(socket));
         }
 
-        auto sync = construct<Sync>(his_id);
-        n->send(encode_message(sync));
+        auto fuse_msg = construct_ackable<Fuse>(his_id);
+        broadcast(fuse_msg);
+        add_log_entry(move(fuse_msg));
 
-        LOG("fused with ", his_id, " since ");
+        //LOG_("fused with ", his_id, " ;sent ", sync);
 
         add_connection(this_node(), his_id, n->address());
 
@@ -270,14 +271,6 @@ void hub::on_peer_disconnected(const Node& node, std::string reason) {
 // -----------------------------------------------------------------------------
 void hub::process(Node&, Ack msg) {
   _log->apply_ack(original_poster(msg), move(msg.ack_data));
-}
-
-// -----------------------------------------------------------------------------
-void hub::process(Node& op, Sync msg) {
-  auto fuse_msg = construct_ackable<Fuse>(original_poster(msg));
-  
-  broadcast(fuse_msg);
-  add_log_entry(move(fuse_msg));
 }
 
 // -----------------------------------------------------------------------------
@@ -422,10 +415,7 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) 
 
   ON_RECV_LOG(msg);
 
-  // Sync messages are direct between two peers.
-  if (Message::type() != sync) {
-    broadcast(msg);
-  }
+  broadcast(msg);
 
   if (destroys_this([&]() { process(*op, move(msg)); })) {
     return;
@@ -453,7 +443,6 @@ void hub::on_recv_raw(Node& proxy, boost::asio::const_buffer& buffer) {
 
   switch (msg_type) {
     case ::club::fuse:    parse_message<Fuse>          (proxy, decoder); break;
-    case sync:            parse_message<Sync>          (proxy, decoder); break;
     case port_offer:      parse_message<PortOffer>     (proxy, decoder); break;
     case user_data:       parse_message<UserData>      (proxy, decoder); break;
     case ack:             parse_message<Ack>           (proxy, decoder); break;

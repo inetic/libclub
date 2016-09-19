@@ -35,7 +35,6 @@ struct Node;
 class GetExternalPort;
 class BroadcastRoutingTable;
 struct Fuse;
-struct Sync;
 struct PortOffer;
 struct UserData;
 struct Ack;
@@ -99,7 +98,6 @@ private:
   template<class Message> void parse_message(Node&, binary::decoder&);
 
   void process(Node&, Fuse);
-  void process(Node&, Sync);
   void process(Node&, PortOffer);
   void process(Node&, UserData);
   void process(Node&, Ack);

@@ -44,7 +44,6 @@ static const size_t MAX_DATAGRAM_SIZE = 5*1024*1024;
 
 enum MessageType
       { fuse
-      , sync
       , port_offer
       , user_data
       , ack // NOTE: Must be last for the below decoding to work.
@@ -65,7 +64,6 @@ inline
 std::ostream& operator<<(std::ostream& os, MessageType mt) {
   switch (mt) {
     case fuse:            os << "fuse";             break;
-    case sync:            os << "sync";             break;
     case port_offer:      os << "port_offer";       break;
     case user_data:       os << "user_data";        break;
     case ack:             os << "ack";              break;
@@ -120,39 +118,6 @@ inline void decode(binary::decoder& d, AckData& msg) {
   msg.acked_message_id = d.get<MessageId>();
   msg.prev_message_id  = d.get<MessageId>();
   msg.local_quorum     = d.get<decltype(msg.local_quorum)>(MAX_NODE_COUNT);
-}
-
-//------------------------------------------------------------------------------
-struct Sync {
-  static MessageType type() { return sync; }
-  static bool always_ack()   { return false; }
-
-  Header header;
-  uuid   with; // The other node with whom the original_poster is syncing.
-
-  Sync() {}
-  Sync(Header header, uuid with)
-    : header(std::move(header))
-    , with(with)
-  {}
-};
-
-template<typename Encoder>
-inline void encode(Encoder& e, const club::Sync& msg) {
-    e.template put(msg.header);
-    e.template put(msg.with);
-}
-
-inline void decode(binary::decoder& d, club::Sync& msg) {
-  msg.header = d.get<Header>();
-  msg.with   = d.get<uuid>();
-}
-
-inline std::ostream& operator<<(std::ostream& os, const Sync& msg) {
-  os << "(Sync " << msg.header
-     << " With:" << msg.with
-     << ")";
-  return os;
 }
 
 //------------------------------------------------------------------------------
