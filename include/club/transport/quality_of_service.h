@@ -15,6 +15,9 @@
 #ifndef CLUB_TRANSPORT_QUALITY_OF_SERVICE_H
 #define CLUB_TRANSPORT_QUALITY_OF_SERVICE_H
 
+#include <club/debug/log.h>
+#include <club/transport/ack_set.h>
+
 namespace club { namespace transport {
 
 // Nomenclature partly used from here LEBDAT specification:
@@ -26,8 +29,8 @@ class QualityOfService {
 
 public:
   // Sender Maximum Segment Size
-  static constexpr size_t MSS() { return 1452; }
-  static constexpr size_t MIN_CWND() { return 2; }
+  static constexpr int32_t MSS() { return 1452; }
+  static constexpr int32_t MIN_CWND() { return 2; }
 
 public:
   size_t next_packet_max_size() const;
@@ -41,6 +44,7 @@ public:
   // header always contains and increments the sequence number. But
   // if only acks are sent then the sequence number must not be
   // incremented (because acks are not acked).
+  size_t encoded_acks_size() const;
   void encode_acks(binary::encoder&);
   void decode_acks(binary::decoder&);
 
@@ -49,12 +53,17 @@ public:
 
   const std::set<uint32_t>& acks() const { return _acks; }
 
-  uint32_t bytes_in_flight() const;
+  int32_t bytes_in_flight() const;
+  void clear_in_flight_info() { _in_flight.clear(); }
+
+  size_t cwnd() const { return _cwnd; }
 
 private:
   uint64_t time_since_start_mks() const;
 
 private:
+  friend std::ostream& operator<<(std::ostream&, const QualityOfService&);
+
   static constexpr int64_t invalid_ts = std::numeric_limits<int64_t>::max();
 
   const clock::time_point _time_started = clock::now();
@@ -62,14 +71,20 @@ private:
   int64_t _base_delay = invalid_ts;
   int32_t _next_seq_nr = 0;
   int32_t _ack_nr = 0;
-  size_t _cwnd = MIN_CWND() * MSS();
-  size_t _size_last_sent;
+  int32_t _cwnd = MIN_CWND() * MSS();
   float _bytes_newly_acked = 0;
+  int64_t _bytes_sent_total = 0;
+  boost::optional<uint32_t> _last_received_ack;
+
+  struct PacketInfo {
+    uint32_t size;
+    int64_t bytes_sent;
+  };
 
   //          +--> seq_num
-  //          |         +--> size
-  //          |         |
-  std::map<uint32_t, uint32_t> _in_flight;
+  //          |
+  //          |
+  std::map<uint32_t, PacketInfo> _in_flight;
   std::set<uint32_t> _acks;
 };
 
@@ -83,11 +98,16 @@ QualityOfService::time_since_start_mks() const {
 }
 
 //--------------------------------------------------------------------
-inline uint32_t
+inline int32_t
 QualityOfService::bytes_in_flight() const {
   uint32_t retval = 0;
-  for (auto p : _in_flight) retval += p.second;
+  for (auto p : _in_flight) retval += p.second.size;
   return retval;
+}
+
+//--------------------------------------------------------------------
+inline size_t QualityOfService::encoded_acks_size() const {
+  return 2 + _acks.size() * 4;
 }
 
 //--------------------------------------------------------------------
@@ -103,15 +123,35 @@ inline void QualityOfService::encode_acks(binary::encoder& e) {
 inline void QualityOfService::decode_acks(binary::decoder& d) {
   _bytes_newly_acked = 0;
 
+  bool data_loss_detected = false;
+
   auto count = d.get<uint16_t>();
   for (uint16_t _i = 0; _i < count; ++_i) {
     auto sn = d.get<uint32_t>();
     assert(!d.error());
+
+    if (_last_received_ack) {
+      if (sn != *_last_received_ack + 1) {
+        data_loss_detected = true;
+
+        for (auto j = _in_flight.begin(); j != _in_flight.end();) {
+          if (j->first >= sn) break;
+          j = _in_flight.erase(j);
+        }
+      }
+    }
+    _last_received_ack = sn;
+
     auto i = _in_flight.find(sn);
     if (i != _in_flight.end()) {
-      _bytes_newly_acked += i->second;
+      _bytes_newly_acked += i->second.size;
       _in_flight.erase(i);
     }
+  }
+
+  //std::cout << "-----------------------" << std::endl;
+  if (data_loss_detected) {
+    _cwnd = std::min(_cwnd, std::max(_cwnd/2, MIN_CWND() * MSS()));
   }
 }
 
@@ -128,6 +168,7 @@ QualityOfService::header_size() const {
 inline size_t
 QualityOfService::next_packet_max_size() const {
   auto diff = _cwnd - bytes_in_flight();
+  if (diff <= 0) return 0;
   auto ret = std::min(MSS(), diff);
   return ret;
 }
@@ -137,9 +178,9 @@ inline
 void QualityOfService::encode_header(binary::encoder& e, size_t packet_size) {
   using namespace std::chrono;
 
-  auto seq_nr = _next_seq_nr++;
+  _bytes_sent_total += packet_size;
 
-  _size_last_sent = packet_size;
+  auto seq_nr = _next_seq_nr++;
 
   auto now = time_since_start_mks();
 
@@ -147,7 +188,8 @@ void QualityOfService::encode_header(binary::encoder& e, size_t packet_size) {
     = _last_recv_packet_time != invalid_ts ? now - _last_recv_packet_time
                                            : invalid_ts;
 
-  _in_flight[seq_nr] = _size_last_sent;
+  _in_flight[seq_nr] = PacketInfo{ uint32_t(packet_size)
+                                 , _bytes_sent_total };
 
   e.put(now);
   e.put(timestamp_difference_mks);
@@ -192,11 +234,19 @@ void QualityOfService::decode_header(binary::decoder& d) {
   auto scaled_gain = GAIN * off_target * window_factor;
   auto max_allowed_cwnd = flight_size + ALLOWED_INCREASE * MSS();
 
+  //club::log(">>> our_delay: ", our_delay);
   _cwnd = std::min(_cwnd + scaled_gain, max_allowed_cwnd);
   _cwnd = std::max<decltype(_cwnd)>(_cwnd, MIN_CWND() * MSS());
 }
 
 //--------------------------------------------------------------------
+inline std::ostream& operator<<(std::ostream& os, const QualityOfService& qos) {
+  os << "(in_flight: " << qos.bytes_in_flight()
+                       << " cwnd:" << qos._cwnd
+                       << " in_flight.size:" << qos._in_flight.size()
+                       << ")";
+  return os;
+}
 
 }} // namespaces
 

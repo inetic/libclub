@@ -391,6 +391,8 @@ template<class Message> void hub::on_recv(Node& IF_USE_LOG(proxy), Message msg) 
   auto op_id = original_poster(msg);
   auto op = find_node(op_id);
 
+  //LOG_("Received ", msg);
+  //debug("received: ", msg);
   if (_seen->is_in(message_id(msg))) {
     ON_RECV_LOG(msg, " (ignored: already seen ", message_id(msg), ")");
     return;
@@ -567,10 +569,15 @@ void hub::add_log_entry(Message message) {
 
   if(message_id(message) <= _log->last_committed) {
     if (Message::type() != ::club::fuse) {
-      LOG("!!! message_id(message) should be > than _log.last_committed");
-      LOG("!!! message_id(message) = ", message_id(message));
-      LOG("!!! _log.last_committed   = ", _log->last_committed);
+      LOG_("!!! message_id(message) should be > than _log.last_committed");
+      LOG_("!!! message_id(message) = ", message_id(message));
+      LOG_("!!! _log.last_committed   = ", _log->last_committed);
+
+      for (const auto& d : debug_log) {
+        LOG_("!!!   ", d);
+      }
       ASSERT(0);
+      return;
     }
   }
 
@@ -632,7 +639,7 @@ Ack hub::construct_ack(const MessageId& msg_id) {
 
 //------------------------------------------------------------------------------
 template<class Message> void hub::broadcast(const Message& msg) {
-  LOG("Broadcasting: ", msg);
+  //debug("broadcasting: ", msg);
 
   auto data = encode_message(msg);
 
@@ -912,3 +919,23 @@ void hub::commit_fuse(LogEntry&& entry) {
   on_commit_fuse(move(entry));
 }
 // -----------------------------------------------------------------------------
+template<class T>
+inline
+void debug_(std::stringstream& os, std::list<std::string>& debug_log, T&& arg) {
+  os << arg;
+  debug_log.push_back(os.str());
+}
+
+template<class T, class... Ts>
+inline
+void debug_(std::stringstream& os, std::list<std::string>& debug_log, T&& arg, Ts&&... args) {
+  os << arg;
+  debug_(os, debug_log, std::forward<Ts>(args)...);
+}
+
+template<class... Ts>
+inline
+void hub::debug(Ts&&... args) {
+  std::stringstream ss;
+  debug_(ss, debug_log, std::forward<Ts>(args)...);
+}

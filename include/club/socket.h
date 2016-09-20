@@ -44,6 +44,7 @@ public:
   using OnFlush = std::function<void()>;
 
 private:
+  using clock = std::chrono::steady_clock;
   using udp = boost::asio::ip::udp;
 
   struct SocketState {
@@ -106,7 +107,7 @@ public:
   // close shall be called and handler shall execute with timed_out
   // error.
   async::alarm::duration recv_timeout_duration() const {
-    return keepalive_period() * 10;
+    return keepalive_period() * 45;
   }
 
   boost::asio::io_service& get_io_service() {
@@ -171,6 +172,18 @@ private:
   construct_packet_with_one_message(OutMessage& m);
 
   static udp::endpoint sanitize_address(udp::endpoint);
+
+  uint64_t time() const {
+    using namespace std::chrono;
+    auto t = clock::now().time_since_epoch();
+    return duration_cast<milliseconds>(t).count();
+  }
+
+  void exec_on_send_handlers(boost::system::error_code);
+  bool can_exec_on_send_handlers() const;
+
+  template<class... Ts> void print(Ts&&...) const;
+
 private:
   using PendingMessages = std::map<SequenceNumber, PendingMessage>;
 
@@ -179,10 +192,12 @@ private:
     SequenceNumber last_used_unreliable_sn;
   };
 
+  boost::asio::strand              _strand;
   async::alarm::duration           _keepalive_period = std::chrono::milliseconds(500);
   SendState                        _send_state;
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
+  size_t                           _bytes_in_transmit_queue = 0;
   TransmitQueue                    _transmit_queue;
   SocketStatePtr                   _socket_state;
   // If this is not set, then we haven't yet received sync
@@ -205,6 +220,8 @@ private:
   async::alarm                     _send_keepalive_alarm;
 
   transport::QualityOfService _qos;
+
+  boost::optional<uint64_t> last_send_time;
 };
 
 //------------------------------------------------------------------------------
@@ -212,7 +229,8 @@ private:
 //------------------------------------------------------------------------------
 inline
 SocketImpl::SocketImpl(boost::asio::io_service& ios)
-  : _send_state(SendState::pending)
+  : _strand(ios)
+  , _send_state(SendState::pending)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
   , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
@@ -222,7 +240,8 @@ SocketImpl::SocketImpl(boost::asio::io_service& ios)
 
 inline
 SocketImpl::SocketImpl(udp::socket udp_socket)
-  : _send_state(SendState::pending)
+  : _strand(udp_socket.get_io_service())
+  , _send_state(SendState::pending)
   , _socket(std::move(udp_socket))
   , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
@@ -324,7 +343,9 @@ void SocketImpl::receive_reliable(OnReceive on_recv) {
 inline
 void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
+  _bytes_in_transmit_queue += data.size();
   add_message(false, MessageType::unreliable, _next_unreliable_sn++, std::move(data));
+  print("    send_unreliable");
   start_sending(_socket_state);
 }
 
@@ -332,7 +353,9 @@ void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
 inline
 void SocketImpl::send_reliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
+  _bytes_in_transmit_queue += data.size();
   add_message(true, MessageType::reliable, _next_reliable_sn++, std::move(data));
+  print("    send_reliable");
   start_sending(_socket_state);
 }
 
@@ -347,13 +370,14 @@ void SocketImpl::start_receiving(SocketStatePtr state)
 
   _recv_timeout_alarm.start(recv_timeout_duration());
 
-  _socket.async_receive_from( boost::asio::buffer(s->rx_buffer)
-                            , s->rx_endpoint
-                            , [this, state = move(state)]
-                              (const error_code& e, std::size_t size) {
-                                on_receive(e, size, move(state));
-                              }
-                            );
+  _socket.async_receive_from
+      ( boost::asio::buffer(s->rx_buffer)
+      , s->rx_endpoint
+      , _strand.wrap([this, state = move(state)]
+                     (const error_code& e, std::size_t size) {
+                       on_receive(e, size, move(state));
+                     })
+      );
 }
 
 //------------------------------------------------------------------------------
@@ -376,7 +400,7 @@ inline void SocketImpl::close() {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_error(const boost::system::error_code& err) {
-  club::log(time(), " handle error", err.message());
+  //club::log(time(), " ", this, " handle error ", err.message(), " kkk=", kkk);
   close();
 
   auto r1 = std::move(_on_receive_unreliable);
@@ -397,6 +421,9 @@ void SocketImpl::on_receive( boost::system::error_code error
   namespace asio = boost::asio;
 
   if (state->was_destroyed) return;
+
+  //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
+  //  " <- ", _remote_endpoint.port(), " ", _on_send.size());
 
   _recv_timeout_alarm.stop();
 
@@ -435,7 +462,12 @@ void SocketImpl::on_receive( boost::system::error_code error
     }
   }
 
+  if (can_exec_on_send_handlers()) {
+    exec_on_send_handlers(error);
+  }
+
   start_receiving(state);
+  print("    on_receive ", _bytes_in_transmit_queue, " ", _transmit_queue.size());
   start_sending(move(state));
 }
 
@@ -610,18 +642,30 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   using boost::system::error_code;
   using boost::asio::buffer;
 
+  print("start sending _transmit_queue.size:", _transmit_queue.size(), " pending handlers:", _on_send.size());
   if (!_socket.is_open()) return;
   if (_send_state != SendState::pending) return;
 
-  state->tx_buffer.resize(_qos.next_packet_max_size());
+  // TODO: Even if there are too many bytes in flight we still send ack
+  //       data. A better way would be to set up a timer (as described in
+  //       the LEBDAT RFC) and send the acks only once the timer expires.
+  size_t next_packet_size = std::max( _qos.encoded_acks_size()
+                                      // Additional bytes added by encode_acks()
+                                      + 3 + binary::encoded<AckSet>::size()
+                                    , _qos.next_packet_max_size());
+
+  state->tx_buffer.resize(next_packet_size);
   binary::encoder encoder(state->tx_buffer);
 
   bool has_acks = encode_acks(encoder);
 
+  //club::log("err? ", encoder.error() ? "yes" : "no", " ", encoder.written());
   auto count_encoder = encoder;
   encoder.skip(sizeof(uint16_t));
 
   if (encoder.error()) {
+    //club::log("err: ", state->tx_buffer.size());
+    assert(0);
     // Too many bytes in flight, need to wait for acks.
     return;
   }
@@ -633,17 +677,23 @@ void SocketImpl::start_sending(SocketStatePtr state) {
 
   auto count = encode_payload(encoder);
 
-  // TODO: I think flushing should be done in `on_send`?
+
   if (count == 0 && !has_acks) {
-    // If no payload was encoded and there is no need to
-    // re-send acks, then flush end return.
-    if (_on_flush) {
-      move_exec(_on_flush);
-      if (state->was_destroyed) return;
-      if (!_socket.is_open()) return;
-    }
     _send_keepalive_alarm.start(_keepalive_period);
+
+    print("quitting send loop ", _qos, " _transmit_queue.size:", _transmit_queue.size(), " ", _bytes_in_transmit_queue);
+    _strand.dispatch([=]() {
+        // TODO: Check if destroyed.
+        if (can_exec_on_send_handlers()) {
+          exec_on_send_handlers(error_code());
+        }
+      });
     return;
+    //return _strand.dispatch([=] {
+    //    on_send( boost::system::error_code()
+    //           , 0
+    //           , std::move(state));
+    //    });
   }
 
   _send_state = SendState::sending;
@@ -658,12 +708,19 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   // (and order of argument evaluation is undefined).
   auto s = state.get();
 
-  _socket.async_send_to( buffer(s->tx_buffer.data(), encoder.written())
-                       , _remote_endpoint
-                       , [this, state = std::move(state)]
-                         (const error_code& error, std::size_t size) {
-                           on_send(error, size, std::move(state));
-                         });
+  if (last_send_time) {
+    auto now = time();
+    print((now - *last_send_time), " start sending next_packet_size:", next_packet_size, " transmit_queue.size:", _transmit_queue.size(), " count:", count);
+  }
+  last_send_time = time();
+
+  _socket.async_send_to
+      ( buffer(s->tx_buffer.data(), encoder.written())
+      , _remote_endpoint
+      , _strand.wrap([this, state = std::move(state)]
+                     (const error_code& error, std::size_t size) {
+                       on_send(error, size, std::move(state));
+                     }));
 }
 
 //------------------------------------------------------------------------------
@@ -677,32 +734,45 @@ void SocketImpl::on_send( const boost::system::error_code& error
 
   if (state->was_destroyed) return;
 
-  _send_state = SendState::pending;
+  //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
+  //  " -> ", _remote_endpoint.port(), " ", _qos, " ", _on_send.size());
 
-  auto exec_on_send = [=]() {
-    auto fs = move(_on_send);
-    while (!fs.empty()) {
-      auto f = std::move(fs.front());
-      f(error);
-      if (!state->was_destroyed) {
-        if (_qos.next_packet_max_size() == 0) {
-          break;
-        }
-      }
-      fs.pop();
-    }
-  };
+  _send_state = SendState::pending;
 
   if (error) {
     assert(error == boost::asio::error::operation_aborted);
-    return exec_on_send();
+    return exec_on_send_handlers(error);
   }
 
-  if (_qos.next_packet_max_size() != 0) {
-    exec_on_send();
+  if (can_exec_on_send_handlers()) {
+    exec_on_send_handlers(error_code());
+    if (state->was_destroyed) return;
   }
 
-  start_sending(move(state));
+  // If no payload was encoded and there is no need to
+  // re-send acks, then flush end return.
+  if (_transmit_queue.empty() && _on_flush) {
+    move_exec(_on_flush);
+    if (state->was_destroyed) return;
+    if (!_socket.is_open()) return;
+  }
+
+  //start_sending(move(state));
+}
+
+//------------------------------------------------------------------------------
+inline bool SocketImpl::can_exec_on_send_handlers() const {
+  return _bytes_in_transmit_queue < _qos.cwnd();
+}
+
+//------------------------------------------------------------------------------
+inline void SocketImpl::exec_on_send_handlers(boost::system::error_code error) {
+  auto fs = move(_on_send);
+  while (!fs.empty()) {
+    auto f = std::move(fs.front());
+    f(error);
+    fs.pop();
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -734,6 +804,7 @@ SocketImpl::construct_packet_with_one_message(OutMessage& m) {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::sync_send_close_message() {
+  //club::log(">>> ", time(), " sending close message");
   OutMessage m( false
               , MessageType::close
               , 0
@@ -752,6 +823,7 @@ inline size_t SocketImpl::encode_payload(binary::encoder& encoder) {
 
   for (auto mi = cycle.begin(); mi != cycle.end();) {
     if (mi->resend_until_acked && _received_message_ids_by_peer.is_in(mi->sequence_number())) {
+      _bytes_in_transmit_queue -= mi->header().original_size;
       mi.erase();
       continue;
     }
@@ -769,6 +841,7 @@ inline size_t SocketImpl::encode_payload(binary::encoder& encoder) {
 
     // Unreliable entries are sent only once.
     if (!mi->resend_until_acked) {
+      _bytes_in_transmit_queue -= mi->header().original_size;
       mi.erase();
       continue;
     }
@@ -822,15 +895,29 @@ SocketImpl::encode( binary::encoder& encoder, OutMessage& message) const {
   m.bytes_already_sent += payload_size;
 }
 
+//------------------------------------------------------------------------------
 inline void SocketImpl::on_recv_timeout_alarm() {
   handle_error(error::timed_out);
 }
 
 inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
-  add_message(false, MessageType::keep_alive, 0, std::vector<uint8_t>());
+  if (_transmit_queue.empty()) {
+    add_message(false, MessageType::keep_alive, 0, std::vector<uint8_t>());
+  }
+  else {
+    // There are data in the transmit queue that has not been acknowledged
+    // for a signifficant time. We clear the in_flight info of _qos to
+    // indicate we consider the data in flight to be lost and that they need to
+    // be resent.
+    // TODO: Should probably also reset cwnd to its default value.
+    _qos.clear_in_flight_info();
+  }
+
+  print("on send keepalive alarm");
   start_sending(std::move(state));
 }
 
+//------------------------------------------------------------------------------
 inline
 boost::asio::ip::udp::endpoint
 SocketImpl::sanitize_address(udp::endpoint ep) {
@@ -846,6 +933,21 @@ SocketImpl::sanitize_address(udp::endpoint ep) {
   }
 
   return ep;
+}
+
+//------------------------------------------------------------------------------
+template<class T> void socket_print_(T&& arg) {
+  std::cout << arg << std::endl;
+}
+
+template<class... Ts, class T> void socket_print_(T&& arg, Ts&&... args) {
+  std::cout << arg;
+  socket_print_(std::forward<Ts>(args)...);
+}
+
+template<class... Ts> void SocketImpl::print(Ts&&... args) const {
+  std::cout << this << " " << time() << " ";
+  socket_print_(std::forward<Ts>(args)...);
 }
 
 //------------------------------------------------------------------------------

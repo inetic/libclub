@@ -157,6 +157,9 @@ private:
   std::unique_ptr<SeenMessages> _seen;
 
   std::list<std::unique_ptr<GetExternalPort>> _stun_requests;
+
+  template<class... Ts> void debug(Ts&&...);
+  std::list<std::string> debug_log;
 };
 
 } // club namespace

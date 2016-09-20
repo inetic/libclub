@@ -83,8 +83,9 @@ struct Server : public Stopable {
   udp::socket listening_socket;
   std::shared_ptr<ClubSocket> socket;
   clock::time_point start;
-  size_t to_send = 1048576 * 3;
+  size_t to_send = 5'000'000;
   size_t remaining = to_send;
+  size_t counter = 0;
 
   Server(asio::io_service& ios)
     : ios(ios)
@@ -124,7 +125,8 @@ struct Server : public Stopable {
        
     size_t sent = to_send - remaining;
 
-    cout << "Remaining: " << remaining << " Bytes; "
+    cout << counter++ << " "
+         << "TX Remaining: " << remaining << " Bytes; "
          << "Sent: " << sent << " Bytes; "
          << "Speed: " << (sent / duration) << " Bps"
          << std::endl;
@@ -166,6 +168,7 @@ struct Client : public Stopable {
   shared_ptr<ClubSocket> socket;
   udp::endpoint server_ep;
   size_t received = 0;
+  size_t counter = 0;
 
   Client(asio::io_service& ios, udp::endpoint server_ep)
     : udp_socket(ios, udp::endpoint(udp::v4(), 0))
@@ -216,7 +219,8 @@ struct Client : public Stopable {
         const char* b = asio::buffer_cast<const char*>(buffer);
 
         if (b[0] == Action::data) {
-          cout << "Received " << buf_size << " bytes; "
+          cout << "RX " << counter++ << " "
+               << "Received " << buf_size << " bytes; "
                << "Total " << received
                << std::endl;
           this->start_receiving();
