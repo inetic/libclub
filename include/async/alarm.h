@@ -15,7 +15,6 @@
 #ifndef ASYNC_ALARM_H
 #define ASYNC_ALARM_H
 
-#include <mutex>
 #include <boost/asio/steady_timer.hpp>
 
 // Alarm is similar to the boost::steady_timer but
@@ -25,13 +24,17 @@ namespace async {
 
 class alarm {
 private:
+  using clock = std::chrono::steady_clock;
+
   enum State { idle, running, canceling, canceling_for_restart };
 
   struct Storage {
-    bool was_destroyed;
-    std::mutex mutex;
+    bool was_destroyed = false;
+    std::function<void ()> on_expire;
 
-    Storage() : was_destroyed(false) {}
+    Storage(std::function<void()> on_exp)
+      : on_expire(std::move(on_exp))
+    {}
   };
 
   using StoragePtr = std::shared_ptr<Storage>;
@@ -42,12 +45,16 @@ public:
 
 public:
 
+  uint32_t time() const {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(clock::now() - s).count();
+  }
+
   template<class H>
-  alarm(boost::asio::io_service& ios, const H& on_expire)
-    : _storage(std::make_shared<Storage>())
+  alarm(boost::asio::io_service& ios, H&& on_expire)
+    : _storage(std::make_shared<Storage>(std::forward<H>(on_expire)))
     , _state(idle)
     , _timer(ios)
-    , _on_expire(on_expire)
   { }
 
   alarm(alarm&) = delete;
@@ -55,70 +62,17 @@ public:
   alarm(alarm&& other) = delete;
 
   void start(duration timeout) {
-    std::lock_guard<std::mutex> lock(_storage->mutex);
-    start_locked(timeout);
-  }
-
-  void stop() {
-    std::lock_guard<std::mutex> lock(_storage->mutex);
-
-    switch (_state) {
-      case idle:                  break;
-      case running:               _state = canceling;
-                                  _timer.cancel();
-                                  break;
-      case canceling:             break;
-      case canceling_for_restart: _state = canceling; break;
-    }
-  }
-
-  ~alarm() {
-    {
-      std::lock_guard<std::mutex> lock(_storage->mutex);
-      _storage->was_destroyed = true;
-    }
-    stop();
-  }
-
-private:
-  void on_timeout(error_code) {
-    bool run_on_expire = false;
-
-    {
-      std::lock_guard<std::mutex> lock(_storage->mutex);
-
-      switch (_state) {
-        case idle:
-          assert(0 && "This state shouldn't be possible here");
-          break;
-        case running:
-          _state = idle;
-          run_on_expire = true;
-          break;
-        case canceling:
-          _state = idle;
-          break;
-        case canceling_for_restart:
-          _state = idle;
-          start_locked(_timeout);
-          break;
-      }
-    }
-
-    if (run_on_expire) _on_expire();
-  }
-
-  void start_locked(duration timeout) {
+    //std::cout << "    " << time() << " " << this << " alarm::start_locked " << state_to_str(_state) << " " << std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count() << std::endl;
     switch (_state) {
       case idle:
         _state = running;
-        _timer.expires_from_now(timeout);
         {
-          auto storage = _storage;
+          auto expiration_time = clock::now() + timeout;
+          _timer.expires_at(expiration_time);
           _timer.async_wait(
-              [this, storage](error_code e) {
-                if (storage->was_destroyed) return;
-                on_timeout(e);
+              [this, s = _storage, expiration_time](error_code e) {
+                if (s->was_destroyed) return;
+                on_timeout(e, expiration_time);
               });
         }
         break;
@@ -137,12 +91,73 @@ private:
     }
   }
 
+  void stop() {
+    //std::cout << "    " << time() << " " << this << " alarm::stop " << state_to_str(_state) << std::endl;
+    switch (_state) {
+      case idle:                  break;
+      case running:               _state = canceling;
+                                  _timer.cancel();
+                                  break;
+      case canceling:             break;
+      case canceling_for_restart: _state = canceling; break;
+    }
+  }
+
+  ~alarm() {
+    _storage->was_destroyed = true;
+    stop();
+  }
+
+private:
+  void on_timeout(error_code e, clock::time_point expiration_time) {
+    //std::cout << "    " << time() << " " << this << " alarm::on_timeout " << state_to_str(_state) << " " << e.message() << std::endl;
+    switch (_state) {
+      case idle:
+        assert(0 && "This state shouldn't be possible here");
+        break;
+      case running:
+        _state = idle;
+        {
+          auto now = clock::now();
+          if (now < expiration_time) {
+            // Very rarely it happens that the timer fires before the
+            // expiration time, seems like a bug in asio::steady_timer.
+            using namespace std::chrono;
+            std::cout << "timer fired " << duration_cast<milliseconds>(expiration_time - now).count() << " ms too soon" << std::endl;
+            assert(0);
+            return start(expiration_time - now);
+          }
+          auto s = _storage;
+          s->on_expire();
+        }
+        break;
+      case canceling:
+        _state = idle;
+        break;
+      case canceling_for_restart:
+        _state = idle;
+        start(_timeout);
+        break;
+    }
+  }
+
+  std::string state_to_str(State s) {
+    switch (s) {
+      case idle: return "idle";
+      case running: return "running";
+      case canceling: return "canceling";
+      case canceling_for_restart: return "canceling_for_restart";
+    }
+    return "???";
+  }
+
 private:
   StoragePtr                _storage;
   State                     _state;
   boost::asio::steady_timer _timer;
-  std::function<void ()>    _on_expire;
   duration                  _timeout;
+
+  clock::time_point s = clock::now();
 };
 
 } // async namespace
