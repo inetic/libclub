@@ -127,10 +127,10 @@ struct Server : public Stopable {
     cout << "Remaining: " << remaining << " Bytes; "
          << "Sent: " << sent << " Bytes; "
          << "Speed: " << (sent / duration) << " Bps"
-         << "          \r" << std::flush;
+         << std::endl;
 
     if (remaining == 0) {
-      cout << "\nFlushing" << endl;
+      cout << "Flushing" << endl;
       std::vector<uint8_t> data{Action::stop};
       socket->send_reliable(data, [=](auto error) {
             socket->flush([=]() { this->stop(); });
@@ -202,7 +202,7 @@ struct Client : public Stopable {
   void start_receiving() {
     socket->receive_reliable([=](auto error, auto buffer) {
         if (error) {
-          cout << "\nError receiving data from server: " << error.message() << endl;
+          cout << "Error receiving data from server: " << error.message() << endl;
           return this->stop();
         }
         auto buf_size = asio::buffer_size(buffer);
@@ -218,11 +218,11 @@ struct Client : public Stopable {
         if (b[0] == Action::data) {
           cout << "Received " << buf_size << " bytes; "
                << "Total " << received
-               << "        \r" << std::flush;
+               << std::endl;
           this->start_receiving();
         }
         else {
-          cout << "\nReceived done" << endl;
+          cout << "Received done" << endl;
           this->stop();
         }
       });
