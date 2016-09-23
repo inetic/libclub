@@ -670,7 +670,9 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   binary::encoder qos_encoder = encoder;
   encoder.skip(_qos.header_size());
 
-  auto count = _transmit_queue.encode_payload(encoder, _received_message_ids_by_peer);
+  auto count = _transmit_queue.encode_payload( encoder
+                                             , _received_message_ids_by_peer
+                                             , _qos.rtt() * 2);
 
   if (count == 0 && !has_acks) {
     _send_keepalive_alarm.start(_keepalive_period);

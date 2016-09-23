@@ -58,8 +58,11 @@ public:
 
   size_t cwnd() const { return _cwnd; }
 
+  clock::duration rtt() const { return _rtt; }
+
 private:
   uint64_t time_since_start_mks() const;
+  void update_rtt(clock::duration last_rtt);
 
 private:
   friend std::ostream& operator<<(std::ostream&, const QualityOfService&);
@@ -76,9 +79,11 @@ private:
   int64_t _bytes_sent_total = 0;
   boost::optional<uint32_t> _last_received_ack;
 
+  clock::duration _rtt = std::chrono::milliseconds(500);
+
   struct PacketInfo {
     uint32_t size;
-    int64_t bytes_sent;
+    clock::time_point send_time;
   };
 
   //          +--> seq_num
@@ -90,6 +95,12 @@ private:
 
 //--------------------------------------------------------------------
 // Implementation
+//--------------------------------------------------------------------
+inline void QualityOfService::update_rtt(clock::duration last_rtt) {
+  using namespace std::chrono;
+  _rtt = duration_cast<clock::duration>(0.75 * _rtt + 0.25 * last_rtt);
+}
+
 //--------------------------------------------------------------------
 inline uint64_t
 QualityOfService::time_since_start_mks() const {
@@ -125,6 +136,7 @@ inline void QualityOfService::decode_acks(binary::decoder& d) {
 
   bool data_loss_detected = false;
 
+  auto now = clock::now();
   auto count = d.get<uint16_t>();
   for (uint16_t _i = 0; _i < count; ++_i) {
     auto sn = d.get<uint32_t>();
@@ -145,6 +157,7 @@ inline void QualityOfService::decode_acks(binary::decoder& d) {
     auto i = _in_flight.find(sn);
     if (i != _in_flight.end()) {
       _bytes_newly_acked += i->second.size;
+      update_rtt(now - i->second.send_time);
       _in_flight.erase(i);
     }
   }
@@ -189,7 +202,7 @@ void QualityOfService::encode_header(binary::encoder& e, size_t packet_size) {
                                            : invalid_ts;
 
   _in_flight[seq_nr] = PacketInfo{ uint32_t(packet_size)
-                                 , _bytes_sent_total };
+                                 , clock::now() };
 
   e.put(now);
   e.put(timestamp_difference_mks);

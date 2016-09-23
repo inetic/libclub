@@ -23,13 +23,12 @@
 namespace club { namespace transport {
 
 class TransmitQueue {
-  using Clock = std::chrono::steady_clock;
-  using TimePoint = Clock::time_point;
+  using clock = std::chrono::steady_clock;
 
   struct Entry {
     Entry(OutMessage m) : message(std::move(m)) {}
 
-    boost::optional<TimePoint> last_sent_time;
+    boost::optional<clock::time_point> last_sent_time;
     OutMessage message;
   };
 
@@ -45,7 +44,7 @@ public:
   size_t size() const { return _queue.size(); }
   size_t size_in_bytes() const { return _bytes_in; }
 
-  size_t encode_payload(binary::encoder&, AckSet acked);
+  size_t encode_payload(binary::encoder&, AckSet acked, clock::duration);
 
 private:
   bool try_encode(binary::encoder&, Entry&) const;
@@ -56,20 +55,21 @@ private:
 };
 
 //------------------------------------------------------------------------------
-inline size_t TransmitQueue::encode_payload(binary::encoder& encoder, AckSet acked) {
+inline size_t TransmitQueue::encode_payload( binary::encoder& encoder
+                                           , AckSet acked
+                                           , clock::duration duration_threshold) {
   size_t count = 0;
 
   auto cycle = _queue.cycle();
 
   using namespace std::chrono_literals;
-  auto now = Clock::now();
-  // TODO: Replace 100ms with RTT.
-  Clock::time_point time_threshold = now - 100ms;
+  auto now = clock::now();
+  clock::time_point time_threshold = now - duration_threshold;
 
   for (auto mi = cycle.begin(); mi != cycle.end();) {
     auto& m = mi->message;
     if (m.resend_until_acked && acked.is_in(m.sequence_number())) {
-      _bytes_in -= m.header().original_size;
+      _bytes_in -= m.payload_size();
       mi.erase();
       continue;
     }
@@ -96,7 +96,7 @@ inline size_t TransmitQueue::encode_payload(binary::encoder& encoder, AckSet ack
 
     // Unreliable entries are sent only once.
     if (!m.resend_until_acked) {
-      _bytes_in -= mi->message.header().original_size;
+      _bytes_in -= m.payload_size();
       mi.erase();
       continue;
     }
