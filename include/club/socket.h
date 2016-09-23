@@ -342,7 +342,6 @@ inline
 void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
   add_message(false, MessageType::unreliable, _next_unreliable_sn++, std::move(data));
-  print("    send_unreliable");
   start_sending(_socket_state);
 }
 
@@ -351,7 +350,6 @@ inline
 void SocketImpl::send_reliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
   add_message(true, MessageType::reliable, _next_reliable_sn++, std::move(data));
-  print("    send_reliable");
   start_sending(_socket_state);
 }
 
@@ -463,7 +461,6 @@ void SocketImpl::on_receive( boost::system::error_code error
   }
 
   start_receiving(state);
-  print("    on_receive ", _transmit_queue.size_in_bytes(), " ", _transmit_queue.size());
   start_sending(move(state));
 }
 
@@ -722,7 +719,6 @@ void SocketImpl::on_send( const boost::system::error_code& error
   using std::move;
   using boost::system::error_code;
 
-  print("on send 1");
   if (state->was_destroyed) return;
 
   //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
@@ -735,13 +731,11 @@ void SocketImpl::on_send( const boost::system::error_code& error
     return exec_on_send_handlers(error);
   }
 
-  print("on send 2");
   if (can_exec_on_send_handlers()) {
     exec_on_send_handlers(error_code());
     if (state->was_destroyed) return;
   }
 
-  print("on send 3");
   // If no payload was encoded and there is no need to
   // re-send acks, then flush end return.
   if (_transmit_queue.empty() && _on_flush) {
@@ -827,7 +821,6 @@ inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
     _qos.clear_in_flight_info();
   }
 
-  print("on send keepalive alarm");
   start_sending(std::move(state));
 }
 
