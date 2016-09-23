@@ -23,84 +23,84 @@ using std::cout;
 using std::endl;
 using std::move;
 
-using TQ  = club::transport::TransmitQueue<int>;
+using CQ  = club::transport::CyclicQueue<int>;
 
 BOOST_AUTO_TEST_CASE(test_transmit_queue) {
   {
-    TQ tq;
+    CQ cq;
 
     int d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
-    BOOST_REQUIRE_EQUAL(d, tq.size());
+    BOOST_REQUIRE_EQUAL(d, cq.size());
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
+    cq.insert(0);
 
     int d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
-    BOOST_REQUIRE_EQUAL(d, tq.size());
+    BOOST_REQUIRE_EQUAL(d, cq.size());
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
 
     int d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
-    BOOST_REQUIRE_EQUAL(d, tq.size());
+    BOOST_REQUIRE_EQUAL(d, cq.size());
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
 
     int d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
     BOOST_REQUIRE_EQUAL(d, 5);
     d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
     }
     BOOST_REQUIRE_EQUAL(d, 5);
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
 
     int d = 0;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++);
       if (d == 2) break;
     }
     --d;
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       BOOST_REQUIRE_EQUAL(m, d++ % 5);
     }
 
@@ -108,35 +108,35 @@ BOOST_AUTO_TEST_CASE(test_transmit_queue) {
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
-    tq.insert(5);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
+    cq.insert(5);
 
-    auto cycle = tq.cycle();
+    auto cycle = cq.cycle();
 
     for (auto i = cycle.begin(); i != cycle.end();) {
       i.erase();
     }
 
-    BOOST_REQUIRE(tq.empty());
+    BOOST_REQUIRE(cq.empty());
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
-    tq.insert(5);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
+    cq.insert(5);
 
-    auto cycle = tq.cycle();
+    auto cycle = cq.cycle();
 
     size_t k = 0;
     for (auto i = cycle.begin(); i != cycle.end();) {
@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(test_transmit_queue) {
 
     std::vector<int> result;
 
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       result.push_back(m);
     }
 
@@ -158,16 +158,16 @@ BOOST_AUTO_TEST_CASE(test_transmit_queue) {
   }
 
   {
-    TQ tq;
+    CQ cq;
 
-    tq.insert(0);
-    tq.insert(1);
-    tq.insert(2);
-    tq.insert(3);
-    tq.insert(4);
-    tq.insert(5);
+    cq.insert(0);
+    cq.insert(1);
+    cq.insert(2);
+    cq.insert(3);
+    cq.insert(4);
+    cq.insert(5);
 
-    auto cycle = tq.cycle();
+    auto cycle = cq.cycle();
 
     size_t k = 0;
     for (auto i = cycle.begin(); i != cycle.end();) {
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(test_transmit_queue) {
 
     std::vector<int> result;
 
-    for (auto m : tq.cycle()) {
+    for (auto m : cq.cycle()) {
       result.push_back(m);
     }
 

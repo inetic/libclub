@@ -17,194 +17,116 @@
 
 #include <list>
 #include <boost/variant.hpp>
+#include <club/generic/cyclic_queue.h>
+#include <club/transport/out_message.h>
 
 namespace club { namespace transport {
 
-template<class Message>
 class TransmitQueue {
-  using Messages = std::list<Message>;
+  using Clock = std::chrono::steady_clock;
+  using TimePoint = Clock::time_point;
+
+  struct Entry {
+    Entry(OutMessage m) : message(std::move(m)) {}
+
+    boost::optional<TimePoint> last_sent_time;
+    OutMessage message;
+  };
+
+  using Queue = CyclicQueue<Entry>;
 public:
-
-  class Cycle;
-
-  using Delegate = boost::variant< typename Messages::iterator
-                                 , typename Messages::iterator* >;
-
   //----------------------------------------------------------------------------
-  class iterator {
-  public:
-    iterator& operator++(); // Prefix
+  void insert(OutMessage m) {
+    _bytes_in += m.header().original_size;
+    _queue.insert(Entry(std::move(m)));
+  }
 
-    bool operator==(const iterator&) const;
-    bool operator!=(const iterator&) const;
+  bool empty() const { return _queue.empty(); }
+  size_t size() const { return _queue.size(); }
+  size_t size_in_bytes() const { return _bytes_in; }
 
-    Message& operator*();
-    Message* operator->();
-
-    // This shall become std::next(*this)
-    void erase();
-
-  private:
-    friend class Cycle;
-    template<class I> iterator(I, Cycle&);
-
-  private:
-    Delegate delegate;
-    Cycle& _cycle;
-  };
-
-  //----------------------------------------------------------------------------
-  class Cycle {
-  public:
-    Cycle(TransmitQueue&);
-
-    iterator begin();
-    iterator end();
-  private:
-    friend class iterator;
-    typename Messages::iterator _end;
-    TransmitQueue& _queue;
-  };
-
-  //----------------------------------------------------------------------------
-  Cycle cycle();
-
-  void insert(Message m);
-  template<typename... Ts> void emplace(Ts&&... params);
-  bool empty() const;
-  size_t size() const;
-
-  const Messages& messages() const { return _messages; }
+  size_t encode_payload(binary::encoder&, AckSet acked);
 
 private:
-  Messages _messages;
+  bool try_encode(binary::encoder&, Entry&) const;
+
+private:
+  size_t _bytes_in = 0;
+  Queue _queue;
 };
 
 //------------------------------------------------------------------------------
-// Implementation
-//------------------------------------------------------------------------------
-template<class M>
-TransmitQueue<M>::Cycle::Cycle(TransmitQueue<M>& tq)
-  : _end(tq._messages.end())
-  , _queue(tq)
-{ }
+inline size_t TransmitQueue::encode_payload(binary::encoder& encoder, AckSet acked) {
+  size_t count = 0;
 
-template<class M>
-typename TransmitQueue<M>::iterator
-TransmitQueue<M>::Cycle::begin() {
-  return iterator(_queue._messages.begin(), *this);
-}
+  auto cycle = _queue.cycle();
 
-template<class M>
-typename TransmitQueue<M>::iterator
-TransmitQueue<M>::Cycle::end() {
-  return iterator(&_end, *this);
-}
+  using namespace std::chrono_literals;
+  auto now = Clock::now();
+  // TODO: Replace 100ms with RTT.
+  Clock::time_point time_threshold = now - 100ms;
 
-//------------------------------------------------------------------------------
-template<class M>
-template<class I>
-TransmitQueue<M>::iterator::
-iterator(I delegate , typename TransmitQueue<M>::Cycle& cycle)
-  : delegate(delegate)
-  , _cycle(cycle)
-{ }
-
-template<class M>
-typename TransmitQueue<M>::iterator&
-TransmitQueue<M>::iterator::operator++() {
-  auto& list = _cycle._queue._messages;
-
-  if (auto dp = boost::get<typename std::list<M>::iterator>(&delegate)) {
-    auto old = *dp;
-    ++(*dp);
-    if (*dp == list.end()) return *this;
-
-    list.splice(list.end(), list, old);
-
-    if (_cycle._end == list.end()) {
-      _cycle._end = old;
+  for (auto mi = cycle.begin(); mi != cycle.end();) {
+    auto& m = mi->message;
+    if (m.resend_until_acked && acked.is_in(m.sequence_number())) {
+      _bytes_in -= m.header().original_size;
+      mi.erase();
+      continue;
     }
-  }
 
-  return *this;
-}
-
-template<class M>
-M& TransmitQueue<M>::iterator::operator*() {
-  auto dp = boost::get<typename Messages::iterator>(&delegate);
-  assert(dp);
-  return **dp;
-}
-
-template<class M>
-M* TransmitQueue<M>::iterator::operator->() {
-  auto dp = boost::get<typename Messages::iterator>(&delegate);
-  assert(dp);
-  return &**dp;
-}
-
-template<class M>
-bool
-TransmitQueue<M>::iterator::operator==(const iterator& other) const {
-  using I = typename TransmitQueue<M>::Messages::iterator;
-
-  if (auto dp = boost::get<I>(&delegate)) {
-    if (auto other_dp = boost::get<I>(&other.delegate)) {
-      return *dp == *other_dp;
+    if (mi->last_sent_time && *mi->last_sent_time > time_threshold) {
+      ++mi;
+      continue;
     }
-    return *dp == **boost::get<I*>(&other.delegate);
+
+    if (!try_encode(encoder, *mi)) {
+      break;
+    }
+
+    if (m.fully_sent()) {
+      mi->last_sent_time = now;
+    }
+
+    ++count;
+
+    if (m.bytes_already_sent != m.payload_size()) {
+      // It means we've exhausted the buffer in encoder.
+      break;
+    }
+
+    // Unreliable entries are sent only once.
+    if (!m.resend_until_acked) {
+      _bytes_in -= mi->message.header().original_size;
+      mi.erase();
+      continue;
+    }
+    
+    ++mi;
   }
 
-  auto dp = *boost::get<I*>(&delegate);
-  
-  if (auto other_dp = boost::get<I>(&other.delegate)) {
-    return *dp == *other_dp;
-  }
-
-  return *dp == **boost::get<I*>(&other.delegate);
+  return count;
 }
 
-template<class M>
+//------------------------------------------------------------------------------
+inline
 bool
-TransmitQueue<M>::iterator::operator!=(const iterator& other) const {
-  return !(*this == other);
-}
+TransmitQueue::try_encode(binary::encoder& encoder, Entry& entry) const {
 
-template<class M>
-void TransmitQueue<M>::iterator::erase() {
-  using I = typename TransmitQueue<M>::Messages::iterator;
-  auto i = *boost::get<I>(&delegate);
-  delegate = _cycle._queue._messages.erase(i);
-}
+  auto minimal_encoded_size
+      = OutMessage::header_size
+      // We'd want to send at least one byte of the payload,
+      // otherwise what's the point.
+      + std::min<size_t>(1, entry.message.payload_size()) ;
 
-//------------------------------------------------------------------------------
-template<class M>
-typename TransmitQueue<M>::Cycle TransmitQueue<M>::cycle() {
-  return Cycle(*this);
-}
+  if (minimal_encoded_size > encoder.remaining_size()) {
+    return false;
+  }
 
-template<class M>
-void TransmitQueue<M>::insert(M m) {
-  _messages.push_back(std::move(m));
-}
+  encoder.put(entry.message);
 
-//------------------------------------------------------------------------------
-template<class M>
-template<typename... Ts>
-void TransmitQueue<M>::emplace(Ts&&... params) {
-  insert(M(std::forward<Ts>(params)...));
-}
+  assert(!encoder.error());
 
-//------------------------------------------------------------------------------
-template<class M>
-bool TransmitQueue<M>::empty() const {
-  return _messages.empty();
-}
-
-template<class M>
-size_t TransmitQueue<M>::size() const {
-  return _messages.size();
+  return true;
 }
 
 //------------------------------------------------------------------------------

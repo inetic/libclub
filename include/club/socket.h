@@ -64,7 +64,7 @@ private:
   using SocketStatePtr = std::shared_ptr<SocketState>;
 
 public:
-  using TransmitQueue = transport::TransmitQueue<transport::OutMessage>;
+  using TransmitQueue = transport::TransmitQueue;
   using OutMessage = transport::OutMessage;
   using InMessagePart = transport::InMessagePart;
   using InMessageFull = transport::InMessageFull;
@@ -156,13 +156,12 @@ private:
 
   template<typename ...Ts>
   void add_message(Ts&&... params) {
-    _transmit_queue.emplace(std::forward<Ts>(params)...);
+    _transmit_queue.insert(OutMessage(std::forward<Ts>(params)...));
   }
 
   void on_recv_timeout_alarm();
   void on_send_keepalive_alarm(SocketStatePtr);
 
-  size_t encode_payload(binary::encoder& encoder);
   bool encode_acks(binary::encoder& encoder);
   void decode_acks(binary::decoder& decoder);
 
@@ -197,7 +196,6 @@ private:
   SendState                        _send_state;
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
-  size_t                           _bytes_in_transmit_queue = 0;
   TransmitQueue                    _transmit_queue;
   SocketStatePtr                   _socket_state;
   // If this is not set, then we haven't yet received sync
@@ -343,7 +341,6 @@ void SocketImpl::receive_reliable(OnReceive on_recv) {
 inline
 void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
-  _bytes_in_transmit_queue += data.size();
   add_message(false, MessageType::unreliable, _next_unreliable_sn++, std::move(data));
   print("    send_unreliable");
   start_sending(_socket_state);
@@ -353,7 +350,6 @@ void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
 inline
 void SocketImpl::send_reliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
-  _bytes_in_transmit_queue += data.size();
   add_message(true, MessageType::reliable, _next_reliable_sn++, std::move(data));
   print("    send_reliable");
   start_sending(_socket_state);
@@ -467,7 +463,7 @@ void SocketImpl::on_receive( boost::system::error_code error
   }
 
   start_receiving(state);
-  print("    on_receive ", _bytes_in_transmit_queue, " ", _transmit_queue.size());
+  print("    on_receive ", _transmit_queue.size_in_bytes(), " ", _transmit_queue.size());
   start_sending(move(state));
 }
 
@@ -642,7 +638,6 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   using boost::system::error_code;
   using boost::asio::buffer;
 
-  print("start sending _transmit_queue.size:", _transmit_queue.size(), " pending handlers:", _on_send.size());
   if (!_socket.is_open()) return;
   if (_send_state != SendState::pending) return;
 
@@ -675,13 +670,11 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   binary::encoder qos_encoder = encoder;
   encoder.skip(_qos.header_size());
 
-  auto count = encode_payload(encoder);
-
+  auto count = _transmit_queue.encode_payload(encoder, _received_message_ids_by_peer);
 
   if (count == 0 && !has_acks) {
     _send_keepalive_alarm.start(_keepalive_period);
 
-    print("quitting send loop ", _qos, " _transmit_queue.size:", _transmit_queue.size(), " ", _bytes_in_transmit_queue);
     _strand.dispatch([=]() {
         // TODO: Check if destroyed.
         if (can_exec_on_send_handlers()) {
@@ -689,11 +682,6 @@ void SocketImpl::start_sending(SocketStatePtr state) {
         }
       });
     return;
-    //return _strand.dispatch([=] {
-    //    on_send( boost::system::error_code()
-    //           , 0
-    //           , std::move(state));
-    //    });
   }
 
   _send_state = SendState::sending;
@@ -708,11 +696,11 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   // (and order of argument evaluation is undefined).
   auto s = state.get();
 
-  if (last_send_time) {
-    auto now = time();
-    print((now - *last_send_time), " start sending next_packet_size:", next_packet_size, " transmit_queue.size:", _transmit_queue.size(), " count:", count);
-  }
-  last_send_time = time();
+  //if (last_send_time) {
+  //  auto now = time();
+  //  print((now - *last_send_time), " start sending next_packet_size:", next_packet_size, " transmit_queue.size:", _transmit_queue.size(), " count:", count);
+  //}
+  //last_send_time = time();
 
   _socket.async_send_to
       ( buffer(s->tx_buffer.data(), encoder.written())
@@ -732,6 +720,7 @@ void SocketImpl::on_send( const boost::system::error_code& error
   using std::move;
   using boost::system::error_code;
 
+  print("on send 1");
   if (state->was_destroyed) return;
 
   //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
@@ -744,11 +733,13 @@ void SocketImpl::on_send( const boost::system::error_code& error
     return exec_on_send_handlers(error);
   }
 
+  print("on send 2");
   if (can_exec_on_send_handlers()) {
     exec_on_send_handlers(error_code());
     if (state->was_destroyed) return;
   }
 
+  print("on send 3");
   // If no payload was encoded and there is no need to
   // re-send acks, then flush end return.
   if (_transmit_queue.empty() && _on_flush) {
@@ -762,7 +753,7 @@ void SocketImpl::on_send( const boost::system::error_code& error
 
 //------------------------------------------------------------------------------
 inline bool SocketImpl::can_exec_on_send_handlers() const {
-  return _bytes_in_transmit_queue < _qos.cwnd();
+  return _transmit_queue.size_in_bytes() < _qos.cwnd();
 }
 
 //------------------------------------------------------------------------------
@@ -791,9 +782,9 @@ SocketImpl::construct_packet_with_one_message(OutMessage& m) {
   binary::encoder qos_encoder = encoder;
   encoder.skip(_qos.header_size());
 
-  if (!try_encode(encoder, m)) {
-    assert(0 && "Shouldn't happen");
-  }
+  encoder.put(m);
+
+  assert(!encoder.error() && "Shouldn't happen");
 
   _qos.encode_header(qos_encoder, encoder.written());
   data.resize(encoder.written());
@@ -816,85 +807,6 @@ void SocketImpl::sync_send_close_message() {
 }
 
 //------------------------------------------------------------------------------
-inline size_t SocketImpl::encode_payload(binary::encoder& encoder) {
-  size_t count = 0;
-
-  auto cycle = _transmit_queue.cycle();
-
-  for (auto mi = cycle.begin(); mi != cycle.end();) {
-    if (mi->resend_until_acked && _received_message_ids_by_peer.is_in(mi->sequence_number())) {
-      _bytes_in_transmit_queue -= mi->header().original_size;
-      mi.erase();
-      continue;
-    }
-
-    if (!try_encode(encoder, *mi)) {
-      break;
-    }
-
-    ++count;
-
-    if (mi->bytes_already_sent != mi->payload_size()) {
-      // It means we've exhausted the buffer in encoder.
-      break;
-    }
-
-    // Unreliable entries are sent only once.
-    if (!mi->resend_until_acked) {
-      _bytes_in_transmit_queue -= mi->header().original_size;
-      mi.erase();
-      continue;
-    }
-    
-    ++mi;
-  }
-
-  return count;
-}
-
-//------------------------------------------------------------------------------
-inline
-bool
-SocketImpl::try_encode(binary::encoder& encoder, OutMessage& message) const {
-
-  auto minimal_encoded_size
-      = OutMessage::header_size
-      // We'd want to send at least one byte of the payload,
-      // otherwise what's the point.
-      + std::min<size_t>(1, message.payload_size()) ;
-
-  if (minimal_encoded_size > encoder.remaining_size()) {
-    return false;
-  }
-
-  encode(encoder, message);
-
-  assert(!encoder.error());
-
-  return true;
-}
-
-//------------------------------------------------------------------------------
-inline
-void
-SocketImpl::encode( binary::encoder& encoder, OutMessage& message) const {
-  auto& m = message;
-
-  if (m.bytes_already_sent == m.payload_size()) {
-    m.bytes_already_sent = 0;
-  }
-
-  uint16_t payload_size = m.encode_header_and_payload( encoder
-                                                     , m.bytes_already_sent);
-
-  if (encoder.error()) {
-    assert(0);
-    return;
-  }
-
-  m.bytes_already_sent += payload_size;
-}
-
 //------------------------------------------------------------------------------
 inline void SocketImpl::on_recv_timeout_alarm() {
   handle_error(error::timed_out);

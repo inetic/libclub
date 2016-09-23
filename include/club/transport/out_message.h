@@ -62,7 +62,6 @@ public:
             , SequenceNumber         sequence_number
             , std::vector<uint8_t>&& payload)
     : resend_until_acked(resend_until_acked)
-    , _payload_start(0)
     , _header{type, sequence_number, uint16_t(payload.size()), 0, uint16_t(payload.size())}
     , _data(std::move(payload))
     , _is_dirty(false)
@@ -81,13 +80,10 @@ public:
     // Only reset the _data if no part of the message has already been sent.
     if (_is_dirty) return;
 
-    _payload_start = 0;
     _data = std::move(new_payload);
   }
 
-  size_t payload_size() const {
-    return _data.size() - _payload_start;
-  }
+  size_t payload_size() const { return _data.size(); }
 
   // Return the size of the encoded payload.
   uint16_t encode_header_and_payload( binary::encoder& encoder
@@ -99,9 +95,7 @@ public:
       return 0;
     }
 
-    auto s = _payload_start + start;
-
-    const auto payload_size_ = std::min( _data.size() - s
+    const auto payload_size_ = std::min( _data.size() - start
                                        , encoder.remaining_size() - header_size);
 
     Header h = _header;
@@ -110,19 +104,22 @@ public:
 
     h.encode(encoder);
 
-    encoder.put_raw(_data.data() + s, payload_size_);
+    encoder.put_raw(_data.data() + start, payload_size_);
 
     return payload_size_;
   }
 
   const Header& header() const { return _header; }
 
+  bool fully_sent() const {
+    return bytes_already_sent == _data.size();
+  }
+
 public:
   const bool resend_until_acked;
   size_t bytes_already_sent = 0;
 
 private:
-  size_t _payload_start;
   Header _header;
   std::vector<uint8_t> _data;
   // Once this message or a part of it has been sent, we must not change its
@@ -132,12 +129,29 @@ private:
 };
 
 //------------------------------------------------------------------------------
-
 inline std::ostream& operator<<(std::ostream& os, const OutMessage& m) {
   using namespace boost::asio;
 
   return os << "(OutMessage type:" << m.header().type
             << " sn:" << m.sequence_number() << ")";
+}
+
+//------------------------------------------------------------------------------
+template<typename Encoder>
+inline void encode(Encoder& e, OutMessage& m) {
+  if (m.fully_sent()) {
+    m.bytes_already_sent = 0;
+  }
+
+  uint16_t payload_size = m.encode_header_and_payload( e
+                                                     , m.bytes_already_sent);
+
+  if (e.error()) {
+    assert(0);
+    return;
+  }
+
+  m.bytes_already_sent += payload_size;
 }
 
 }} // club::transport namespace
