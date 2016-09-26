@@ -73,6 +73,8 @@ static const vector<Stun> public_stuns(
 
 //------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(stun_client) {
+  using namespace std::chrono_literals;
+
   using Iterator = udp::resolver::iterator;
 
   asio::io_service ios;
@@ -84,13 +86,14 @@ BOOST_AUTO_TEST_CASE(stun_client) {
   udp::socket socket_to_reflect(ios, udp::endpoint(udp::v4(), 0));
   auto stun_client = std::unique_ptr<StunClient>(new StunClient(socket_to_reflect));
 
-  int wait_for = 5;
+  constexpr int N = 5;
+  int wait_for = N;
 
   for (const auto& stun : stuns) {
     udp::resolver::query q(stun.url, stun.port);
     resolver.async_resolve(q, [&](error_code e, Iterator iter) {
         if (e || iter == Iterator()) {
-          if (e != boost::asio::error::operation_aborted) {
+          if (e != asio::error::operation_aborted) {
             cout << "Can't resolve " << stun.url << " " << e.message() << endl;
           }
           return;
@@ -113,13 +116,22 @@ BOOST_AUTO_TEST_CASE(stun_client) {
       });
   }
 
-  timer.expires_from_now(std::chrono::seconds(5));
+  timer.expires_from_now(5s);
   timer.async_wait([&](error_code) {
       stun_client.reset();
       resolver.cancel();
       });
 
   ios.run();
+
+  if (wait_for != 0) {
+    std::cerr << "stun_client test failed: make sure at least " << N
+              << " stun servers are running on the following addresses."
+              << std::endl;
+    for (const auto& stun : stuns) {
+      std::cerr << "    " << stun.url << ":" << stun.port << std::endl;
+    }
+  }
 
   BOOST_CHECK_EQUAL(wait_for, 0);
 }
