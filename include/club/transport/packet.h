@@ -31,14 +31,6 @@ public:
   void decode_header() {
     _qos.decode_header(_decoder);
 
-    bool has_acks = _decoder.get<uint8_t>() != 0;
-
-    if (has_acks) {
-      _qos.decode_acks(_decoder);
-      auto ack_set = _decoder.get<AckSet>();
-      _qos._received_message_ids_by_peer = ack_set;
-    }
-
     _message_count = _decoder.get<uint16_t>();
 
     if (*_message_count) {
@@ -65,6 +57,7 @@ boost::optional<size_t> encode_packet( QualityOfService& qos
                                      , TransmitQueue& transmit_queue
                                      , AckSet received_message_ids
                                      , std::vector<uint8_t>& out_packet) {
+  // TODO: Remove the magic constants.
   size_t minimum_size = qos.encoded_acks_size()
                       + 2*8 /* qos.encode_header */
                       // Additional bytes added by encode_acks()
@@ -76,22 +69,8 @@ boost::optional<size_t> encode_packet( QualityOfService& qos
   out_packet.resize(next_packet_size);
   binary::encoder encoder(out_packet);
 
-  qos.encode_header(encoder);
+  bool has_acks = qos.encode_header(encoder, received_message_ids);
 
-  bool has_acks = false;
-  {
-    if (qos.acks().empty()) {
-      encoder.put<uint8_t>(0);
-    }
-    else {
-      encoder.put<uint8_t>(1);
-      qos.encode_acks(encoder);
-      encoder.put(received_message_ids);
-      has_acks = true;
-    }
-  }
-
-  //club::log("err? ", encoder.error() ? "yes" : "no", " ", encoder.written());
   auto count_encoder = encoder;
   encoder.skip(sizeof(uint16_t));
 
@@ -131,18 +110,7 @@ boost::optional<size_t> encode_packet_with_one_message
     , std::vector<uint8_t>& out_packet) {
   binary::encoder encoder(out_packet);
 
-  qos.encode_header(encoder);
-
-  {
-    if (qos.acks().empty()) {
-      encoder.put<uint8_t>(0);
-    }
-    else {
-      encoder.put<uint8_t>(1);
-      qos.encode_acks(encoder);
-      encoder.put(received_message_ids);
-    }
-  }
+  qos.encode_header(encoder, received_message_ids);
 
   assert(!encoder.error());
   encoder.put<uint16_t>(1); // We're sending just one message.

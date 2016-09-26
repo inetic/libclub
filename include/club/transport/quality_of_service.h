@@ -48,7 +48,7 @@ public:
   void encode_acks(binary::encoder&);
   void decode_acks(binary::decoder&);
 
-  void encode_header(binary::encoder&);
+  bool encode_header(binary::encoder&, AckSet);
   void decode_header(binary::decoder&);
 
   void encode_payload_header(binary::encoder&, size_t packet_size);
@@ -140,6 +140,8 @@ inline void QualityOfService::encode_acks(binary::encoder& e) {
 
 //--------------------------------------------------------------------
 inline void QualityOfService::decode_acks(binary::decoder& d) {
+  if (!d.get<uint8_t>() || d.error()) return;
+
   _bytes_newly_acked = 0;
 
   bool data_loss_detected = false;
@@ -170,10 +172,16 @@ inline void QualityOfService::decode_acks(binary::decoder& d) {
     }
   }
 
-  //std::cout << "-----------------------" << std::endl;
   if (data_loss_detected) {
     _cwnd = std::min(_cwnd, std::max(_cwnd/2, MIN_CWND() * MSS()));
   }
+
+  // TODO: We should implement an AckSet union and use that one. That
+  // is, if this packet got reordered and is actually older than
+  // a packet we received in the past, then this ack_set will destroy
+  // information.
+  auto ack_set = d.get<AckSet>();
+  _received_message_ids_by_peer = ack_set;
 }
 
 //--------------------------------------------------------------------
@@ -211,7 +219,7 @@ void QualityOfService::decode_payload_header(binary::decoder& d) {
 
 //--------------------------------------------------------------------
 inline
-void QualityOfService::encode_header(binary::encoder& e) {
+bool QualityOfService::encode_header(binary::encoder& e, AckSet received_message_ids) {
   using namespace std::chrono;
 
   auto now = time_since_start_mks();
@@ -222,6 +230,17 @@ void QualityOfService::encode_header(binary::encoder& e) {
 
   e.put(now);
   e.put(timestamp_difference_mks);
+
+  if (_acks.empty()) {
+    e.put<uint8_t>(0);
+    return false;
+  }
+  else {
+    e.put<uint8_t>(1);
+    encode_acks(e);
+    e.put(received_message_ids);
+    return true;
+  }
 }
 
 //--------------------------------------------------------------------
@@ -233,6 +252,14 @@ void QualityOfService::decode_header(binary::decoder& d) {
   auto timestamp_difference_mks = d.get<int64_t>();
 
   assert(!d.error());
+
+  // As per LEBDAT documentation:
+  // # flightsize is the amount of data outstanding before this ACK
+  // #    was received and is updated later;
+  // So we must set it *before* we read the acks.
+  auto flight_size = bytes_in_flight();
+
+  decode_acks(d);
 
   if (timestamp_difference_mks == invalid_ts) {
     return;
@@ -252,14 +279,17 @@ void QualityOfService::decode_header(binary::decoder& d) {
 
   float off_target = (TARGET - our_delay) / TARGET;
   float window_factor = _bytes_newly_acked * MSS() / _cwnd;
-  auto flight_size = bytes_in_flight();
 
   auto scaled_gain = GAIN * off_target * window_factor;
   auto max_allowed_cwnd = flight_size + ALLOWED_INCREASE * MSS();
 
-  //club::log(">>> our_delay: ", our_delay);
+  //club::log(">>> off_target: ", off_target);
+  //club::log(">>> window_factor: ", window_factor);
+  //club::log(">>> flight_size: ", flight_size);
+  //club::log(">>> _cwnd + scaled_gain: ", (_cwnd + scaled_gain), " max_allowed_cwnd:", max_allowed_cwnd);
   _cwnd = std::min(_cwnd + scaled_gain, max_allowed_cwnd);
   _cwnd = std::max<decltype(_cwnd)>(_cwnd, MIN_CWND() * MSS());
+
 }
 
 //--------------------------------------------------------------------
