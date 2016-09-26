@@ -38,7 +38,7 @@ public:
   boost::asio::steady_timer::duration
     next_sleep_duration(udp::endpoint);
 
-  size_t header_size() const;
+  size_t payload_header_size() const;
 
   // Acks are being encoded/decoded separately from the header because
   // header always contains and increments the sequence number. But
@@ -48,8 +48,11 @@ public:
   void encode_acks(binary::encoder&);
   void decode_acks(binary::decoder&);
 
-  void encode_header(binary::encoder&, size_t packet_size);
+  void encode_header(binary::encoder&);
   void decode_header(binary::decoder&);
+
+  void encode_payload_header(binary::encoder&, size_t packet_size);
+  void decode_payload_header(binary::decoder&);
 
   const std::set<uint32_t>& acks() const { return _acks; }
 
@@ -91,6 +94,11 @@ private:
   //          |
   std::map<uint32_t, PacketInfo> _in_flight;
   std::set<uint32_t> _acks;
+
+public:
+  // TODO: Not too happy that this variable is here (and that it is
+  // public). Should it not be in TransmitQueue instead?
+  AckSet _received_message_ids_by_peer;
 };
 
 //--------------------------------------------------------------------
@@ -170,11 +178,8 @@ inline void QualityOfService::decode_acks(binary::decoder& d) {
 
 //--------------------------------------------------------------------
 inline size_t
-QualityOfService::header_size() const {
-  return 8 // timestamp
-       + 8 // timestamp_difference_mks
-       + 4 // sequence number
-       ;
+QualityOfService::payload_header_size() const {
+  return sizeof(_next_seq_nr);
 }
 
 //--------------------------------------------------------------------
@@ -188,12 +193,26 @@ QualityOfService::next_packet_max_size() const {
 
 //--------------------------------------------------------------------
 inline
-void QualityOfService::encode_header(binary::encoder& e, size_t packet_size) {
-  using namespace std::chrono;
-
+void QualityOfService::encode_payload_header(binary::encoder& e, size_t packet_size) {
   _bytes_sent_total += packet_size;
-
   auto seq_nr = _next_seq_nr++;
+  _in_flight[seq_nr] = PacketInfo{ uint32_t(packet_size)
+                                 , clock::now() };
+  e.put(seq_nr);
+}
+
+//--------------------------------------------------------------------
+inline
+void QualityOfService::decode_payload_header(binary::decoder& d) {
+  auto seq_nr = d.get<uint32_t>();
+  if (d.error()) { assert(0); return; }
+  _acks.insert(seq_nr);
+}
+
+//--------------------------------------------------------------------
+inline
+void QualityOfService::encode_header(binary::encoder& e) {
+  using namespace std::chrono;
 
   auto now = time_since_start_mks();
 
@@ -201,12 +220,8 @@ void QualityOfService::encode_header(binary::encoder& e, size_t packet_size) {
     = _last_recv_packet_time != invalid_ts ? now - _last_recv_packet_time
                                            : invalid_ts;
 
-  _in_flight[seq_nr] = PacketInfo{ uint32_t(packet_size)
-                                 , clock::now() };
-
   e.put(now);
   e.put(timestamp_difference_mks);
-  e.put(seq_nr);
 }
 
 //--------------------------------------------------------------------
@@ -216,11 +231,6 @@ void QualityOfService::decode_header(binary::decoder& d) {
 
   _last_recv_packet_time = d.get<int64_t>();
   auto timestamp_difference_mks = d.get<int64_t>();
-  auto seq_nr = d.get<uint32_t>();
-
-  assert(!d.error());
-
-  _acks.insert(seq_nr);
 
   assert(!d.error());
 

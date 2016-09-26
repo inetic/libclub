@@ -28,23 +28,22 @@ private:
 public:
   bool error() const { return _decoder.error(); }
 
-  boost::optional<AckSet> decode_header() {
-    boost::optional<AckSet> ack_set;
+  void decode_header() {
+    _qos.decode_header(_decoder);
 
     bool has_acks = _decoder.get<uint8_t>() != 0;
 
     if (has_acks) {
       _qos.decode_acks(_decoder);
-      ack_set = _decoder.get<AckSet>();
+      auto ack_set = _decoder.get<AckSet>();
+      _qos._received_message_ids_by_peer = ack_set;
     }
 
     _message_count = _decoder.get<uint16_t>();
 
     if (*_message_count) {
-      _qos.decode_header(_decoder);
+      _qos.decode_payload_header(_decoder);
     }
-
-    return ack_set;
   }
 
   boost::optional<InMessagePart> decode_message() {
@@ -65,18 +64,19 @@ inline
 boost::optional<size_t> encode_packet( QualityOfService& qos
                                      , TransmitQueue& transmit_queue
                                      , AckSet received_message_ids
-                                     , AckSet received_message_ids_by_peer
                                      , std::vector<uint8_t>& out_packet) {
-  // TODO: Even if there are too many bytes in flight we still send ack
-  //       data. A better way would be to set up a timer (as described in
-  //       the LEBDAT RFC) and send the acks only once the timer expires.
-  size_t next_packet_size = std::max( qos.encoded_acks_size()
-                                      // Additional bytes added by encode_acks()
-                                      + 3 + binary::encoded<AckSet>::size()
+  size_t minimum_size = qos.encoded_acks_size()
+                      + 2*8 /* qos.encode_header */
+                      // Additional bytes added by encode_acks()
+                      + 3 + binary::encoded<AckSet>::size();
+
+  size_t next_packet_size = std::max( minimum_size
                                     , qos.next_packet_max_size());
 
   out_packet.resize(next_packet_size);
   binary::encoder encoder(out_packet);
+
+  qos.encode_header(encoder);
 
   bool has_acks = false;
   {
@@ -103,16 +103,16 @@ boost::optional<size_t> encode_packet( QualityOfService& qos
   // We can only encode qos header after we've known the
   // total size of this packet, so we do it below.
   binary::encoder qos_encoder = encoder;
-  encoder.skip(qos.header_size());
+  encoder.skip(qos.payload_header_size());
 
   auto count = transmit_queue.encode_payload( encoder
-                                            , received_message_ids_by_peer
+                                            , qos._received_message_ids_by_peer
                                             , qos.rtt() * 2);
 
   count_encoder.put<uint16_t>(count);
 
   if (count) {
-    qos.encode_header(qos_encoder, encoder.written());
+    qos.encode_payload_header(qos_encoder, encoder.written());
   }
 
   if (count == 0 && !has_acks) {
@@ -131,6 +131,8 @@ boost::optional<size_t> encode_packet_with_one_message
     , std::vector<uint8_t>& out_packet) {
   binary::encoder encoder(out_packet);
 
+  qos.encode_header(encoder);
+
   {
     if (qos.acks().empty()) {
       encoder.put<uint8_t>(0);
@@ -148,7 +150,7 @@ boost::optional<size_t> encode_packet_with_one_message
   // We can only encode qos header after we've known the
   // total size of this packet, so we do it below.
   binary::encoder qos_encoder = encoder;
-  encoder.skip(qos.header_size());
+  encoder.skip(qos.payload_header_size());
 
   encoder.put(m);
 
@@ -157,7 +159,7 @@ boost::optional<size_t> encode_packet_with_one_message
     return boost::none;
   }
 
-  qos.encode_header(qos_encoder, encoder.written());
+  qos.encode_payload_header(qos_encoder, encoder.written());
   out_packet.resize(encoder.written());
 
   return encoder.written();

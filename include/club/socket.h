@@ -139,7 +139,7 @@ private:
               , size_t
               , SocketStatePtr);
 
-  void handle_acks(transport::AckSet);
+  //void handle_acks(transport::AckSet);
   void handle_message(SocketStatePtr&, InMessagePart);
 
   bool try_encode(binary::encoder&, OutMessage&) const;
@@ -163,8 +163,8 @@ private:
   void on_recv_timeout_alarm();
   void on_send_keepalive_alarm(SocketStatePtr);
 
-  bool encode_acks(binary::encoder& encoder);
-  void decode_acks(binary::decoder& decoder);
+  //bool encode_acks(binary::encoder& encoder);
+  //void decode_acks(binary::decoder& decoder);
 
   void sync_send_close_message();
 
@@ -203,7 +203,6 @@ private:
   boost::optional<Sync>            _sync;
   PendingMessages                  _pending_reliable_messages;
   boost::optional<PendingMessage>  _pending_unreliable_message;
-  AckSet _received_message_ids_by_peer;
   AckSet _received_message_ids;
 
   SequenceNumber _next_reliable_sn   = 0;
@@ -432,13 +431,9 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   transport::PacketDecoder decoder(_qos, state->rx_buffer);
 
-  auto opt_acks = decoder.decode_header();
+  decoder.decode_header();
 
   if (decoder.error()) return handle_error(transport::error::parse_error);
-
-  if (opt_acks) {
-    _received_message_ids_by_peer = *opt_acks;
-  }
 
   while (auto m = decoder.decode_message()) {
     if (decoder.error()) {
@@ -458,12 +453,12 @@ void SocketImpl::on_receive( boost::system::error_code error
 }
 
 //------------------------------------------------------------------------------
-inline
-void SocketImpl::handle_acks(AckSet acks) {
-  // TODO: If we receive an older packet than we've already received, this
-  // is going to reduce our information.
-  _received_message_ids_by_peer = acks;
-}
+//inline
+//void SocketImpl::handle_acks(AckSet acks) {
+//  // TODO: If we receive an older packet than we've already received, this
+//  // is going to reduce our information.
+//  _received_message_ids_by_peer = acks;
+//}
 
 //------------------------------------------------------------------------------
 inline
@@ -601,26 +596,26 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
 }
 
 //------------------------------------------------------------------------------
-inline bool SocketImpl::encode_acks(binary::encoder& encoder) {
-  if (_qos.acks().empty()) {
-    encoder.put<uint8_t>(0);
-    return false;
-  }
-  encoder.put<uint8_t>(1);
-  _qos.encode_acks(encoder);
-  encoder.put(_received_message_ids);
-  return true;
-}
+//inline bool SocketImpl::encode_acks(binary::encoder& encoder) {
+//  if (_qos.acks().empty()) {
+//    encoder.put<uint8_t>(0);
+//    return false;
+//  }
+//  encoder.put<uint8_t>(1);
+//  _qos.encode_acks(encoder);
+//  encoder.put(_received_message_ids);
+//  return true;
+//}
 
 //------------------------------------------------------------------------------
-inline void SocketImpl::decode_acks(binary::decoder& decoder) {
-  bool has_acks = decoder.get<uint8_t>() != 0;
-
-  if (!has_acks) return;
-  _qos.decode_acks(decoder);
-  auto ack_set = decoder.get<AckSet>();
-  handle_acks(ack_set);
-}
+//inline void SocketImpl::decode_acks(binary::decoder& decoder) {
+//  bool has_acks = decoder.get<uint8_t>() != 0;
+//
+//  if (!has_acks) return;
+//  _qos.decode_acks(decoder);
+//  auto ack_set = decoder.get<AckSet>();
+//  handle_acks(ack_set);
+//}
 
 //------------------------------------------------------------------------------
 inline
@@ -634,7 +629,7 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   auto opt_encoded_size = encode_packet( _qos
                                        , _transmit_queue
                                        , _received_message_ids
-                                       , _received_message_ids_by_peer
+                                       //, _received_message_ids_by_peer
                                        , state->tx_buffer);
 
   if (!opt_encoded_size) {
