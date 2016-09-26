@@ -27,6 +27,7 @@
 #include <club/transport/error.h>
 #include <club/transport/punch_hole.h>
 #include <club/transport/quality_of_service.h>
+#include <club/transport/packet.h>
 #include <club/debug/log.h>
 
 namespace club {
@@ -416,9 +417,6 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   if (state->was_destroyed) return;
 
-  //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
-  //  " <- ", _remote_endpoint.port(), " ", _on_send.size());
-
   _recv_timeout_alarm.stop();
 
   if (error) {
@@ -432,28 +430,23 @@ void SocketImpl::on_receive( boost::system::error_code error
     }
   }
 
-  binary::decoder decoder(state->rx_buffer);
+  transport::PacketDecoder decoder(_qos, state->rx_buffer);
 
-  decode_acks(decoder);
-
-  if (decoder.error()) return handle_error(transport::error::parse_error);
-
-  auto message_count = decoder.get<uint16_t>();
+  auto opt_acks = decoder.decode_header();
 
   if (decoder.error()) return handle_error(transport::error::parse_error);
 
-  if (message_count) {
-    _qos.decode_header(decoder);
+  if (opt_acks) {
+    _received_message_ids_by_peer = *opt_acks;
+  }
 
-    for (uint16_t i = 0; i < message_count; ++i) {
-      auto m = decoder.get<InMessagePart>();
-      if (decoder.error()) {
-        return handle_error(transport::error::parse_error);
-      }
-      handle_message(state, std::move(m));
-      if (state->was_destroyed) return;
-      if (!_socket.is_open()) return;
+  while (auto m = decoder.decode_message()) {
+    if (decoder.error()) {
+      return handle_error(transport::error::parse_error);
     }
+    handle_message(state, std::move(*m));
+    if (state->was_destroyed) return;
+    if (!_socket.is_open()) return;
   }
 
   if (can_exec_on_send_handlers()) {
@@ -638,71 +631,31 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   if (!_socket.is_open()) return;
   if (_send_state != SendState::pending) return;
 
-  // TODO: Even if there are too many bytes in flight we still send ack
-  //       data. A better way would be to set up a timer (as described in
-  //       the LEBDAT RFC) and send the acks only once the timer expires.
-  size_t next_packet_size = std::max( _qos.encoded_acks_size()
-                                      // Additional bytes added by encode_acks()
-                                      + 3 + binary::encoded<AckSet>::size()
-                                    , _qos.next_packet_max_size());
+  auto opt_encoded_size = encode_packet( _qos
+                                       , _transmit_queue
+                                       , _received_message_ids
+                                       , _received_message_ids_by_peer
+                                       , state->tx_buffer);
 
-  state->tx_buffer.resize(next_packet_size);
-  binary::encoder encoder(state->tx_buffer);
-
-  bool has_acks = encode_acks(encoder);
-
-  //club::log("err? ", encoder.error() ? "yes" : "no", " ", encoder.written());
-  auto count_encoder = encoder;
-  encoder.skip(sizeof(uint16_t));
-
-  if (encoder.error()) {
-    //club::log("err: ", state->tx_buffer.size());
-    assert(0);
-    // Too many bytes in flight, need to wait for acks.
-    return;
-  }
-
-  // We can only encode qos header after we've known the
-  // total size of this packet, so we do it below.
-  binary::encoder qos_encoder = encoder;
-  encoder.skip(_qos.header_size());
-
-  auto count = _transmit_queue.encode_payload( encoder
-                                             , _received_message_ids_by_peer
-                                             , _qos.rtt() * 2);
-
-  if (count == 0 && !has_acks) {
+  if (!opt_encoded_size) {
     _send_keepalive_alarm.start(_keepalive_period);
 
-    _strand.dispatch([=]() {
+    return _strand.dispatch([=]() {
         // TODO: Check if destroyed.
         if (can_exec_on_send_handlers()) {
           exec_on_send_handlers(error_code());
         }
       });
-    return;
   }
 
   _send_state = SendState::sending;
-
-  count_encoder.put<uint16_t>(count);
-
-  if (count) {
-    _qos.encode_header(qos_encoder, encoder.written());
-  }
 
   // Get the pointer here because `state` is moved from in arguments below
   // (and order of argument evaluation is undefined).
   auto s = state.get();
 
-  //if (last_send_time) {
-  //  auto now = time();
-  //  print((now - *last_send_time), " start sending next_packet_size:", next_packet_size, " transmit_queue.size:", _transmit_queue.size(), " count:", count);
-  //}
-  //last_send_time = time();
-
   _socket.async_send_to
-      ( buffer(s->tx_buffer.data(), encoder.written())
+      ( buffer(s->tx_buffer.data(), *opt_encoded_size)
       , _remote_endpoint
       , _strand.wrap([this, state = std::move(state)]
                      (const error_code& error, std::size_t size) {
@@ -767,23 +720,11 @@ inline
 std::vector<uint8_t>
 SocketImpl::construct_packet_with_one_message(OutMessage& m) {
   std::vector<uint8_t> data(packet_size);
-  binary::encoder encoder(data);
 
-  encode_acks(encoder);
-  assert(!encoder.error());
-  encoder.put<uint16_t>(1); // We're sending just one message.
-
-  // We can only encode qos header after we've known the
-  // total size of this packet, so we do it below.
-  binary::encoder qos_encoder = encoder;
-  encoder.skip(_qos.header_size());
-
-  encoder.put(m);
-
-  assert(!encoder.error() && "Shouldn't happen");
-
-  _qos.encode_header(qos_encoder, encoder.written());
-  data.resize(encoder.written());
+  auto opt_encoded_size = encode_packet_with_one_message( _qos
+                                                        , m
+                                                        , _received_message_ids
+                                                        , data);
 
   return data;
 }
