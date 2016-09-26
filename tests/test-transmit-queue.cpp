@@ -17,13 +17,13 @@
 
 #include <club/debug/string_tools.h>
 #include <iostream>
-#include <club/transport/transmit_queue.h>
+#include <club/generic/cyclic_queue.h>
 
 using std::cout;
 using std::endl;
 using std::move;
 
-using CQ  = club::transport::CyclicQueue<int>;
+using CQ  = club::CyclicQueue<int>;
 
 BOOST_AUTO_TEST_CASE(test_transmit_queue) {
   {
