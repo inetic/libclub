@@ -16,6 +16,7 @@
 #define CLUB_TRANSMIT_QUEUE_H
 
 #include <list>
+#include <chrono>
 #include <boost/variant.hpp>
 #include <club/generic/cyclic_queue.h>
 #include <club/transport/out_message.h>
