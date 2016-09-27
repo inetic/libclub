@@ -32,7 +32,7 @@
 
 namespace club {
 
-class SocketImpl {
+class SocketImpl : public std::enable_shared_from_this<SocketImpl> {
 private:
   enum class SendState { sending, waiting, pending };
 
@@ -48,21 +48,7 @@ private:
   using clock = std::chrono::steady_clock;
   using udp = boost::asio::ip::udp;
 
-  struct SocketState {
-    bool                 was_destroyed;
-    udp::endpoint        rx_endpoint;
-
-    std::vector<uint8_t> rx_buffer;
-    std::vector<uint8_t> tx_buffer;
-
-    SocketState()
-      : was_destroyed(false)
-      , rx_buffer(packet_size)
-      , tx_buffer(packet_size)
-    {}
-  };
-
-  using SocketStatePtr = std::shared_ptr<SocketState>;
+  using Self = std::shared_ptr<SocketImpl>;
 
 public:
   using TransmitQueue = transport::TransmitQueue;
@@ -127,20 +113,16 @@ public:
 private:
   void handle_error(const boost::system::error_code&);
 
-  void start_receiving(SocketStatePtr);
+  void start_receiving();
 
   void on_receive( boost::system::error_code
-                 , std::size_t
-                 , SocketStatePtr);
+                 , std::size_t);
 
-  void start_sending(SocketStatePtr);
+  void start_sending();
 
-  void on_send( const boost::system::error_code&
-              , size_t
-              , SocketStatePtr);
+  void on_send(const boost::system::error_code&, size_t);
 
-  //void handle_acks(transport::AckSet);
-  void handle_message(SocketStatePtr&, InMessagePart);
+  void handle_message(InMessagePart);
 
   bool try_encode(binary::encoder&, OutMessage&) const;
 
@@ -148,12 +130,12 @@ private:
 
   void handle_sync_message(const InMessagePart&);
   void handle_close_message();
-  void handle_unreliable_message(SocketStatePtr&, const InMessagePart&);
-  void handle_reliable_message(SocketStatePtr&, const InMessagePart&);
+  void handle_unreliable_message(const InMessagePart&);
+  void handle_reliable_message(const InMessagePart&);
 
-  void replay_pending_messages(SocketStatePtr&);
+  void replay_pending_messages();
 
-  bool user_handle_reliable_msg(SocketStatePtr&, InMessageFull&);
+  bool user_handle_reliable_msg(InMessageFull&);
 
   template<typename ...Ts>
   void add_message(Ts&&... params) {
@@ -161,10 +143,7 @@ private:
   }
 
   void on_recv_timeout_alarm();
-  void on_send_keepalive_alarm(SocketStatePtr);
-
-  //bool encode_acks(binary::encoder& encoder);
-  //void decode_acks(binary::decoder& decoder);
+  void on_send_keepalive_alarm();
 
   void sync_send_close_message();
 
@@ -198,7 +177,11 @@ private:
   udp::socket                      _socket;
   udp::endpoint                    _remote_endpoint;
   TransmitQueue                    _transmit_queue;
-  SocketStatePtr                   _socket_state;
+
+  udp::endpoint        rx_endpoint;
+  std::vector<uint8_t> rx_buffer = std::vector<uint8_t>(packet_size);
+  std::vector<uint8_t> tx_buffer = std::vector<uint8_t>(packet_size);
+
   // If this is not set, then we haven't yet received sync
   boost::optional<Sync>            _sync;
   PendingMessages                  _pending_reliable_messages;
@@ -218,8 +201,6 @@ private:
   async::alarm                     _send_keepalive_alarm;
 
   transport::QualityOfService _qos;
-
-  boost::optional<uint64_t> last_send_time;
 };
 
 //------------------------------------------------------------------------------
@@ -230,9 +211,8 @@ SocketImpl::SocketImpl(boost::asio::io_service& ios)
   : _strand(ios)
   , _send_state(SendState::pending)
   , _socket(ios, udp::endpoint(udp::v4(), 0))
-  , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
-  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
+  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(); })
 {
 }
 
@@ -241,9 +221,8 @@ SocketImpl::SocketImpl(udp::socket udp_socket)
   : _strand(udp_socket.get_io_service())
   , _send_state(SendState::pending)
   , _socket(std::move(udp_socket))
-  , _socket_state(std::make_shared<SocketState>())
   , _recv_timeout_alarm(_socket.get_io_service(), [this]() { on_recv_timeout_alarm(); })
-  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(_socket_state); })
+  , _send_keepalive_alarm(_socket.get_io_service(), [=]() { on_send_keepalive_alarm(); })
 {
 }
 
@@ -258,25 +237,6 @@ void SocketImpl::rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connec
 
   remote_ep = sanitize_address(remote_ep);
 
-#if 0 // Simple connect without hole punching
-  _remote_endpoint = remote_ep;
-  add_message(true, MessageType::sync, _next_reliable_sn++, std::vector<uint8_t>());
-  start_sending(_socket_state);
-  start_receiving(_socket_state);
-
-  auto state = _socket_state;
-
-  _socket.get_io_service().post([h = std::move(on_connect), state]() {
-      if (state->was_destroyed) {
-        h(boost::asio::error::operation_aborted);
-      }
-      else {
-        h(error_code());
-      }
-    });
-#else
-  auto state = _socket_state;
-
   auto syn_message = OutMessage( true
                                , MessageType::sync
                                , _next_reliable_sn++
@@ -289,20 +249,19 @@ void SocketImpl::rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connec
   //       so that we can acknowledge it asap.
   auto on_punch = [ this
                   , on_connect = move(on_connect)
-                  , state = move(state)
+                  , self = shared_from_this()
                   , syn_message = move(syn_message)]
                   (error_code error, udp::endpoint remote_ep) mutable {
     if (error) return on_connect(error);
     _remote_endpoint = remote_ep;
     _transmit_queue.insert(std::move(syn_message));
-    start_sending(_socket_state);
-    start_receiving(_socket_state);
+    start_sending();
+    start_receiving();
     _send_keepalive_alarm.start(_keepalive_period);
     return on_connect(error);
   };
 
   transport::punch_hole(_socket, remote_ep, std::move(packet), std::move(on_punch));
-#endif
 }
 
 //------------------------------------------------------------------------------
@@ -321,7 +280,6 @@ SocketImpl::remote_endpoint() const {
 //------------------------------------------------------------------------------
 inline
 SocketImpl::~SocketImpl() {
-  _socket_state->was_destroyed = true;
   close();
 }
 
@@ -342,7 +300,7 @@ inline
 void SocketImpl::send_unreliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
   add_message(false, MessageType::unreliable, _next_unreliable_sn++, std::move(data));
-  start_sending(_socket_state);
+  start_sending();
 }
 
 //------------------------------------------------------------------------------
@@ -350,26 +308,24 @@ inline
 void SocketImpl::send_reliable(std::vector<uint8_t> data, OnSend on_send) {
   _on_send.push(std::move(on_send));
   add_message(true, MessageType::reliable, _next_reliable_sn++, std::move(data));
-  start_sending(_socket_state);
+  start_sending();
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::start_receiving(SocketStatePtr state)
+void SocketImpl::start_receiving()
 {
   using boost::system::error_code;
   using std::move;
 
-  auto s = state.get();
-
   _recv_timeout_alarm.start(recv_timeout_duration());
 
   _socket.async_receive_from
-      ( boost::asio::buffer(s->rx_buffer)
-      , s->rx_endpoint
-      , _strand.wrap([this, state = move(state)]
+      ( boost::asio::buffer(rx_buffer)
+      , rx_endpoint
+      , _strand.wrap([self = shared_from_this()]
                      (const error_code& e, std::size_t size) {
-                       on_receive(e, size, move(state));
+                       self->on_receive(e, size);
                      })
       );
 }
@@ -408,13 +364,10 @@ void SocketImpl::handle_error(const boost::system::error_code& err) {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::on_receive( boost::system::error_code error
-                           , std::size_t               size
-                           , SocketStatePtr            state)
+                           , std::size_t               size)
 {
   using namespace std;
   namespace asio = boost::asio;
-
-  if (state->was_destroyed) return;
 
   _recv_timeout_alarm.stop();
 
@@ -424,12 +377,12 @@ void SocketImpl::on_receive( boost::system::error_code error
 
   // Ignore packets from unknown sources.
   if (!_remote_endpoint.address().is_unspecified()) {
-    if (state->rx_endpoint != _remote_endpoint) {
-      return start_receiving(move(state));
+    if (rx_endpoint != _remote_endpoint) {
+      return start_receiving();
     }
   }
 
-  transport::PacketDecoder decoder(_qos, state->rx_buffer);
+  transport::PacketDecoder decoder(_qos, rx_buffer);
 
   decoder.decode_header();
 
@@ -439,8 +392,7 @@ void SocketImpl::on_receive( boost::system::error_code error
     if (decoder.error()) {
       return handle_error(transport::error::parse_error);
     }
-    handle_message(state, std::move(*m));
-    if (state->was_destroyed) return;
+    handle_message(std::move(*m));
     if (!_socket.is_open()) return;
   }
 
@@ -448,8 +400,8 @@ void SocketImpl::on_receive( boost::system::error_code error
     exec_on_send_handlers(error);
   }
 
-  start_receiving(state);
-  start_sending(move(state));
+  start_receiving();
+  start_sending();
 }
 
 //------------------------------------------------------------------------------
@@ -462,12 +414,12 @@ void SocketImpl::on_receive( boost::system::error_code error
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_message(SocketStatePtr& state, InMessagePart msg) {
+void SocketImpl::handle_message(InMessagePart msg) {
   switch (msg.type) {
     case MessageType::sync:       handle_sync_message(msg); break;
     case MessageType::keep_alive: break;
-    case MessageType::unreliable: handle_unreliable_message(state, msg); break;
-    case MessageType::reliable:   handle_reliable_message(state, msg); break;
+    case MessageType::unreliable: handle_unreliable_message(msg); break;
+    case MessageType::reliable:   handle_reliable_message(msg); break;
     case MessageType::close:      handle_close_message(); break;
     default: return handle_error(error::parse_error);
   }
@@ -491,15 +443,14 @@ void SocketImpl::handle_sync_message(const InMessagePart& msg) {
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_reliable_message( SocketStatePtr& state
-                                        , const InMessagePart& msg) {
+void SocketImpl::handle_reliable_message(const InMessagePart& msg) {
   if (!_sync) return;
   if (!_received_message_ids.can_add(msg.sequence_number)) return;
 
   if (msg.sequence_number == _sync->last_used_reliable_sn + 1) {
     if (auto full_msg = msg.get_complete_message()) {
-      if (!user_handle_reliable_msg(state, *full_msg)) return;
-      return replay_pending_messages(state);
+      if (!user_handle_reliable_msg(*full_msg)) return;
+      return replay_pending_messages();
     }
   }
 
@@ -510,13 +461,13 @@ void SocketImpl::handle_reliable_message( SocketStatePtr& state
   }
   else {
     i->second.update_payload(msg.chunk_start, msg.payload);
-    replay_pending_messages(state);
+    replay_pending_messages();
   }
 }
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
+void SocketImpl::replay_pending_messages() {
   auto& pms = _pending_reliable_messages;
 
   for (auto i = pms.begin(); i != pms.end();) {
@@ -525,7 +476,7 @@ void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
     if (pm.sequence_number == _sync->last_used_reliable_sn + 1) {
       auto full_message = pm.get_complete_message();
       if (!full_message) return;
-      if (!user_handle_reliable_msg(state, *full_message)) return;
+      if (!user_handle_reliable_msg(*full_message)) return;
       i = pms.erase(i);
     }
     else {
@@ -536,8 +487,7 @@ void SocketImpl::replay_pending_messages(SocketStatePtr& state) {
 
 //------------------------------------------------------------------------------
 inline
-bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
-                                         , InMessageFull& msg) {
+bool SocketImpl::user_handle_reliable_msg(InMessageFull& msg) {
   if (!_on_receive_reliable) return false;
   // The callback may hold a shared_ptr to this, so I placed the scope
   // here so that 'f' would get destroyed and thus state->was_destroyed
@@ -546,7 +496,6 @@ bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
     auto f = std::move(_on_receive_reliable);
     f(boost::system::error_code(), msg.payload);
   }
-  if (state->was_destroyed) return false;
   _received_message_ids.try_add(msg.sequence_number);
   _sync->last_used_reliable_sn = msg.sequence_number;
   return true;
@@ -554,8 +503,7 @@ bool SocketImpl::user_handle_reliable_msg( SocketStatePtr& state
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::handle_unreliable_message( SocketStatePtr& state
-                                          , const InMessagePart& msg) {
+void SocketImpl::handle_unreliable_message(const InMessagePart& msg) {
   if (!_on_receive_unreliable) return;
   if (!_sync) return;
   if (msg.sequence_number <= _sync->last_used_unreliable_sn) return;
@@ -565,7 +513,6 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
   if (msg.is_complete()) {
     auto r = std::move(_on_receive_unreliable);
     r(boost::system::error_code(), msg.payload);
-    if (state->was_destroyed) return;
     _sync->last_used_unreliable_sn = msg.sequence_number;
     opm = boost::none;
     return;
@@ -589,7 +536,6 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
   if (pm.is_complete()) {
     auto r = std::move(_on_receive_unreliable);
     r(boost::system::error_code(), pm.payload);
-    if (state->was_destroyed) return;
     _sync->last_used_unreliable_sn = msg.sequence_number;
     opm = boost::none;
   }
@@ -619,7 +565,7 @@ void SocketImpl::handle_unreliable_message( SocketStatePtr& state
 
 //------------------------------------------------------------------------------
 inline
-void SocketImpl::start_sending(SocketStatePtr state) {
+void SocketImpl::start_sending() {
   using boost::system::error_code;
   using boost::asio::buffer;
 
@@ -629,8 +575,7 @@ void SocketImpl::start_sending(SocketStatePtr state) {
   auto opt_encoded_size = encode_packet( _qos
                                        , _transmit_queue
                                        , _received_message_ids
-                                       //, _received_message_ids_by_peer
-                                       , state->tx_buffer);
+                                       , tx_buffer);
 
   if (!opt_encoded_size) {
     _send_keepalive_alarm.start(_keepalive_period);
@@ -645,29 +590,22 @@ void SocketImpl::start_sending(SocketStatePtr state) {
 
   _send_state = SendState::sending;
 
-  // Get the pointer here because `state` is moved from in arguments below
-  // (and order of argument evaluation is undefined).
-  auto s = state.get();
-
   _socket.async_send_to
-      ( buffer(s->tx_buffer.data(), *opt_encoded_size)
+      ( buffer(tx_buffer.data(), *opt_encoded_size)
       , _remote_endpoint
-      , _strand.wrap([this, state = std::move(state)]
+      , _strand.wrap([self = shared_from_this()]
                      (const error_code& error, std::size_t size) {
-                       on_send(error, size, std::move(state));
+                       self->on_send(error, size);
                      }));
 }
 
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::on_send( const boost::system::error_code& error
-                        , size_t                           size
-                        , SocketStatePtr                   state)
+                        , size_t                           size)
 {
   using std::move;
   using boost::system::error_code;
-
-  if (state->was_destroyed) return;
 
   //club::log(">>> ", time(), " ", _socket.local_endpoint().port(),
   //  " -> ", _remote_endpoint.port(), " ", _qos, " ", _on_send.size());
@@ -681,18 +619,14 @@ void SocketImpl::on_send( const boost::system::error_code& error
 
   if (can_exec_on_send_handlers()) {
     exec_on_send_handlers(error_code());
-    if (state->was_destroyed) return;
   }
 
   // If no payload was encoded and there is no need to
   // re-send acks, then flush end return.
   if (_transmit_queue.empty() && _on_flush) {
     move_exec(_on_flush);
-    if (state->was_destroyed) return;
     if (!_socket.is_open()) return;
   }
-
-  //start_sending(move(state));
 }
 
 //------------------------------------------------------------------------------
@@ -727,7 +661,6 @@ SocketImpl::construct_packet_with_one_message(OutMessage& m) {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::sync_send_close_message() {
-  //club::log(">>> ", time(), " sending close message");
   OutMessage m( false
               , MessageType::close
               , 0
@@ -744,7 +677,7 @@ inline void SocketImpl::on_recv_timeout_alarm() {
   handle_error(error::timed_out);
 }
 
-inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
+inline void SocketImpl::on_send_keepalive_alarm() {
   if (_transmit_queue.empty()) {
     add_message(false, MessageType::keep_alive, 0, std::vector<uint8_t>());
   }
@@ -757,7 +690,7 @@ inline void SocketImpl::on_send_keepalive_alarm(SocketStatePtr state) {
     _qos.clear_in_flight_info();
   }
 
-  start_sending(std::move(state));
+  start_sending();
 }
 
 //------------------------------------------------------------------------------
@@ -800,7 +733,9 @@ class Socket {
 private:
   using udp = boost::asio::ip::udp;
 
-  std::unique_ptr<SocketImpl> _impl;
+  // Impl is shared_ptr because we use shared_from_this to maintain its
+  // lifetime. It is however not to allow Socket to be copyable.
+  std::shared_ptr<SocketImpl> _impl;
 
 public:
   static const size_t packet_size = SocketImpl::packet_size;
@@ -810,11 +745,11 @@ public:
 
 public:
   Socket(boost::asio::io_service& ios)
-    : _impl(std::make_unique<SocketImpl>(ios))
+    : _impl(std::make_shared<SocketImpl>(ios))
   {}
 
   Socket(udp::socket udp_socket)
-    : _impl(std::make_unique<SocketImpl>(std::move(udp_socket)))
+    : _impl(std::make_shared<SocketImpl>(std::move(udp_socket)))
   {}
 
   Socket(Socket&& other)
@@ -824,6 +759,9 @@ public:
     _impl = std::move(other._impl);
     return *this;
   }
+
+  Socket(const Socket&) = delete;
+  Socket& operator = (const Socket&) = delete;
 
   udp::endpoint local_endpoint() const {
     return _impl->local_endpoint();
