@@ -731,7 +731,8 @@ public:
   Socket& operator = (const Socket&) = delete;
 
   ~Socket() {
-    _impl->close();
+    // _impl may have been moved from.
+    if (_impl) _impl->close();
   }
 
   udp::endpoint local_endpoint() const {
