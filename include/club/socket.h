@@ -332,8 +332,20 @@ void SocketImpl::start_receiving()
 
 //------------------------------------------------------------------------------
 inline void SocketImpl::flush(OnFlush on_flush) {
-  _on_flush = on_flush;
-  // TODO: If there is nothing to flush, post _on_flush for execution.
+  assert(!_on_flush);
+  _on_flush = std::move(on_flush);
+
+  if (_transmit_queue.empty() && _send_state != SendState::sending) {
+    _strand.dispatch([this, self = shared_from_this()]() {
+        // If we're currently sending, then the on_send handler
+        // shall flush.
+        if (_send_state == SendState::sending) return;
+
+        if (_transmit_queue.empty() && _on_flush) {
+          move_exec(_on_flush);
+        }
+      });
+  }
 }
 
 //------------------------------------------------------------------------------
