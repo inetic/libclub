@@ -549,10 +549,12 @@ void SocketImpl::start_sending() {
   if (!opt_encoded_size) {
     _send_keepalive_alarm.start(_keepalive_period);
 
-    return _strand.dispatch([=]() {
-        // TODO: Check if destroyed.
+    return _strand.dispatch([this, self = shared_from_this()]() {
         if (can_exec_on_send_handlers()) {
           exec_on_send_handlers(error_code());
+        }
+        if (_transmit_queue.empty() && _on_flush) {
+          move_exec(_on_flush);
         }
       });
   }
@@ -681,18 +683,10 @@ SocketImpl::sanitize_address(udp::endpoint ep) {
 }
 
 //------------------------------------------------------------------------------
-template<class T> void socket_print_(T&& arg) {
-  std::cout << arg << std::endl;
-}
-
-template<class... Ts, class T> void socket_print_(T&& arg, Ts&&... args) {
-  std::cout << arg;
-  socket_print_(std::forward<Ts>(args)...);
-}
-
 template<class... Ts> void SocketImpl::print(Ts&&... args) const {
-  std::cout << this << " " << time() << " ";
-  socket_print_(std::forward<Ts>(args)...);
+  //std::cout << this << " " << time() << " ";
+  //socket_print_(std::forward<Ts>(args)...);
+  club::log(this, " ", time(), " ", std::forward<Ts>(args)...);
 }
 
 //------------------------------------------------------------------------------
@@ -731,6 +725,10 @@ public:
 
   Socket(const Socket&) = delete;
   Socket& operator = (const Socket&) = delete;
+
+  ~Socket() {
+    _impl->close();
+  }
 
   udp::endpoint local_endpoint() const {
     return _impl->local_endpoint();
