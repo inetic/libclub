@@ -34,7 +34,7 @@ namespace club {
 
 class SocketImpl : public std::enable_shared_from_this<SocketImpl> {
 private:
-  enum class SendState { sending, waiting, pending };
+  enum class SendState { sending, pending };
 
 public:
   static constexpr size_t packet_size = transport::QualityOfService::MSS();
@@ -550,6 +550,8 @@ void SocketImpl::start_sending() {
     _send_keepalive_alarm.start(_keepalive_period);
 
     return _strand.dispatch([this, self = shared_from_this()]() {
+        if (_send_state != SendState::pending) return;
+
         if (can_exec_on_send_handlers()) {
           exec_on_send_handlers(error_code());
         }
@@ -598,6 +600,8 @@ void SocketImpl::on_send( const boost::system::error_code& error
     move_exec(_on_flush);
     if (!_socket.is_open()) return;
   }
+
+  start_sending();
 }
 
 //------------------------------------------------------------------------------
