@@ -350,7 +350,6 @@ inline void SocketImpl::close() {
 //------------------------------------------------------------------------------
 inline
 void SocketImpl::handle_error(const boost::system::error_code& err) {
-  //club::log(time(), " ", this, " handle error ", err.message(), " kkk=", kkk);
   close();
 
   auto r1 = std::move(_on_receive_unreliable);
@@ -403,14 +402,6 @@ void SocketImpl::on_receive( boost::system::error_code error
   start_receiving();
   start_sending();
 }
-
-//------------------------------------------------------------------------------
-//inline
-//void SocketImpl::handle_acks(AckSet acks) {
-//  // TODO: If we receive an older packet than we've already received, this
-//  // is going to reduce our information.
-//  _received_message_ids_by_peer = acks;
-//}
 
 //------------------------------------------------------------------------------
 inline
@@ -540,28 +531,6 @@ void SocketImpl::handle_unreliable_message(const InMessagePart& msg) {
     opm = boost::none;
   }
 }
-
-//------------------------------------------------------------------------------
-//inline bool SocketImpl::encode_acks(binary::encoder& encoder) {
-//  if (_qos.acks().empty()) {
-//    encoder.put<uint8_t>(0);
-//    return false;
-//  }
-//  encoder.put<uint8_t>(1);
-//  _qos.encode_acks(encoder);
-//  encoder.put(_received_message_ids);
-//  return true;
-//}
-
-//------------------------------------------------------------------------------
-//inline void SocketImpl::decode_acks(binary::decoder& decoder) {
-//  bool has_acks = decoder.get<uint8_t>() != 0;
-//
-//  if (!has_acks) return;
-//  _qos.decode_acks(decoder);
-//  auto ack_set = decoder.get<AckSet>();
-//  handle_acks(ack_set);
-//}
 
 //------------------------------------------------------------------------------
 inline
