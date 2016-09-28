@@ -515,12 +515,16 @@ BOOST_AUTO_TEST_CASE(test_transport_reliable_two_messages_causal) {
 
 //------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
+  using namespace std::chrono;
+  using clock = std::chrono::steady_clock;
   asio::io_service ios;
 
   std::srand(std::time(0));
 
   constexpr uint8_t N = 64;
   size_t count = 0;
+
+  auto start = clock::now();
 
   make_connected_sockets(ios, [&count](SocketPtr s1, SocketPtr s2) {
     auto flush_then_close = [=]() {
@@ -559,15 +563,20 @@ BOOST_AUTO_TEST_CASE(test_transport_unreliable_and_reliable) {
           cont();
         };
 
-        if (std::rand() % 2)
+        if (std::rand() % 2) {
           s1->send_reliable(std::vector<uint8_t>{0, uint8_t(i)}, on_send);
-        else
+        }
+        else {
           s1->send_unreliable(std::vector<uint8_t>{1, uint8_t(i)}, on_send);
+        }
       });
   });
 
   ios.run();
-  BOOST_REQUIRE_EQUAL(count, 64);
+  BOOST_REQUIRE_EQUAL(count, N);
+
+  auto diff = clock::now() - start;
+  BOOST_REQUIRE(diff < milliseconds(50));
 }
 
 //------------------------------------------------------------------------------
