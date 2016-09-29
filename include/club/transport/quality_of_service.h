@@ -153,15 +153,20 @@ inline void QualityOfService::decode_acks(binary::decoder& d) {
     assert(!d.error());
 
     if (_last_received_ack) {
-      if (sn != *_last_received_ack + 1) {
-        data_loss_detected = true;
+      auto expected = *_last_received_ack + 1;
 
-        for (auto j = _in_flight.begin(); j != _in_flight.end();) {
-          if (j->first >= sn) break;
-          j = _in_flight.erase(j);
+      if (sn != expected) {
+        _in_flight.erase(_in_flight.begin(), _in_flight.upper_bound(sn));
+
+        if (sn < expected) {
+          continue;
+        }
+        else /* (sn > expected) */ {
+          data_loss_detected = true;
         }
       }
     }
+
     _last_received_ack = sn;
 
     auto i = _in_flight.find(sn);
