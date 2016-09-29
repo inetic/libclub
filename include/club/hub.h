@@ -83,11 +83,10 @@ public:
 
   size_t size() const { return _nodes.size(); }
 
-  // TODO: Check why this is public.
-  void add_connection(Node& from, uuid to, boost::asio::ip::address);
-
 private:
   friend struct Node;
+
+  void add_connection(Node& from, uuid to, boost::asio::ip::address);
 
   template<class Message> void broadcast(const Message&);
 
