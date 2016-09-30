@@ -16,8 +16,8 @@
 #define CLUB_HUB_H
 
 #include <map>
+#include <list>
 #include <boost/asio.hpp>
-#include <boost/signals2.hpp>
 #include <boost/container/flat_map.hpp>
 #include <binary/decoder.h>
 
@@ -45,11 +45,8 @@ class SeenMessages;
 
 class hub {
 private:
-  template<class T> using Signal = boost::signals2::signal<T>;
-  template<class T> using shared_ptr = std::shared_ptr<T>;
-
   using ID = club::uuid;
-  using Bytes = std::vector<char>;
+  using Bytes = std::vector<char>; // TODO: This should be a vector of uint8_t
   using Address = boost::asio::ip::address;
 
   typedef boost::asio::io_service::work    Work;
@@ -58,18 +55,22 @@ private:
   typedef std::function<void(const boost::system::error_code&, uuid)> OnFused;
 
 public:
-
   using node = node_impl;
+  using OnInsert = std::function<void(std::set<node>)>;
+  using OnRemove = std::function<void(std::set<node>)>;
+  using OnReceive = std::function<void(node, const Bytes&)>;
+  using OnReceiveUnreliable = std::function<void(node, boost::asio::const_buffer)>;
+  using OnDirectConnect = std::function<void(node)>;
 
 public:
 
   hub(boost::asio::io_service&);
 
-  Signal<void(std::set<node>)>                  on_insert;
-  Signal<void(std::set<node>)>                  on_remove;
-  Signal<void(node, const Bytes&)>              on_receive;
-  Signal<void(node, boost::asio::const_buffer)> on_receive_unreliable;
-  Signal<void(node)>                            on_direct_connect;
+  void on_insert(OnInsert f);
+  void on_remove(OnRemove f);
+  void on_receive(OnReceive f);
+  void on_receive_unreliable(OnReceiveUnreliable f);
+  void on_direct_connect(OnDirectConnect f);
 
   void fuse(Socket&&, const OnFused&);
 
@@ -138,6 +139,8 @@ private:
   void commit_fuse(LogEntry&&);
 
 private:
+  struct Callbacks;
+  std::shared_ptr<Callbacks>             _callbacks;
   boost::asio::io_service&               _io_service;
   std::set<uuid>                         _last_quorum;
   std::unique_ptr<Work>                  _work;

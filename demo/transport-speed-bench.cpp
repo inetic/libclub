@@ -83,7 +83,7 @@ struct Server : public Stopable {
   udp::socket listening_socket;
   std::shared_ptr<ClubSocket> socket;
   clock::time_point start;
-  size_t to_send = 5'000'000;
+  size_t to_send = 30'000'000;
   size_t remaining = to_send;
   size_t counter = 0;
 

@@ -91,8 +91,74 @@ static Graph<uuid> single_node_graph(const uuid& id) {
 }
 
 // -----------------------------------------------------------------------------
+template<class F>
+struct Callback {
+  F func;
+  bool was_reset;
+
+  template<class... Args> void operator()(Args&&... args) {
+    // Calling a callback may try to replace itself with another function
+    // (or nullptr), this could destroy the original function's  captured
+    // variables. We preserve them by temporarily moving them to a local
+    // variable.
+    was_reset = false;
+    auto f = std::move(func);
+    f(std::forward<Args>(args)...);
+    if (!was_reset) { func = std::move(f); }
+  }
+
+  void reset(F f) {
+    was_reset = true;
+    func = std::move(f);
+  }
+
+  operator bool() const { return (bool) func; }
+};
+
+struct hub::Callbacks : public std::enable_shared_from_this<hub::Callbacks> {
+  Callback<OnInsert> _on_insert;
+  Callback<OnRemove> _on_remove;
+  Callback<OnReceive> _on_receive;
+  Callback<OnReceiveUnreliable> _on_receive_unreliable;
+  Callback<OnDirectConnect> _on_direct_connect;
+
+  template<class... Args>
+  void on_insert(Args&&... args) {
+    safe_exec(_on_insert, std::forward<Args>(args)...);
+  }
+
+  template<class... Args>
+  void on_remove(Args&&... args) {
+    safe_exec(_on_remove, std::forward<Args>(args)...);
+  }
+
+  template<class... Args>
+  void on_receive(Args&&... args) {
+    safe_exec(_on_receive, std::forward<Args>(args)...);
+  }
+
+  template<class... Args>
+  void on_receive_unreliable(Args&&... args) {
+    safe_exec(_on_receive_unreliable, std::forward<Args>(args)...);
+  }
+
+  template<class... Args>
+  void on_direct_connect(Args&&... args) {
+    safe_exec(_on_direct_connect, std::forward<Args>(args)...);
+  }
+
+  template<class F, class... Args>
+  void safe_exec(F& f, Args&&... args) {
+    if (!f) return;
+    auto self = shared_from_this();
+    f(std::forward<Args>(args)...);
+  }
+};
+
+// -----------------------------------------------------------------------------
 hub::hub(boost::asio::io_service& ios)
-  : _io_service(ios)
+  : _callbacks(std::make_shared<Callbacks>())
+  , _io_service(ios)
   , _work(new Work(_io_service))
   , _id(boost::uuids::random_generator()())
   , _log(new Log())
@@ -351,7 +417,7 @@ void hub::on_commit_fuse(LogEntry entry) {
   }
 
   if (!new_ones.empty()) {
-    if (destroys_this([&]() { on_insert(move(new_ones)); })) {
+    if (destroys_this([&]() { _callbacks->on_insert(move(new_ones)); })) {
       return;
     }
   }
@@ -369,7 +435,7 @@ void hub::on_commit_fuse(LogEntry entry) {
       _nodes.erase(id);
     }
 
-    if (destroys_this([&]() { on_remove(move(lost)); })) {
+    if (destroys_this([&]() { _callbacks->on_remove(move(lost)); })) {
       return;
     }
   }
@@ -724,7 +790,9 @@ void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
                          , [shared_bytes](auto /* error */) {});
   }
 
-  on_receive_unreliable(source, const_buffer(d.current() + 4, d.size() - 4));
+  _callbacks->on_receive_unreliable( node{source}
+                                   , const_buffer( d.current() + 4
+                                                 , d.size() - 4));
 }
 
 // -----------------------------------------------------------------------------
@@ -911,13 +979,35 @@ void hub::commit(LogEntry&& entry) {
 inline
 void hub::commit_user_data(uuid op, std::vector<char>&& data) {
   if (!find_node(op)) return;
-  on_receive(hub::node{op}, move(data));
+  _callbacks->on_receive(hub::node{op}, move(data));
 }
 
 inline
 void hub::commit_fuse(LogEntry&& entry) {
   on_commit_fuse(move(entry));
 }
+
+// -----------------------------------------------------------------------------
+void hub::on_insert(OnInsert f) {
+  _callbacks->_on_insert.reset(std::move(f));
+}
+
+void hub::on_remove(OnRemove f) {
+  _callbacks->_on_remove.reset(std::move(f));
+}
+
+void hub::on_receive(OnReceive f) {
+  _callbacks->_on_receive.reset(std::move(f));
+}
+
+void hub::on_receive_unreliable(OnReceiveUnreliable f) {
+  _callbacks->_on_receive_unreliable.reset(std::move(f));
+}
+
+void hub::on_direct_connect(OnDirectConnect f) {
+  _callbacks->_on_direct_connect.reset(std::move(f));
+}
+
 // -----------------------------------------------------------------------------
 template<class T>
 inline

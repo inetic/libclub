@@ -20,6 +20,7 @@
 #include <queue>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/ip/udp.hpp>
+#include <boost/asio/strand.hpp>
 #include <club/transport/transmit_queue.h>
 #include <club/debug/ostream_uuid.h>
 #include <club/transport/out_message.h>

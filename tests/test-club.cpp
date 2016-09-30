@@ -136,7 +136,7 @@ BOOST_AUTO_TEST_CASE(club_leave_and_remove) {
         auto& r = *pair.first;
         auto& s = *pair.second;
 
-        r->on_insert.connect(when_all.make_continuation(
+        r->on_insert(when_all.make_continuation(
               [](auto c, set<club::hub::node>) {
                 c();
               }));
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(club_leave_and_remove) {
           r1.reset();
         });
 
-      r2->on_remove.connect([&](set<club::hub::node>) {
+      r2->on_remove([&](set<club::hub::node>) {
           r1_removed = true;
 
           r1.reset();
@@ -260,12 +260,12 @@ void consecutive_fusions(const size_t N) {
   for (size_t i = 0; i < N; ++i) {
     hubs.emplace_back(new club::hub(ios));
 
-    hubs[i]->on_insert.connect([&, i](set<club::hub::node> nodes){
+    hubs[i]->on_insert([&, i](set<club::hub::node> nodes){
           insert_count += nodes.size();
           on_finish();
         });
 
-    hubs[i]->on_direct_connect.connect([&](club::hub::node){
+    hubs[i]->on_direct_connect([&](club::hub::node){
           ++dc_count;
           on_finish();
         });
@@ -329,21 +329,24 @@ void fuse_n_hubs( boost::asio::io_service& ios
   auto remaining_inserts = make_shared<uint32_t>(N * (N - 1));
   auto remaining_dcs     = make_shared<uint32_t>(N * (N - 1) - 2*(N-1));
 
-  auto cs = make_shared<vector<boost::signals2::connection>>();
-
   if (N == 0 || N == 1) {
     return ios.post(handler);
   }
 
-  auto on_complete = [ cs
+  auto on_complete = [ &hubs
                      , wait_for_direct_connections
                      , remaining_inserts
                      , remaining_dcs
                      , handler]() {
     if (*remaining_inserts == 0) {
+        for (auto& hub : hubs) {
+          hub->on_insert(nullptr);
+          hub->on_direct_connect(nullptr);
+        }
       if (!wait_for_direct_connections || *remaining_dcs == 0) {
-        for (auto& c : *cs) {
-          c.disconnect();
+        for (auto& hub : hubs) {
+          hub->on_insert(nullptr);
+          hub->on_direct_connect(nullptr);
         }
       }
       handler();
@@ -351,22 +354,19 @@ void fuse_n_hubs( boost::asio::io_service& ios
   };
 
   for (size_t i = 0; i < N; ++i) {
-    auto c1 = hubs[i]->on_insert.connect(
-          [ remaining_inserts
+    hubs[i]->on_insert(
+          [ &hubs, i, remaining_inserts
           , on_complete](set<club::hub::node> nodes){
         (*remaining_inserts) -= nodes.size();
         on_complete();
       });
 
-    auto c2 = hubs[i]->on_direct_connect.connect(
+    hubs[i]->on_direct_connect(
           [ remaining_dcs
           , on_complete](club::hub::node) {
         --(*remaining_dcs);
         on_complete();
       });
-
-    cs->push_back(c1);
-    cs->push_back(c2);
   }
 
   async_loop([&ios, &hubs, N](unsigned int i, Cont cont) {
@@ -471,8 +471,6 @@ void construct_network( io_service& ios
     size_t         fuse_countdown;
     G              graph;
     I              edge_i;
-
-    vector<boost::signals2::scoped_connection> connections;
   };
 
   auto state = make_shared<State>(ios, move(graph), graph.nodes.size());
@@ -482,21 +480,17 @@ void construct_network( io_service& ios
 
   auto on_event = [=]() {
     if (state->insert_countdown == 0 && state->fuse_countdown == 0) {
-      state->connections.clear();
+      for (auto& hub : state->hubs) hub->on_insert(nullptr);
       h(move(state->hubs));
     }
   };
 
   for (auto& hub : state->hubs) {
     auto id = hub->id();
-    auto c = hub->on_insert.connect([id, on_event, state] (set<club::hub::node> nodes) {
-        set<uuid> ids;
-        for (auto n : nodes) ids.insert(n.id());
+    hub->on_insert([id, on_event, state] (set<club::hub::node> nodes) {
         state->insert_countdown -= nodes.size();
         on_event();
       });
-
-    state->connections.push_back(move(c));
   }
 
   async_loop([=, &ios](unsigned int i, Cont cont) {
@@ -633,7 +627,7 @@ BOOST_AUTO_TEST_CASE(club_fuse_populated_hubs) {
 
         for (size_t j = 0; j < hubs.size(); ++j) {
 
-          hubs[j]->on_insert.connect([&, j](set<club::hub::node> nodes) {
+          hubs[j]->on_insert([&, j](set<club::hub::node> nodes) {
               for (auto node : nodes) {
                 insert_records[j].push_back(node.id());
                 --remaining_insert_count;
@@ -646,7 +640,8 @@ BOOST_AUTO_TEST_CASE(club_fuse_populated_hubs) {
               }
             });
 
-          hubs[j]->on_direct_connect.connect([&](club::hub::node) {
+          hubs[j]->on_direct_connect([&](club::hub::node) {
+              assert(0);
               --remaining_dc_count;
               if (remaining_insert_count == 0) {
                 if (!wait_for_dcs || remaining_dc_count == 0) {
@@ -740,10 +735,10 @@ BOOST_AUTO_TEST_CASE(club_parallel_fusion) {
       for (auto hubs : {&hubs1, &hubs2}) {
         size_t i = 0;
         for (auto& hub : *hubs) {
-          hub->on_insert.connect([ i, j
-                                 , &record_sets
-                                 , &remaining_insert_count
-                                 , close_hubs] (set<club::hub::node> nodes) {
+          hub->on_insert([ i, j
+                         , &record_sets
+                         , &remaining_insert_count
+                         , close_hubs] (set<club::hub::node> nodes) {
               auto& insert_records = *record_sets.begin()[j];
 
               for (auto node : nodes) {
@@ -815,9 +810,9 @@ BOOST_AUTO_TEST_CASE(club_commit_order) {
       for (uint64_t i = 0; i < hubs.size(); ++i) {
         auto received_all = when_all.make_continuation();
 
-        hubs[i]->on_receive.connect([i, &received, &hubs, received_all]
-                                     ( club::hub::node
-                                     , const std::vector<char>& data) {
+        hubs[i]->on_receive([i, &received, &hubs, received_all]
+                             ( club::hub::node
+                             , const std::vector<char>& data) {
             binary::decoder d(data.data(), data.size());
             auto j = d.get<uint32_t>();
             received[i].push_back(j);
@@ -907,9 +902,9 @@ BOOST_AUTO_TEST_CASE(club_commit_remove_order) {
         if (i < split) {
           auto received_all = when_all.make_continuation();
 
-          hubs[i]->on_receive.connect([i, &received, &hubs, received_all]
-                                       ( club::hub::node
-                                       , const std::vector<char>& data) {
+          hubs[i]->on_receive([i, &received, &hubs, received_all]
+                               ( club::hub::node
+                               , const std::vector<char>& data) {
               binary::decoder d(data.data(), data.size());
               uint64_t j = d.get<uint32_t>();
               received[i].push_back(j);
@@ -920,12 +915,12 @@ BOOST_AUTO_TEST_CASE(club_commit_remove_order) {
               }
             });
 
-          hubs[i]->on_remove.connect([ i
-                                     , &received
-                                     , &hubs
-                                     , received_all
-                                     , id_to_i]
-                                     (set<club::hub::node> nodes) {
+          hubs[i]->on_remove([ i
+                             , &received
+                             , &hubs
+                             , received_all
+                             , id_to_i]
+                             (set<club::hub::node> nodes) {
               set<uuid> ids;
               for (auto n : nodes) { ids.insert(n.id()); }
               ASSERT(!nodes.empty());
@@ -990,8 +985,6 @@ void fuse_hub_sets( io_service& ios
                   , std::vector<HubPtr>&& set1
                   , std::vector<HubPtr>&& set2
                   , function<void (std::vector<HubPtr>&&)> on_join) {
-  using SignalConnections = std::list<boost::signals2::connection>;
-
   ASSERT(set1.size());
   ASSERT(set2.size());
 
@@ -1017,19 +1010,18 @@ void fuse_hub_sets( io_service& ios
         });
 
       auto countdown = make_shared<size_t>(2 * size1 * size2);
-      auto connections = make_shared<SignalConnections>();
 
       for (auto& hub : *new_set | indirected) {
-        auto c = hub.on_insert.connect([=](set<club::hub::node> nodes) {
+        hub.on_insert([=](set<club::hub::node> nodes) {
             *countdown -= nodes.size();
 
             if (*countdown == 0) {
-              connections->clear();
+              for (auto& hub : *new_set | indirected) {
+                hub.on_insert(nullptr);
+              }
               on_join(move(*new_set));
             }
           });
-
-        connections->push_back(c);
       }
     });
 }
@@ -1038,7 +1030,6 @@ void fuse_hub_sets_into_clique( io_service& ios
                               , std::vector<HubPtr>&& set1
                               , std::vector<HubPtr>&& set2
                               , function<void (std::vector<HubPtr>&&)> on_join) {
-  using SignalConnections = std::list<boost::signals2::connection>;
   using SocketPairs = vector<pair<SocketPtr, SocketPtr>>;
 
   ASSERT(set1.size());
@@ -1074,19 +1065,18 @@ void fuse_hub_sets_into_clique( io_service& ios
       }
 
       auto countdown = make_shared<size_t>(2 * size1 * size2);
-      auto connections = make_shared<SignalConnections>();
 
       for (auto& hub : *new_set | indirected) {
-        auto c = hub.on_insert.connect([=](set<club::hub::node> nodes) {
+        hub.on_insert([=](set<club::hub::node> nodes) {
             *countdown -= nodes.size();
 
             if (*countdown == 0) {
-              connections->clear();
+              for (auto& hub : *new_set | indirected) {
+                hub.on_insert(nullptr);
+              }
               on_join(move(*new_set));
             }
           });
-
-        connections->push_back(c);
       }
     });
 }
@@ -1096,8 +1086,6 @@ void drop_random_hubs( io_service& ios
                      , size_t drop_count
                      , std::vector<HubPtr>&& hubs
                      , std::function<void (std::vector<HubPtr>&&)> on_drop) {
-  using SignalConnections = std::list<boost::signals2::connection>;
-
   if (drop_count == 0) {
     auto hubs_ptr = make_shared<vector<HubPtr>>(move(hubs));
     return ios.post([=]() { on_drop(move(*hubs_ptr)); });
@@ -1119,19 +1107,18 @@ void drop_random_hubs( io_service& ios
 
   auto countdown   = make_shared<size_t>(hubs.size() * drop_count);
   auto hubs_ptr    = make_shared<vector<HubPtr>>(move(hubs));
-  auto connections = make_shared<SignalConnections>();
 
   for (auto& hub : *hubs_ptr | indirected) {
-    auto c = hub.on_remove.connect([=](std::set<club::hub::node> nodes) {
+    hub.on_remove([=](std::set<club::hub::node> nodes) {
         *countdown -= nodes.size();
 
         if (*countdown == 0) {
-          connections->clear();
+          for (auto& hub : *hubs_ptr | indirected) {
+            hub.on_remove(nullptr);
+          }
           on_drop(move(*hubs_ptr));
         }
       });
-
-    connections->push_back(c);
   }
 }
 
@@ -1217,10 +1204,9 @@ BOOST_AUTO_TEST_CASE(club_fuse_again) {
               ( ios
               , move(hubs)
               , move(hubs2)
-              , [&](vector<HubPtr>&& hubs) {
+              , [&, drop_count](vector<HubPtr>&& hubs) {
                    size_t exp_size = hub_size_1 - drop_count + hub_size_2;
                    BOOST_REQUIRE_EQUAL(hubs.size(), exp_size);
-                   //cout << "DONE" << endl;
                    hubs.clear();
                  });
         });
@@ -1359,7 +1345,7 @@ BOOST_AUTO_TEST_CASE(club_unreliable_broadcast) {
       // Prepare receivers
       for (auto& hub : hubs) {
         auto id = hub->id();
-        hub->on_receive_unreliable.connect(
+        hub->on_receive_unreliable(
           [&, id](club::hub::node, const_buffer b) {
             auto pair = receivers.insert(std::make_pair(id, 0));
 
