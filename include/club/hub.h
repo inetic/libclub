@@ -66,16 +66,83 @@ public:
 
   hub(boost::asio::io_service&);
 
+  /// Set the callback to be executed when new nodes join the network
+  /// we're in. The callback shall be used multiple times until on_insert
+  /// function is invoked again with a different argument.
+  ///
+  /// \param f a std::function object with the signature void(std::set<hub::node>).
+  ///          'f' can be set to nullptr in which case no callback shall
+  ///          be executed on the given event.
   void on_insert(OnInsert f);
+
+  /// Set the callback to be executed when nodes leave the network
+  /// we're in. The callback shall be used multiple times until on_remove
+  /// function is invoked again with a different argument.
+  ///
+  /// \param f a std::function object with the signature void(std::set<hub::node>).
+  ///          'f' can be set to nullptr in which case no callback shall
+  ///          be executed on the given event.
   void on_remove(OnRemove f);
+
+  /// Set the callback to be executed when a reliable broadcast message
+  /// has been received and totally ordered. The callback shall be used
+  /// multiple times until on_receive function is invoked again with a
+  /// different argument.
+  ///
+  /// \param f a std::function object with the signature
+  ///          void(hub::node source, const std::vector<char>& data).
+  ///          'f' can be set to nullptr in which case no callback shall
+  ///          be executed on the given event.
   void on_receive(OnReceive f);
+
+  /// Set the callback to be executed when an unreliable broadcast message
+  /// has been received. The callback shall be used multiple times until
+  /// on_receive_unreliable function is invoked again with a different argument.
+  ///
+  /// \param f a std::function object with the signature
+  ///          void(hub::node source, boost::asio::const_buffer data).
+  ///          'f' can be set to nullptr in which case no callback shall
+  ///          be executed on the given event.
   void on_receive_unreliable(OnReceiveUnreliable f);
+
+  // TODO: Currently unused.
   void on_direct_connect(OnDirectConnect f);
 
-  void fuse(Socket&&, const OnFused&);
+  /// Merge the network we're in with another network.
+  ///
+  /// \param sock a socket with a direct connection to a node from another
+  ///             network.
+  /// \on_fused a std::function object of with the signature
+  ///             void(const boost::system::error_code&, boostd::uuids::uuid)
+  ///             is executed once a basic handshake information is exchanged
+  ///             between the two nodes and before any of the nodes from
+  ///             the other network are 'inserted' (see `on_insert`).
+  void fuse(Socket&& sock, const OnFused& on_fused);
 
+  /// Broadcast a message reliably to the network and let the network assign
+  /// a total order to it. That is, the following properties hold:
+  ///
+  /// 1. For any node A, if A receives message M1 before message M2, then
+  ///    any node that receives both of the messages shall receive
+  ///    them in the same order.
+  /// 2. For any node A, if A sends message M1 before message M2, then
+  ///    any node that receives both of the messages shall receive
+  ///    M1 before M2.
+  ///
+  /// The receiver of the message is every node in the network including
+  /// the sender.
   void total_order_broadcast(Bytes);
-  void unreliable_broadcast(Bytes, std::function<void()>);
+
+  /// Broadcast a message unreliably to the network. Unlike with the
+  /// totally ordered broadcast, the targets of this message are
+  /// all nodes of the network excluding the sender.
+  ///
+  /// There is no guarantee that every target shall receive a message
+  /// sent.
+  ///
+  /// The \c on_broadcast callback shall be executed to indicate
+  /// that another call to `unreliable_broadcast` function can be made.
+  void unreliable_broadcast(Bytes, std::function<void()> on_broadcast);
 
   boost::asio::io_service& get_io_service() { return _io_service; }
   uuid                     id()    const    { return _id; }
