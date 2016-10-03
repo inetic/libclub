@@ -394,7 +394,7 @@ static Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
 void hub::on_commit_fuse(LogEntry entry) {
   if (!entry.acked_by_quorum()) return;
 
-  set<hub::node> new_ones;
+  set<uuid> new_ones;
 
   auto new_graph = acks_to_graph(entry.acks);
   _broadcast_routing_table->recalculate(new_graph);
@@ -423,19 +423,13 @@ void hub::on_commit_fuse(LogEntry entry) {
   }
 
   if (!entry.lost.empty()) {
-    set<hub::node> lost;
-
-    for (auto id : entry.lost) {
-      lost.insert(hub::node{id});
-    }
-
     // Forget about the lost nodes
     for (auto id : entry.lost) {
       _seen->forget_messages_from_user(id);
       _nodes.erase(id);
     }
 
-    if (destroys_this([&]() { _callbacks->on_remove(move(lost)); })) {
+    if (destroys_this([&]() { _callbacks->on_remove(move(entry.lost)); })) {
       return;
     }
   }
@@ -790,7 +784,7 @@ void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
                          , [shared_bytes](auto /* error */) {});
   }
 
-  _callbacks->on_receive_unreliable( node{source}
+  _callbacks->on_receive_unreliable( source
                                    , const_buffer( d.current() + 4
                                                  , d.size() - 4));
 }
@@ -979,7 +973,7 @@ void hub::commit(LogEntry&& entry) {
 inline
 void hub::commit_user_data(uuid op, std::vector<char>&& data) {
   if (!find_node(op)) return;
-  _callbacks->on_receive(hub::node{op}, move(data));
+  _callbacks->on_receive(op, move(data));
 }
 
 inline

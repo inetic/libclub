@@ -23,7 +23,6 @@
 
 #include "club/graph.h"
 #include "club/uuid.h"
-#include "club/node_impl.h"
 
 #include <club/detail/time_stamp.h>
 #include "log.h"
@@ -55,12 +54,11 @@ private:
   typedef std::function<void(const boost::system::error_code&, uuid)> OnFused;
 
 public:
-  using node = node_impl;
-  using OnInsert = std::function<void(std::set<node>)>;
-  using OnRemove = std::function<void(std::set<node>)>;
-  using OnReceive = std::function<void(node, const Bytes&)>;
-  using OnReceiveUnreliable = std::function<void(node, boost::asio::const_buffer)>;
-  using OnDirectConnect = std::function<void(node)>;
+  using OnInsert = std::function<void(std::set<uuid>)>;
+  using OnRemove = std::function<void(std::set<uuid>)>;
+  using OnReceive = std::function<void(uuid, const Bytes&)>;
+  using OnReceiveUnreliable = std::function<void(uuid, boost::asio::const_buffer)>;
+  using OnDirectConnect = std::function<void(uuid)>;
 
 public:
 
@@ -70,7 +68,7 @@ public:
   /// we're in. The callback shall be used multiple times until on_insert
   /// function is invoked again with a different argument.
   ///
-  /// \param f a std::function object with the signature void(std::set<hub::node>).
+  /// \param f a std::function object with the signature void(std::set<uuid>).
   ///          'f' can be set to nullptr in which case no callback shall
   ///          be executed on the given event.
   void on_insert(OnInsert f);
@@ -79,7 +77,7 @@ public:
   /// we're in. The callback shall be used multiple times until on_remove
   /// function is invoked again with a different argument.
   ///
-  /// \param f a std::function object with the signature void(std::set<hub::node>).
+  /// \param f a std::function object with the signature void(std::set<uuid>).
   ///          'f' can be set to nullptr in which case no callback shall
   ///          be executed on the given event.
   void on_remove(OnRemove f);
@@ -90,7 +88,7 @@ public:
   /// different argument.
   ///
   /// \param f a std::function object with the signature
-  ///          void(hub::node source, const std::vector<char>& data).
+  ///          void(uuid source, const std::vector<char>& data).
   ///          'f' can be set to nullptr in which case no callback shall
   ///          be executed on the given event.
   void on_receive(OnReceive f);
@@ -100,7 +98,7 @@ public:
   /// on_receive_unreliable function is invoked again with a different argument.
   ///
   /// \param f a std::function object with the signature
-  ///          void(hub::node source, boost::asio::const_buffer data).
+  ///          void(uuid source, boost::asio::const_buffer data).
   ///          'f' can be set to nullptr in which case no callback shall
   ///          be executed on the given event.
   void on_receive_unreliable(OnReceiveUnreliable f);

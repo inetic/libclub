@@ -116,29 +116,29 @@ struct Chat {
     // `total_order_broadcast` function, it shall be received here (even by the
     // sender). Additionally, even if multiple nodes sent data concurrently,
     // Club makes sure every node receives the data in the same order.
-    hub->on_receive([](club::hub::node node, const vector<char>& data) {
-        cout << node.id() << ": " << string(data.begin(), data.end()) << endl;
+    hub->on_receive([](club::uuid node, const vector<char>& data) {
+        cout << node << ": " << string(data.begin(), data.end()) << endl;
       });
 
     // This is called when nodes are added to the network. Every node shall see
     // the same sequence on inserts.
-    hub->on_insert([this](std::set<club::hub::node> nodes) {
+    hub->on_insert([this](std::set<club::uuid> nodes) {
         for (auto node : nodes) {
-          members.insert(node.id());
-          cout << node.id() << " joined the club" << endl;
+          members.insert(node);
+          cout << node << " joined the club" << endl;
         }
       });
 
     // When nodes are removed from the network. Again, each node (in a remaining
     // connected component) shall see the same sequence of removals.
-    hub->on_remove([=](std::set<club::hub::node> nodes) {
+    hub->on_remove([=](std::set<club::uuid> nodes) {
         bool lost_leader = false;
         for (auto node : nodes) {
-          cout << node.id() << " left" << endl;
+          cout << node << " left" << endl;
 
-          members.erase(node.id());
+          members.erase(node);
 
-          if (is_leader(node.id())) lost_leader = true;
+          if (is_leader(node)) lost_leader = true;
         }
         if (lost_leader && is_leader(hub->id())) {
           start_fetching_peers();
