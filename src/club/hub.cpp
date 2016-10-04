@@ -250,14 +250,6 @@ void hub::fuse(Socket&& xsocket, const OnFused& on_fused) {
 
         commit_what_was_seen_by_everyone();
       });
-
-  //socket->send_reliable(e.move_data(), [](auto) { assert(0 && "TODO"); });
-
-  //// TODO: Add timeout for this operation.
-  //socket->receive_reliable([this, socket, on_fused, was_destroyed]
-  //    (error_code error, boost::asio::const_buffer buffer) {
-
-  //    });
 }
 
 // -----------------------------------------------------------------------------
@@ -510,7 +502,6 @@ void hub::commit_what_was_seen_by_everyone() {
   auto entry_j = _log->begin();
 
   auto was_destroyed = _was_destroyed;
-
 
   for (auto entry_i = entry_j; entry_i != _log->end(); entry_i = entry_j) {
     entry_j = next(entry_i);
