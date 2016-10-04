@@ -61,7 +61,7 @@ _Hub_ is an interface to the network of connected nodes. It provides an interfac
 * unreliable broadcast - fast - can be used e.g. for sending player position updates or voice data.
 * reliable-totally-ordered (RTO) broadcast - slow - to make decisions about a global state. E.g. in games: is a particular switch on or off, who is the owner of an item,...
 
-The total-order property makes this guarantee: *If a node received a message M1 before a message M2, then every node that received both of those messages shall receive in the same order*.
+The total-order property makes this guarantee: *If a node received a message M1 before a message M2, then every node that received both of those messages shall receive them in the same order*.
 
 # Demos
 
