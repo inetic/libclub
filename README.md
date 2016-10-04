@@ -54,7 +54,7 @@ To run the _club-chat_ demo, invoke `./club-chat` from multiple teminals. The te
 
 # API Description
 
-There are essentially only two classes that developers need to know about: [_Socket_](https://github.com/inetic/libclub/blob/readme/include/club/socket.h#L712) and [_Hub_](https://github.com/inetic/libclub/blob/readme/include/club/hub.h). _Socket_ can be seen as a cross between the traditional TCP and UDP socket, in that it is connection oriented, provides both reliable and unreliable message delivery and congestion control.
+There are essentially only two classes that developers need to know about: [_Socket_](https://github.com/inetic/libclub/blob/master/include/club/socket.h#L712) and [_Hub_](https://github.com/inetic/libclub/blob/master/include/club/hub.h). _Socket_ can be seen as a cross between the traditional TCP and UDP socket, in that it is connection oriented, provides both reliable and unreliable message delivery and congestion control.
 
 _Hub_ is an interface to the network of connected nodes. It provides an interface to send messages and merge networks together. _Hub_ currently provides two types of send operations.
 
@@ -65,7 +65,7 @@ The total-order property makes this guarantee: *If a node received a message M1 
 
 # Demos
 
-* [club-chat](https://github.com/inetic/libclub/blob/readme/demo/club-chat.cpp) - A simple CLI chat application. Demonstrates how to merge networks and send RTO broadcast.
+* [club-chat](https://github.com/inetic/libclub/blob/master/demo/club-chat.cpp) - A simple CLI chat application. Demonstrates how to merge networks and send RTO broadcast.
 * [sicoop](https://play.google.com/store/apps/details?id=com.sicoop) - A silly coop multiplayer game for Android phones where Club can be seen in action.
 
 # Features
@@ -76,8 +76,8 @@ The total-order property makes this guarantee: *If a node received a message M1 
 * Fast unreliable broadcast
 * [NAT traversal through UDP hole punching](http://www.brynosaurus.com/pub/net/p2pnat/)
 * Implicit full graph formation - TODO
-* [STUN](https://tools.ietf.org/html/rfc5389) client - See [implementation](https://github.com/inetic/libclub/blob/readme/src/club/stun_client.cpp) and [tests](https://github.com/inetic/libclub/blob/readme/tests/test-stun.cpp)
-* [LEBDAT](https://tools.ietf.org/html/rfc6817#section-3.3) congestion control for low latency message transmission
+* [STUN](https://tools.ietf.org/html/rfc5389) client - See [implementation](https://github.com/inetic/libclub/blob/master/src/club/stun_client.cpp) and [tests](https://github.com/inetic/libclub/blob/master/tests/test-stun.cpp)
+* [LEBDAT](https://tools.ietf.org/html/rfc6817) congestion control for low latency message transmission
 * Small number of dependencies
 * Rendezvous server - A simple server where nodes find each other.
 
