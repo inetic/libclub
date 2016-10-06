@@ -170,9 +170,8 @@ hub::hub(boost::asio::io_service& ios)
 {
   LOG("Created");
   _nodes[_id] = std::unique_ptr<Node>(new Node(this, _id));
-  _last_quorum.insert(_id);
   _log->last_commit_op = _id;
-  _configs.insert(MessageId(_time_stamp, _id));
+  _configs.emplace(MessageId(_time_stamp, _id), set<uuid>{_id});
   _broadcast_routing_table->recalculate(single_node_graph(_id));
 }
 
@@ -343,45 +342,55 @@ static Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
 }
 
 // -----------------------------------------------------------------------------
+struct Diff {
+  using Set = std::set<uuid>;
+
+  Set removed;
+  Set added;
+
+  static Set set_difference(const Set& from, const Set& to) {
+    Set result;
+    std::set_difference( from.begin(), from.end()
+                       , to.begin(), to.end()
+                       , std::inserter(result, result.begin()));
+    return result;
+  }
+
+  Diff(const std::set<uuid>& from, const std::set<uuid>& to)
+    : removed(set_difference(from, to))
+    , added(set_difference(to, from))
+  { }
+};
+
+// -----------------------------------------------------------------------------
 void hub::on_commit_fuse(LogEntry entry) {
   if (!entry.acked_by_quorum()) return;
-
-  set<uuid> new_ones;
 
   auto new_graph = acks_to_graph(entry.acks);
   _broadcast_routing_table->recalculate(new_graph);
 
   LOG("Commit config: ", entry.message_id(), ": ", new_graph);
 
-  _configs.insert(entry.message_id());
+  ASSERT(!_configs.empty());
+  auto prev_quorum = _configs.rbegin()->second;
+  Diff diff(prev_quorum, entry.quorum);
 
+  _configs.emplace(entry.message_id(), std::move(entry.quorum));
 
-  for (auto id : entry.quorum) {
-    auto n = find_node(id);
-
-    ASSERT(n);
-
-    if (!n->user_notified) {
-      n->user_notified = true;
-      ASSERT(id != _id);
-      new_ones.insert(id);
-    }
+  // Forget about the lost nodes
+  for (auto id : diff.removed) {
+    _seen->forget_messages_from_user(id);
+    _nodes.erase(id);
   }
 
-  if (!new_ones.empty()) {
-    if (destroys_this([&]() { _callbacks->on_insert(move(new_ones)); })) {
+  if (!diff.added.empty()) {
+    if (destroys_this([&]() { _callbacks->on_insert(move(diff.added)); })) {
       return;
     }
   }
 
-  if (!entry.lost.empty()) {
-    // Forget about the lost nodes
-    for (auto id : entry.lost) {
-      _seen->forget_messages_from_user(id);
-      _nodes.erase(id);
-    }
-
-    if (destroys_this([&]() { _callbacks->on_remove(move(entry.lost)); })) {
+  if (!diff.removed.empty()) {
+    if (destroys_this([&]() { _callbacks->on_remove(move(diff.removed)); })) {
       return;
     }
   }
@@ -473,15 +482,13 @@ void hub::on_recv_raw(Node& proxy, boost::asio::const_buffer& buffer) {
 void hub::commit_what_was_seen_by_everyone() {
   const LogEntry* last_committable_fuse = nullptr;
 
+  ASSERT(!_configs.empty());
+  auto quorum = _configs.rbegin()->second;
+
   for (auto& e : *_log | reversed | map_values) {
     if (e.message_type() == ::club::fuse && e.acked_by_quorum()) {
       last_committable_fuse = &e;
-      for (auto id : _last_quorum) {
-        if (e.quorum.count(id) == 0) {
-          const_cast<LogEntry&>(e).lost.insert(id);
-        }
-      }
-      _last_quorum = e.quorum;
+      quorum = e.quorum;
       break;
     }
   }
@@ -491,7 +498,7 @@ void hub::commit_what_was_seen_by_everyone() {
     LOG("Checking what can be commited");
     LOG("    Last committed: ", str(_log->last_committed));
     LOG("    Last committed fuse: ", str(_log->last_fuse_commit));
-    LOG("    Last quorum: ", str(_last_quorum));
+    LOG("    Last quorum: ", str(quorum));
     LOG("    Entries:");
     for (const auto& e : *_log | map_values) {
       LOG("      ", e);
@@ -519,7 +526,7 @@ void hub::commit_what_was_seen_by_everyone() {
         // between the two? Or alternatively, is it OK if I erase those as
         // well?
         if (entry.message_id() < last_committable_fuse->message_id()) {
-          if (!entry.acked_by_quorum(_last_quorum)) {
+          if (!entry.acked_by_quorum(quorum)) {
             _log->last_committed = message_id(entry_i->second.message);
             _log->last_commit_op = original_poster(entry_i->second.message);
             _log->erase(entry_i);
@@ -535,7 +542,7 @@ void hub::commit_what_was_seen_by_everyone() {
       else break;
     }
     else {
-      if (!entry.acked_by_quorum(_last_quorum)) {
+      if (!entry.acked_by_quorum(quorum)) {
         break;
       }
     }
@@ -553,11 +560,9 @@ void hub::commit_what_was_seen_by_everyone() {
       if (i != entry.predecessors.rend()) {
         LOG("    Predecessor: ", str(*i));
         if (i->first != _log->last_committed && i->first > _log->last_fuse_commit) {
-          //if (!(i->first >>= _log.last_committed)) {
-            LOG("    entry.predecessor != _log.last_committed "
-               , i->first, " != ", _log->last_committed);
-            break;
-          //}
+          LOG("    entry.predecessor != _log.last_committed "
+             , i->first, " != ", _log->last_committed);
+          break;
         }
       }
     }
@@ -621,7 +626,7 @@ Message hub::construct(Args&&... args) {
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
                         , ++_time_stamp
-                        , *_configs.rbegin()
+                        , _configs.rbegin()->first
                         , boost::container::flat_set<uuid>{_id}
                         }
                 , std::forward<Args>(args)...);
@@ -646,7 +651,7 @@ Message hub::construct_ackable(Args&&... args) {
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
                         , _time_stamp
-                        , *_configs.rbegin()
+                        , _configs.rbegin()->first
                         , boost::container::flat_set<uuid>{_id}
                         }
                 , move(ack_data)

@@ -61,7 +61,6 @@ struct Node {
 
   Node(club::hub* hub, uuid id)
     : id(id)
-    , user_notified(hub->id() == id)
     , connect_state(ConnectState::not_connected)
     , _remote_port({0, 0})
     , _hub(hub)
@@ -73,7 +72,6 @@ struct Node {
 
   Node(club::hub* hub, uuid id, SocketPtr&& socket)
     : id(id)
-    , user_notified(hub->id() == id)
     , connect_state(ConnectState::connected)
     , _remote_port({0, 0})
     , _hub(hub)
@@ -291,8 +289,6 @@ public:
   const uuid id;
 
   std::map<uuid, Peer> peers;
-
-  bool user_notified;
 
 private:
   ConnectState connect_state;

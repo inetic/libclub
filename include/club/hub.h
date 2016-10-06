@@ -207,7 +207,6 @@ private:
   struct Callbacks;
   std::shared_ptr<Callbacks>             _callbacks;
   boost::asio::io_service&               _io_service;
-  std::set<uuid>                         _last_quorum;
   std::unique_ptr<Work>                  _work;
   uuid                                   _id;
   Nodes                                  _nodes;
@@ -220,7 +219,7 @@ private:
   //       Luckily reconfiguration doesn't happen too often, so for apps that
   //       are expected to run for only a couple of hours this shouldn't be a
   //       problem.
-  std::set<MessageId> _configs;
+  std::map<MessageId, std::set<uuid>> _configs;
   std::unique_ptr<SeenMessages> _seen;
 
   std::list<std::unique_ptr<GetExternalPort>> _stun_requests;

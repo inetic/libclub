@@ -33,7 +33,6 @@ struct LogEntry {
 
   std::set<uuid> quorum;
   std::map<uuid, AckData> acks;
-  std::set<uuid> lost;
 
   //----------------------------------------------------------------------------
   template<class M>
