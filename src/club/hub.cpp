@@ -483,12 +483,12 @@ void hub::commit_what_was_seen_by_everyone() {
   const LogEntry* last_committable_fuse = nullptr;
 
   ASSERT(!_configs.empty());
-  auto quorum = _configs.rbegin()->second;
+  auto live_nodes = _configs.rbegin()->second;
 
   for (auto& e : *_log | reversed | map_values) {
     if (e.message_type() == ::club::fuse && e.acked_by_quorum()) {
       last_committable_fuse = &e;
-      quorum = e.quorum;
+      live_nodes = e.quorum;
       break;
     }
   }
@@ -498,7 +498,7 @@ void hub::commit_what_was_seen_by_everyone() {
     LOG("Checking what can be commited");
     LOG("    Last committed: ", str(_log->last_committed));
     LOG("    Last committed fuse: ", str(_log->last_fuse_commit));
-    LOG("    Last quorum: ", str(quorum));
+    LOG("    Live nodes: ", str(live_nodes));
     LOG("    Entries:");
     for (const auto& e : *_log | map_values) {
       LOG("      ", e);
@@ -510,7 +510,10 @@ void hub::commit_what_was_seen_by_everyone() {
 
   auto was_destroyed = _was_destroyed;
 
-  for (auto entry_i = entry_j; entry_i != _log->end(); entry_i = entry_j) {
+  for ( auto entry_i = entry_j
+      ; entry_i != _log->end()
+      ; entry_i = entry_j)
+  {
     entry_j = next(entry_i);
 
     auto& entry = entry_i->second;
@@ -526,7 +529,7 @@ void hub::commit_what_was_seen_by_everyone() {
         // between the two? Or alternatively, is it OK if I erase those as
         // well?
         if (entry.message_id() < last_committable_fuse->message_id()) {
-          if (!entry.acked_by_quorum(quorum)) {
+          if (!entry.acked_by_quorum(live_nodes)) {
             _log->last_committed = message_id(entry_i->second.message);
             _log->last_commit_op = original_poster(entry_i->second.message);
             _log->erase(entry_i);
@@ -539,10 +542,13 @@ void hub::commit_what_was_seen_by_everyone() {
           }
         }
       }
-      else break;
+      else {
+        // It is a fuse message, but we know it isn't committable.
+        break;
+      }
     }
     else {
-      if (!entry.acked_by_quorum(quorum)) {
+      if (!entry.acked_by_quorum(live_nodes)) {
         break;
       }
     }
