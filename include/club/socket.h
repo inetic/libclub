@@ -718,23 +718,32 @@ private:
   std::shared_ptr<SocketImpl> _impl;
 
 public:
+  /// Maximum size of a packet. Note that this is not the maximum
+  /// size of a message, but messages bigger than packet_size
+  /// shall be fragmented into multiple packets. Thus to achieve
+  /// low latencies a message should try to fit into packet_size.
   static const size_t packet_size = SocketImpl::packet_size;
 
   using OnReceive = SocketImpl::OnReceive;
   using OnFlush = SocketImpl::OnFlush;
 
 public:
+  /// Create and open the socket on a random UDP port.
   Socket(boost::asio::io_service& ios)
     : _impl(std::make_shared<SocketImpl>(ios))
   {}
 
+  /// Create the socket.
+  /// \param udp_socket is expected to be open.
   Socket(udp::socket udp_socket)
     : _impl(std::make_shared<SocketImpl>(std::move(udp_socket)))
   {}
 
+  /// Move constructor
   Socket(Socket&& other)
     : _impl(std::move(other._impl)) {}
 
+  /// Move assignment operator.
   Socket& operator = (Socket&& other) {
     _impl = std::move(other._impl);
     return *this;
@@ -748,45 +757,66 @@ public:
     if (_impl) _impl->close();
   }
 
+  /// Return our local UDP endpoint.
   udp::endpoint local_endpoint() const {
     return _impl->local_endpoint();
   }
 
+  /// Return our local UDP endpoint.
   boost::optional<udp::endpoint> remote_endpoint() const {
     return _impl->remote_endpoint();
   }
 
+  /// Start an asynchronous rendezvous connect.
   template<class OnConnect>
   void rendezvous_connect(udp::endpoint remote_ep, OnConnect on_connect) {
     _impl->rendezvous_connect(std::move(remote_ep), std::move(on_connect));
   }
 
+  /// Start an asynchronous read of a message that has been sent
+  /// by the other end using the send_unreliable function.
   void receive_unreliable(OnReceive _1) {
     _impl->receive_unreliable(std::move(_1));
   }
 
+  /// Start an asynchronous read of a message that has been sent
+  /// by the other end using the send_reliable function.
   void receive_reliable(OnReceive _1) {
     _impl->receive_reliable(std::move(_1));
   }
 
+  /// Start an asynchronous send of an unreliable message.
+  /// Unreliable message may not be delivered, but two such
+  /// shall never be reordered.
   template<class OnSend>
   void send_unreliable(std::vector<uint8_t> _1, OnSend&& on_send) {
     _impl->send_unreliable(std::move(_1), std::forward<OnSend>(on_send));
   }
 
+  /// Start an asynchronous send of a reliable message.
+  /// A reliable message shall be retransmitted until acknowledged and
+  /// the order in which the messages will be received shall
+  /// be the same as the order in which they were sent.
   template<class OnSend>
   void send_reliable(std::vector<uint8_t> _1, OnSend&& on_send) {
     _impl->send_reliable(std::move(_1), std::forward<OnSend>(on_send));
   }
 
-  void flush(OnFlush _1) {
-    _impl->flush(std::move(_1));
+  /// Schedule the on_flush callback for execution once all
+  /// the messages in the send queue has been sent and
+  /// (in case of reliable messages) acknowledged.
+  void flush(OnFlush on_flush) {
+    _impl->flush(std::move(on_flush));
   }
 
+  /// Close the socket.
   void close() {
     _impl->close();
   }
 
+  /// Return the underlying udp::socket. This is here for mostly to
+  /// test that the other end will timeout when no keepalive packet
+  /// arrives within a certain time period.
   udp::socket& get_socket_impl() {
     return _impl->get_socket_impl();
   }
