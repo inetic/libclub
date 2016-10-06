@@ -471,11 +471,11 @@ void hub::on_recv_raw(Node& proxy, boost::asio::const_buffer& buffer) {
 
 // -----------------------------------------------------------------------------
 void hub::commit_what_was_seen_by_everyone() {
-  const LogEntry* last_committed_fuse = nullptr;
+  const LogEntry* last_committable_fuse = nullptr;
 
   for (auto& e : *_log | reversed | map_values) {
     if (e.message_type() == ::club::fuse && e.acked_by_quorum()) {
-      last_committed_fuse = &e;
+      last_committable_fuse = &e;
       for (auto id : _last_quorum) {
         if (e.quorum.count(id) == 0) {
           const_cast<LogEntry&>(e).lost.insert(id);
@@ -509,17 +509,36 @@ void hub::commit_what_was_seen_by_everyone() {
     auto& entry = entry_i->second;
 
     //------------------------------------------------------
-    bool passable = false;
-
     if (entry.message_type() == ::club::fuse) {
-      passable = last_committed_fuse
-              && entry.message_id() <= last_committed_fuse->message_id();
+      // NOTE: Committable in the context of this function means that
+      // a quorum of a message is equal of the set of nodes that acked it.
+      if (last_committable_fuse) {
+        // TODO: The code here is supposed to erase all messages concurrent
+        // to last_committable_fuse. But it may also erase a fuse message
+        // that causally precedes last_committable_fuse. How do I distinguish
+        // between the two? Or alternatively, is it OK if I erase those as
+        // well?
+        if (entry.message_id() < last_committable_fuse->message_id()) {
+          if (!entry.acked_by_quorum(_last_quorum)) {
+            _log->last_committed = message_id(entry_i->second.message);
+            _log->last_commit_op = original_poster(entry_i->second.message);
+            _log->erase(entry_i);
+            continue;
+          }
+        }
+        else {
+          if (entry.message_id() != last_committable_fuse->message_id()) {
+            break;
+          }
+        }
+      }
+      else break;
     }
     else {
-      passable = entry.acked_by_quorum(_last_quorum);
+      if (!entry.acked_by_quorum(_last_quorum)) {
+        break;
+      }
     }
-
-    if (!passable) break;
 
     //------------------------------------------------------
     if (!entry.predecessors.empty()) {
@@ -544,8 +563,8 @@ void hub::commit_what_was_seen_by_everyone() {
     }
 
     //------------------------------------------------------
-    if (&entry_i->second == last_committed_fuse) {
-      last_committed_fuse = nullptr;
+    if (&entry_i->second == last_committable_fuse) {
+      last_committable_fuse = nullptr;
     }
 
     LOG("    Committing: ", entry);
