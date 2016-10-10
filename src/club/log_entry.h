@@ -25,7 +25,7 @@ namespace club {
 struct LogEntry {
   //----------------------------------------------------------------------------
   // This entry may be committed only after these conditions are met:
-  //   * quorum == (acks | map_keys)
+  //   * quorum `is subset of` (acks | map_keys) // i.e. every uuid from quorum acked
   //   * predecessors is empty or predecessors.back() is the last message
   //     we've committed.
   std::map<MessageId, uuid> predecessors;
@@ -85,18 +85,15 @@ namespace club {
 //------------------------------------------------------------------------------
 inline
 bool LogEntry::acked_by_quorum() const {
-  // TODO: Can be done more efficiently.
-  for (auto q : quorum) {
-    if (acks.count(q) == 0) {
-      return false;
-    }
-  }
-  return true;
+  auto acks = this->acks | boost::adaptors::map_keys;
+
+  return std::includes( acks.begin(),   acks.end()
+                      , quorum.begin(), quorum.end());
 }
 
 inline
 bool LogEntry::acked_by_quorum(const std::set<uuid>& alive) const {
-  // TODO: Can be done more efficiently.
+  // TODO: Can this be done more efficiently?
   for (auto q : quorum) {
     if (acks.count(q) == 0 && alive.count(q) != 0) {
       return false;
