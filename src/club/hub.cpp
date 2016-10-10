@@ -333,7 +333,7 @@ static Graph<uuid> acks_to_graph(const std::map<uuid, AckData>& acks) {
   for (const auto& pair : acks) {
     g.nodes.insert(pair.first);
 
-    for (const auto& peer : pair.second.local_quorum) {
+    for (const auto& peer : pair.second.neighbors) {
       g.add_edge(pair.first, peer);
     }
   }
@@ -652,7 +652,7 @@ Message hub::construct_ackable(Args&&... args) {
   // TODO: m_id here is redundant, can be calculated from header.
   AckData ack_data { move(m_id)
                    , move(predecessor_id)
-                   , local_quorum() };
+                   , neighbors() };
 
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
@@ -671,7 +671,7 @@ Ack hub::construct_ack(const MessageId& msg_id) {
   auto ack = construct<Ack>
              ( msg_id
              , predecessor_id
-             , local_quorum());
+             , neighbors());
 
   // We don't receive our own message back, so need to apply it manually.
   _log->apply_ack(_id, ack.ack_data);
@@ -771,7 +771,7 @@ void hub::node_received_unreliable_broadcast(boost::asio::const_buffer buffer) {
 }
 
 // -----------------------------------------------------------------------------
-boost::container::flat_set<uuid> hub::local_quorum() const {
+boost::container::flat_set<uuid> hub::neighbors() const {
   size_t size = 1;
 
   for (auto& node : _nodes | map_values | indirected) {

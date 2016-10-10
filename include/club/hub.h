@@ -197,7 +197,7 @@ private:
 
   std::set<uuid> remove_connection(uuid from, uuid to);
 
-  boost::container::flat_set<uuid> local_quorum() const;
+  boost::container::flat_set<uuid> neighbors() const;
 
   void commit(LogEntry&& entry);
   void commit_user_data(uuid op, std::vector<char>&&);

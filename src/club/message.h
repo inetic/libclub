@@ -104,20 +104,21 @@ inline std::ostream& operator<<(std::ostream& os, const Header& h) {
 struct AckData {
   MessageId                        acked_message_id;
   MessageId                        prev_message_id;
-  boost::container::flat_set<uuid> local_quorum;
+  // TODO: Only Fuse messages need this set.
+  boost::container::flat_set<uuid> neighbors;
 };
 
 template<typename Encoder>
 inline void encode(Encoder& e, const AckData& msg) {
   e.template put(msg.acked_message_id);
   e.template put(msg.prev_message_id);
-  e.template put(msg.local_quorum);
+  e.template put(msg.neighbors);
 }
 
 inline void decode(binary::decoder& d, AckData& msg) {
   msg.acked_message_id = d.get<MessageId>();
   msg.prev_message_id  = d.get<MessageId>();
-  msg.local_quorum     = d.get<decltype(msg.local_quorum)>(MAX_NODE_COUNT);
+  msg.neighbors        = d.get<decltype(msg.neighbors)>(MAX_NODE_COUNT);
 }
 
 //------------------------------------------------------------------------------
@@ -271,11 +272,11 @@ struct Ack {
   Ack( Header                             header
      , MessageId                          acked_message_id
      , MessageId                          prev_message_id
-     , boost::container::flat_set<uuid>&& local_quorum)
+     , boost::container::flat_set<uuid>&& neighbors)
     : header(std::move(header))
     , ack_data{ std::move(acked_message_id)
               , std::move(prev_message_id)
-              , std::move(local_quorum) }
+              , std::move(neighbors) }
   {
     ASSERT(this->ack_data.prev_message_id < this->ack_data.acked_message_id);
   }
@@ -303,7 +304,7 @@ inline std::ostream& operator<<(std::ostream& os, const Ack& msg) {
   return os << "(Ack " << msg.header
             << " Of:" << msg.ack_data.acked_message_id
             << " Prev:" << msg.ack_data.prev_message_id << ")"
-            << " LQ:{" << str_from_range(msg.ack_data.local_quorum) << "}"
+            << " Neighbors:{" << str_from_range(msg.ack_data.neighbors) << "}"
             << ")";
 }
 

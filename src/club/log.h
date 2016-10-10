@@ -122,7 +122,7 @@ inline void Log::apply_ack(const uuid& op_id, AckData ack) {
     return;
   }
 
-  for (auto q : ack.local_quorum) {
+  for (auto q : ack.neighbors) {
     e->quorum.insert(q);
   }
 
