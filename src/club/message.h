@@ -169,22 +169,17 @@ inline std::ostream& operator<<(std::ostream& os, const Fuse& msg) {
 struct PortOffer {
   Header            header;
   uuid              addressor;
-  unsigned short    internal_port;
-  unsigned short    external_port;
+  unsigned short    port;
 
   static MessageType type()      { return port_offer; }
-  static bool        always_ack() { return true; }
+  static bool        always_ack() { return false; }
 
   PortOffer() {}
 
-  PortOffer( Header header
-           , uuid addressor
-           , unsigned short internal_port
-           , unsigned short external_port)
+  PortOffer(Header header, uuid addressor, unsigned short port)
     : header(std::move(header))
     , addressor(addressor)
-    , internal_port(internal_port)
-    , external_port(external_port)
+    , port(port)
   {}
 };
 
@@ -192,22 +187,18 @@ template<typename Encoder>
 static void encode(Encoder& e, const club::PortOffer& msg) {
   e.template put(msg.header);
   e.template put(msg.addressor);
-  e.template put(msg.internal_port);
-  e.template put(msg.external_port);
+  e.template put(msg.port);
 }
 
 inline void decode(binary::decoder& d, club::PortOffer& msg) {
-  msg.header        = d.get<Header>();
-  msg.addressor     = d.get<uuid>();
-  msg.internal_port = d.get<unsigned short>();
-  msg.external_port = d.get<unsigned short>();
+  msg.header    = d.get<Header>();
+  msg.addressor = d.get<uuid>();
+  msg.port      = d.get<unsigned short>();
 }
 
 inline std::ostream& operator<<(std::ostream& os, const PortOffer& msg) {
   return os << "(PortOffer " << msg.header << " -> "
-            << msg.addressor << " " << msg.internal_port
-            << "/" << msg.external_port
-            << ")";
+            << msg.addressor << " " << msg.port << ")";
 }
 
 //------------------------------------------------------------------------------

@@ -287,6 +287,9 @@ void hub::on_peer_disconnected(const Node& node, std::string reason) {
 
 // -----------------------------------------------------------------------------
 void hub::process(Node&, Ack msg) {
+  for (auto ops_neighbor : msg.ack_data.neighbors) {
+  }
+
   _log->apply_ack(original_poster(msg), move(msg.ack_data));
 }
 
@@ -316,8 +319,7 @@ void hub::process(Node& op, Fuse msg) {
 void hub::process(Node& op, PortOffer msg) {
   if (msg.addressor != _id) { return; }
   LOG("Got port offer: ", msg);
-  op.set_remote_port( msg.internal_port
-                    , msg.external_port);
+  op.set_remote_port(msg.port);
 }
 
 // -----------------------------------------------------------------------------
@@ -652,7 +654,9 @@ Message hub::construct_ackable(Args&&... args) {
   // TODO: m_id here is redundant, can be calculated from header.
   AckData ack_data { move(m_id)
                    , move(predecessor_id)
-                   , neighbors() };
+                   , std::is_same<Message, Fuse>::value
+                      ? this->neighbors()
+                      : boost::container::flat_set<uuid>() };
 
   // TODO: The _id argument in `visited` member is redundant.
   return Message( Header{ _id
@@ -796,36 +800,33 @@ boost::container::flat_set<uuid> hub::neighbors() const {
 }
 
 // -----------------------------------------------------------------------------
-//void hub::broadcast_port_offer_to(Node& node, Address addr) {
-//  auto was_destroyed = _was_destroyed;
-//
-//  auto node_id = node.id;
-//
-//  if (addr.is_loopback()) {
-//    // If the remote address is on our PC, then there is no need
-//    // to send him our external address.
-//    // TODO: Remove code duplication.
-//    // TODO: Similar optimization when the node is on local LAN.
-//    _io_service.post([=]{
-//          if (*was_destroyed) return;
-//
-//          auto node = find_node(node_id);
-//
-//          if (!node || node->is_connected()) return;
-//
-//          udp::socket udp_socket(_io_service, udp::endpoint(udp::v4(), 0));
-//          uint16_t internal_port = udp_socket.local_endpoint().port();
-//          uint16_t external_port = 0;
-//
-//          auto socket = make_shared<Socket>(std::move(udp_socket));
-//          node->set_remote_address(move(socket), addr);
-//
-//          broadcast(construct<PortOffer>( node_id
-//                                        , internal_port
-//                                        , external_port));
-//        });
-//    return;
-//  }
+void hub::broadcast_port_offer_to(Node& node, Address addr) {
+  auto was_destroyed = _was_destroyed;
+
+  auto node_id = node.id;
+
+  if (addr.is_loopback()) {
+    // If the remote address is on our PC, then there is no need
+    // to send him our external address.
+    // TODO: Remove code duplication.
+    // TODO: Similar optimization when the node is on local LAN.
+    _io_service.post([=]{
+          if (*was_destroyed) return;
+
+          auto node = find_node(node_id);
+
+          if (!node || node->is_connected()) return;
+
+          udp::socket udp_socket(_io_service, udp::endpoint(udp::v4(), 0));
+          uint16_t internal_port = udp_socket.local_endpoint().port();
+
+          node->set_remote_address(Socket(move(udp_socket)), addr);
+
+          broadcast(construct<PortOffer>( node_id
+                                        , internal_port));
+        });
+    return;
+  }
 //
 //  _stun_requests.emplace_back(nullptr);
 //  auto iter = std::prev(_stun_requests.end());
@@ -853,7 +854,7 @@ boost::container::flat_set<uuid> hub::neighbors() const {
 //                                        , internal_port
 //                                        , external_port));
 //        }));
-//}
+}
 
 // -----------------------------------------------------------------------------
 template<class F>

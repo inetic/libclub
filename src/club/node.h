@@ -62,7 +62,7 @@ struct Node {
   Node(club::hub* hub, uuid id)
     : id(id)
     , connect_state(ConnectState::not_connected)
-    , _remote_port({0, 0})
+    , _remote_port(0)
     , _hub(hub)
     , _debug_hub_id(_hub->id())
     , _contact_sent(false)
@@ -73,7 +73,7 @@ struct Node {
   Node(club::hub* hub, uuid id, SocketPtr&& socket)
     : id(id)
     , connect_state(ConnectState::connected)
-    , _remote_port({0, 0})
+    , _remote_port(0)
     , _hub(hub)
     , _debug_hub_id(_hub->id())
     , _contact_sent(false)
@@ -91,17 +91,15 @@ struct Node {
     start_recv_loops();
   }
 
-  void set_remote_port( uint16_t internal_port
-                      , uint16_t external_port) {
+  void set_remote_port( uint16_t port) {
     if (is(ConnectState::not_connected) == false) return;
-    _remote_port.internal = internal_port;
-    _remote_port.external = external_port;
+    _remote_port = port;
     connect();
   }
 
-  void set_remote_address(std::shared_ptr<Socket> socket, Address addr) {
+  void set_remote_address(Socket socket, Address addr) {
     if (is(ConnectState::not_connected) == false) return;
-    _shared_state->socket = move(socket);
+    _shared_state->socket = std::make_shared<Socket>(std::move(socket));
     _remote_address = addr;
     connect();
   }
@@ -183,55 +181,48 @@ private:
   }
 
   bool has_endpoint() const {
-    return _remote_port.internal && !_remote_address.is_unspecified();
+    return _remote_port && !_remote_address.is_unspecified();
   }
 
   void connect() {
-    assert(0 && "TODO");
-    //using namespace boost::asio;
-    //typedef boost::asio::ip::udp udp;
+    using namespace boost::asio;
+    typedef boost::asio::ip::udp udp;
 
-    //if (!is(ConnectState::not_connected) || !_shared_state->socket || !has_endpoint()) {
-    //  return;
-    //}
+    if (!is(ConnectState::not_connected) || !_shared_state->socket || !has_endpoint()) {
+      return;
+    }
 
-    //NODE_LOG( "Connect ", id
-    //        , " socket:", ((bool)_shared_state->socket)
-    //        , " address:", _remote_address
-    //        , " remote_port:", _remote_port.internal
-    //        , "/", _remote_port.external);
+    NODE_LOG( "Connect ", id
+            , " socket:", ((bool)_shared_state->socket)
+            , " address:", _remote_address
+            , " remote_port:", _remote_port);
 
-    //set_state(ConnectState::connecting);
+    set_state(ConnectState::connecting);
 
-    //udp::endpoint internal_ep(_remote_address, _remote_port.internal);
-    //udp::endpoint external_ep(_remote_address, _remote_port.external);
+    udp::endpoint endpoint(_remote_address, _remote_port);
 
-    //auto state = _shared_state;
-    //state->socket->async_p2p_connect(30000, internal_ep, external_ep,
-    //    [this, state]( Error error
-    //                 , const udp::endpoint&
-    //                 , const udp::endpoint&) {
-    //      if (state->was_destroyed) return;
-    //      if (is(ConnectState::disconnected)) return;
+    auto state = _shared_state;
+    state->socket->rendezvous_connect(endpoint, [this, state](Error error) {
+          if (state->was_destroyed) return;
+          if (is(ConnectState::disconnected)) return;
 
-    //      NODE_LOG("OnConnect to ", id, " (error=", error.message(), ")");
+          NODE_LOG("OnConnect to ", id, " (error=", error.message(), ")");
 
-    //      if (error) {
-    //        ASSERT(is(ConnectState::connecting));
-    //        set_state(ConnectState::not_connected);
-    //        // TODO: Set up timer after which we try to reconnect.
-    //        return;
-    //      }
+          if (error) {
+            ASSERT(is(ConnectState::connecting));
+            set_state(ConnectState::not_connected);
+            // TODO: Set up timer after which we try to reconnect.
+            return;
+          }
 
-    //      if (is(ConnectState::connecting)) {
-    //        set_state(ConnectState::connected);
-    //      }
+          if (is(ConnectState::connecting)) {
+            set_state(ConnectState::connected);
+          }
 
-    //      start_recv_loops();
-    //      send_front();
+          start_recv_loops();
 
-    //      _hub->on_peer_connected(*this);
-    //    });
+          _hub->on_peer_connected(*this);
+        });
   }
 
   void start_recv_loops() {
@@ -293,10 +284,7 @@ public:
 private:
   ConnectState connect_state;
 
-  struct {
-    uint16_t internal;
-    uint16_t external;
-  } _remote_port;
+  uint16_t _remote_port;
 
   Address _remote_address;
 
